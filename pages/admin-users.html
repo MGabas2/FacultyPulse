@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FacultyPulse – User Management</title>
+  <link rel="stylesheet" href="../css/style.css" />
+  <style>
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .toolbar input[type="text"] {
+      width: 200px;
+    }
+    .toolbar select {
+      width: auto;
+    }
+    .sort-btn {
+      background: white;
+      color: #1a56db;
+      border: 1px solid #1a56db;
+      padding: 7px 14px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .sort-btn.active {
+      background: #1a56db;
+      color: white;
+    }
+    .sort-arrow { font-size: 11px; margin-left: 4px; }
+
+    /* Modal form */
+    .modal-box h3 { margin-bottom: 16px; }
+    .role-fields { margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <nav>
+    <span><b>FacultyPulse</b> — User Management</span>
+    <div>
+      <span id="nav-user"></span>
+      <a href="admin.html">← Back to Dashboard</a>
+      &nbsp;
+      <a href="../index.html" id="logout-btn">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <h2>User Management</h2>
+    <p>Add, view, and manage all system users.</p>
+
+    <!-- Toolbar -->
+    <div class="section">
+      <div class="toolbar">
+        <!-- Search -->
+        <input type="text" id="search-input" placeholder="🔍 Search name or ID..." />
+
+        <!-- Filter by role -->
+        <select id="filter-role">
+          <option value="">All Roles</option>
+          <option value="student">Student</option>
+          <option value="teacher">Teacher</option>
+          <option value="supervisor">Supervisor</option>
+          <option value="admin">Admin</option>
+        </select>
+
+        <!-- Filter by section -->
+        <select id="filter-section">
+          <option value="">All Sections</option>
+        </select>
+
+        <!-- Sort buttons -->
+        <button class="sort-btn active" id="sort-name" onclick="setSort('name')">
+          Name <span class="sort-arrow" id="arrow-name">↑</span>
+        </button>
+        <button class="sort-btn" id="sort-role" onclick="setSort('role')">
+          Role <span class="sort-arrow" id="arrow-role"></span>
+        </button>
+        <button class="sort-btn" id="sort-section" onclick="setSort('section')">
+          Section <span class="sort-arrow" id="arrow-section"></span>
+        </button>
+
+        <!-- Add user -->
+        <button id="add-user-btn" style="margin-left:auto;">+ Add User</button>
+      </div>
+
+      <!-- User count -->
+      <p id="user-count" style="font-size:13px; color:#666; margin-bottom:12px;"></p>
+
+      <!-- Table -->
+      <table>
+        <thead>
+          <tr>
+            <th>Name / Student ID</th>
+            <th>Role</th>
+            <th>Email</th>
+            <th>Section</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="users-tbody">
+          <tr><td colspan="6">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Add User Modal -->
+  <div id="add-modal" class="modal hidden">
+    <div class="modal-box">
+      <h3>Add New User</h3>
+
+      <div class="form-group">
+        <label>Role</label>
+        <select id="new-role" onchange="onNewRoleChange()">
+          <option value="">-- Select Role --</option>
+          <option value="student">Student</option>
+          <option value="teacher">Teacher</option>
+          <option value="supervisor">Supervisor</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+
+      <!-- Student fields -->
+      <div id="student-fields" class="role-fields hidden">
+        <div class="form-group">
+          <label>Student ID</label>
+          <input type="text" id="new-student-id" placeholder="e.g. 2023-1154-AB" maxlength="13" oninput="autoUppercase(this)" />
+          <p class="field-hint">Format: 4 digits - 4 digits - 2 uppercase letters</p>
+        </div>
+        <div class="form-group">
+          <label>Section</label>
+          <select id="new-section-id">
+            <option value="">-- Select Section --</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Teacher / Supervisor / Admin fields -->
+      <div id="staff-fields" class="role-fields hidden">
+        <div class="form-group">
+          <label>Full Name</label>
+          <input type="text" id="new-name" placeholder="e.g. Mr. Santos, Jose" />
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="new-email" placeholder="e.g. santos@facultypulse.edu" />
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="new-password" placeholder="Temporary password" />
+        </div>
+        <!-- Section only for supervisor -->
+        <div class="form-group" id="supervisor-section-group" style="display:none;">
+          <label>Assigned Section</label>
+          <select id="new-supervisor-section">
+            <option value="">-- Select Section --</option>
+          </select>
+        </div>
+      </div>
+
+      <p id="add-error" class="error"></p>
+
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button id="save-user-btn">Save User</button>
+        <button class="btn-secondary" id="cancel-add-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirm Modal -->
+  <div id="delete-modal" class="modal hidden">
+    <div class="modal-box">
+      <h3>Remove User</h3>
+      <p>Are you sure you want to remove <b id="delete-name"></b>?</p>
+      <p style="color:#888; font-size:13px; margin-top:8px;">This cannot be undone.</p>
+      <div style="display:flex; gap:10px; margin-top:20px;">
+        <button id="confirm-delete-btn" style="background:#dc2626;">Yes, Remove</button>
+        <button class="btn-secondary" id="cancel-delete-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="../js/admin-users.js"></script>
+</body>
+</html>

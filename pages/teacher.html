@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FacultyPulse – Teacher Dashboard</title>
+  <link rel="stylesheet" href="../css/style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    .charts-row {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .chart-card {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 20px;
+      flex: 1;
+      min-width: 280px;
+    }
+    .chart-card h3 { margin-bottom: 14px; font-size: 15px; }
+    .chart-wrapper { position: relative; height: 240px; }
+
+    /* Weighted table */
+    .weighted-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .weighted-table th {
+      background: #1a56db;
+      color: white;
+      padding: 8px 10px;
+      text-align: center;
+      border: 1px solid #1447b8;
+      font-size: 11px;
+    }
+    .weighted-table th:first-child { text-align: left; }
+    .weighted-table td {
+      padding: 8px 10px;
+      border: 1px solid #e2e8f0;
+      font-size: 12px;
+    }
+    .weighted-table tbody tr:nth-child(even) { background: #f8fafc; }
+
+    /* Overall score big display */
+    .overall-display {
+      text-align: center;
+      padding: 6px;
+    }
+    .overall-score-big {
+      font-size: 36px;
+      font-weight: bold;
+      color: #1a56db;
+      line-height: 1;
+    }
+    .overall-label-text {
+      font-size: 13px;
+      color: #64748b;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <span><b>FacultyPulse</b> — Faculty Portal</span>
+    <div>
+      <span id="nav-user"></span>
+      <a href="../index.html" id="logout-btn">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <h2>Welcome, <span id="welcome-name"></span></h2>
+    <p>Semester: <b id="semester-label">Loading...</b></p>
+
+    <!-- ── Summary Cards ── -->
+    <div class="cards-row">
+      <div class="card small">
+        <p class="card-label">Overall SET Rating</p>
+        <p class="card-value" id="score-overall">—</p>
+        <p style="font-size:12px; color:#64748b; margin-top:2px;" id="score-label"></p>
+      </div>
+      <div class="card small">
+        <p class="card-label">Respondents</p>
+        <p class="card-value" id="eval-count">—</p>
+      </div>
+      <div class="card small">
+        <p class="card-label">A. Mgmt of Teaching</p>
+        <p class="card-value" style="font-size:20px;" id="score-catA">—</p>
+      </div>
+      <div class="card small">
+        <p class="card-label">B. Content Knowledge</p>
+        <p class="card-value" style="font-size:20px;" id="score-catB">—</p>
+      </div>
+      <div class="card small">
+        <p class="card-label">C. Commitment</p>
+        <p class="card-value" style="font-size:20px;" id="score-catC">—</p>
+      </div>
+    </div>
+
+    <!-- ── Charts ── -->
+    <div class="charts-row">
+      <div class="chart-card">
+        <h3> Score per Category (out of 100)</h3>
+        <div class="chart-wrapper">
+          <canvas id="bar-chart"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h3> Category Breakdown</h3>
+        <div class="chart-wrapper">
+          <canvas id="donut-chart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Weighted SET Table (Annex C format) ── -->
+    <div class="section">
+      <h3>Summary of Average SET Rating
+        <small style="font-weight:400; font-size:12px; color:#64748b;">
+          — CMO No. 19, s. 2025 (Annex C)
+        </small>
+      </h3>
+      <p style="font-size:12px; color:#64748b; margin-bottom:12px;">
+        Formula: Overall SET = Total Weighted Score ÷ Total No. of Students
+      </p>
+      <table class="weighted-table">
+        <thead>
+          <tr>
+            <th>Seq</th>
+            <th>Course Code/Title</th>
+            <th>Section</th>
+            <th>No. of Students</th>
+            <th>Average SET Rating</th>
+            <th>Weighted SET Score</th>
+          </tr>
+        </thead>
+        <tbody id="class-tbody">
+          <tr><td colspan="6" style="text-align:center;">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ── Subjects Handled ── -->
+    <div class="section">
+      <h3>Subjects Handled This Semester</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Subject</th>
+            <th>Section</th>
+            <th>Enrolled</th>
+          </tr>
+        </thead>
+        <tbody id="subjects-tbody">
+          <tr><td colspan="3">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <script type="module" src="../js/teacher.js"></script>
+</body>
+</html>

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FacultyPulse – Admin Dashboard</title>
+  <link rel="stylesheet" href="../css/style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    .charts-row {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .chart-card {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 20px;
+      flex: 1;
+      min-width: 280px;
+    }
+    .chart-card h3 { margin-bottom: 14px; font-size: 15px; }
+    .chart-wrapper { position: relative; height: 260px; }
+
+    @media print {
+      /* Hide everything except the report */
+      nav, .charts-row, .section:not(.print-section),
+      .cards-row, .no-print { display: none !important; }
+
+      .print-section { display: block !important; }
+
+      /* Reset modal so it prints as a normal page, no scrollbar */
+      body { overflow: visible !important; }
+      .modal {
+        position: static !important;
+        background: none !important;
+        display: block !important;
+        overflow: visible !important;
+      }
+      .modal-box {
+        box-shadow: none !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        max-height: none !important;   /* removes the scrollbar */
+        overflow: visible !important;
+        padding: 0 !important;
+        border: none !important;
+        border-radius: 0 !important;
+      }
+
+      /* ── INK-SAVER: strip dark header backgrounds when printing ── */
+      #report-content th {
+        background: #ffffff !important;
+        color: #000000 !important;
+        border: 1px solid #000 !important;
+        font-weight: bold !important;
+      }
+      #report-content td {
+        background: #ffffff !important;
+        color: #000000 !important;
+        border: 1px solid #000 !important;
+      }
+      /* Keep the rating color readable but as text only (no fill) */
+      #report-content .rating-badge-print {
+        background: #ffffff !important;
+        border: 1px solid #000 !important;
+      }
+
+      /* Avoid breaking tables across pages awkwardly */
+      #report-content table { page-break-inside: auto; }
+      #report-content tr    { page-break-inside: avoid; }
+    }
+
+    /* ── Force readable dark text inside the generated report (screen) ── */
+    #report-content,
+    #report-content td,
+    #report-content p,
+    #report-content tr {
+      color: #1e293b;
+    }
+    /* Header cells with dark backgrounds keep white text (screen only) */
+    #report-content th {
+      color: #ffffff !important;
+    }
+    /* ── Pagination buttons ── */
+    .page-btn {
+      min-width: 34px;
+      padding: 6px 10px;
+      border: 1px solid #d1d5db;
+      background: white;
+      color: #374151;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-family: Arial, sans-serif;
+    }
+    .page-btn:hover:not(:disabled) {
+      border-color: #1a56db;
+      color: #1a56db;
+    }
+    .page-btn.active {
+      background: #1a56db;
+      border-color: #1a56db;
+      color: white;
+      font-weight: bold;
+    }
+    .page-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <span><b>FacultyPulse</b> — Admin Portal</span>
+    <div>
+      <span id="nav-user"></span>
+      <a href="../index.html" id="logout-btn">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <h2 style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      Admin Dashboard
+      <button id="refresh-btn" style="font-size:13px; padding:6px 12px;">🔄 Refresh</button>
+    </h2>
+
+    <!-- Summary Cards -->
+    <div class="cards-row">
+      <div class="card small">
+        <p class="card-label">Total Faculty</p>
+        <p class="card-value" id="count-faculty">—</p>
+      </div>
+      <div class="card small">
+        <p class="card-label">Total Students</p>
+        <p class="card-value" id="count-students">—</p>
+      </div>
+      <div class="card small">
+        <p class="card-label">Evaluations Submitted</p>
+        <p class="card-value" id="count-evals">—</p>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-row">
+      <div class="chart-card">
+        <h3>📊 Faculty SET Rating Comparison (out of 100)</h3>
+        <div class="chart-wrapper">
+          <canvas id="bar-chart"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h3>🍩 Rating Distribution</h3>
+        <div class="chart-wrapper">
+          <canvas id="donut-chart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Faculty Rankings -->
+    <div class="section">
+      <h3>Faculty Rankings — Active Semester</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Faculty Name</th>
+            <th>Overall SET Rating</th>
+            <th>Description</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="rankings-tbody">
+          <tr><td colspan="5">Loading...</td></tr>
+        </tbody>
+      </table>
+      <!-- Rankings pagination -->
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-top:12px; flex-wrap:wrap; gap:8px;">
+        <span id="rank-page-info" style="font-size:12px; color:#64748b;"></span>
+        <div id="rank-page-buttons" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
+      </div>
+    </div>
+
+    <!-- Users -->
+    <div class="section">
+      <h3 style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        User Summary
+        <a href="admin-users.html">
+          <button style="font-size:13px; padding:6px 12px;" class="btn-secondary">Manage Users →</button>
+        </a>
+        <a href="admin-monitoring.html">
+          <button style="font-size:13px; padding:6px 12px;" class="btn-secondary">Monitor Submissions →</button>
+        </a>
+      </h3>
+
+      <!-- Compact counts instead of full list -->
+      <div id="user-summary" style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px;">
+        <div style="flex:1; min-width:120px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:14px; text-align:center;">
+          <div id="usum-students" style="font-size:24px; font-weight:bold; color:#16a34a;">—</div>
+          <div style="font-size:12px; color:#64748b;">Students</div>
+        </div>
+        <div style="flex:1; min-width:120px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:14px; text-align:center;">
+          <div id="usum-teachers" style="font-size:24px; font-weight:bold; color:#2563eb;">—</div>
+          <div style="font-size:12px; color:#64748b;">Teachers</div>
+        </div>
+        <div style="flex:1; min-width:120px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:14px; text-align:center;">
+          <div id="usum-admins" style="font-size:24px; font-weight:bold; color:#dc2626;">—</div>
+          <div style="font-size:12px; color:#64748b;">Admins</div>
+        </div>
+      </div>
+
+      <p style="font-size:13px; color:#64748b;">
+        Full list of all users. Use
+        <a href="admin-users.html" style="color:#1a56db;">Manage Users</a>
+        to search, sort, add, or remove.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Name / Student ID</th>
+            <th>Role</th>
+            <th>Section</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="users-tbody">
+          <tr><td colspan="4">Loading...</td></tr>
+        </tbody>
+      </table>
+
+      <!-- Pagination controls -->
+      <div id="pagination" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-top:14px;">
+        <span id="page-info" style="font-size:12px; color:#64748b;"></span>
+        <div id="page-buttons" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
+      </div>
+    </div>
+
+    <!-- Report Generation -->
+    <div class="section">
+      <h3>Generate IFER Report</h3>
+      <p style="font-size:13px; color:#555; margin-bottom:12px;">
+        Generates the Individual Faculty Evaluation Report per CMO No. 19, s. 2025 (Annex C format).
+        <b>Student identities will be encrypted after generation.</b>
+      </p>
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <select id="report-faculty" style="min-width:200px;">
+          <option>— select faculty —</option>
+        </select>
+        <button id="generate-report-btn">Generate IFER Report</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Report Modal -->
+  <div id="report-modal" class="modal hidden">
+    <div class="modal-box print-section" style="max-width:780px; width:95vw;">
+      <div id="report-content"></div>
+      <div style="margin-top:20px; display:flex; gap:10px;" class="no-print">
+        <button id="release-btn" style="background:#16a34a;">📤 Release to Faculty</button>
+        <button id="print-btn">🖨 Print / Save as PDF</button>
+        <button class="btn-secondary" id="close-report-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="../js/admin.js"></script>
+</body>
+</html>

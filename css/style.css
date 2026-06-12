@@ -1,0 +1,357 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  font-size: 15px;
+  background: #f4f6f8;
+  color: #222;
+}
+
+/* ── NAV ── */
+nav {
+  background: #1a56db;
+  color: white;
+  padding: 12px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+nav a {
+  color: white;
+  text-decoration: none;
+  margin-left: 16px;
+  font-size: 14px;
+}
+
+nav a:hover {
+  text-decoration: underline;
+}
+
+#nav-user {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+/* ── LOGIN PAGE ── */
+.login-container {
+  max-width: 420px;
+  margin: 80px auto;
+  text-align: center;
+}
+
+.login-container h1 {
+  font-size: 28px;
+  color: #1a56db;
+}
+
+.login-container > p {
+  color: #666;
+  margin-bottom: 24px;
+}
+
+.hint {
+  margin-top: 20px;
+  font-size: 13px;
+  color: #555;
+  line-height: 1.8;
+}
+
+/* ── CARDS ── */
+.card {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+.card h2 {
+  margin-bottom: 16px;
+}
+
+.cards-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.card.small {
+  flex: 1;
+  min-width: 140px;
+  padding: 16px;
+  text-align: center;
+}
+
+.card-label {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 6px;
+}
+
+.card-value {
+  font-size: 26px;
+  font-weight: bold;
+  color: #1a56db;
+}
+
+/* ── FORM ── */
+.form-group {
+  margin-bottom: 14px;
+  text-align: left;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 13px;
+  color: #444;
+}
+
+input, select, textarea {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: 14px;
+}
+
+input:focus, select:focus {
+  outline: none;
+  border-color: #1a56db;
+}
+
+/* ── BUTTONS ── */
+button {
+  background: #1a56db;
+  color: white;
+  border: none;
+  padding: 9px 18px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+button:hover {
+  background: #1447b8;
+}
+
+button:disabled {
+  background: #aaa;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: white;
+  color: #1a56db;
+  border: 1px solid #1a56db;
+}
+
+.btn-secondary:hover {
+  background: #eef3ff;
+}
+
+/* ── ERROR ── */
+.error {
+  color: red;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+/* ── FIELD HINT (shown below student ID input) ── */
+.field-hint {
+  font-size: 12px;
+  color: #1a56db;
+  margin-top: 6px;
+  background: #eef3ff;
+  border: 1px solid #c3d4f7;
+  border-radius: 5px;
+  padding: 7px 10px;
+  line-height: 1.6;
+}
+
+/* ── HIDDEN UTILITY ── */
+.hidden {
+  display: none;
+}
+
+/* ── CONTAINER ── */
+.container {
+  max-width: 960px;
+  margin: 30px auto;
+  padding: 0 20px;
+}
+
+.container h2 {
+  margin-bottom: 4px;
+}
+
+.container > p {
+  color: #666;
+  margin-bottom: 20px;
+}
+
+/* ── SECTION ── */
+.section {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.section h3 {
+  margin-bottom: 12px;
+  font-size: 16px;
+}
+
+.section > p {
+  color: #555;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+/* ── TABLE ── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th {
+  background: #f0f4ff;
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 2px solid #ddd;
+}
+
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #eee;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+/* ── BADGES ── */
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.badge.done {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.badge.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* ── MODAL ── */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modal-box {
+  background: white;
+  border-radius: 8px;
+  padding: 28px;
+  max-width: 560px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.modal-box h3 {
+  margin-bottom: 8px;
+}
+
+/* ── EVAL QUESTION ── */
+.question-item {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #eee;
+}
+
+.question-item p {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.rating-options {
+  display: flex;
+  gap: 10px;
+}
+
+.rating-options label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ── REPORT ── */
+.report-header {
+  text-align: center;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #222;
+  padding-bottom: 12px;
+}
+
+.report-header h2 {
+  font-size: 18px;
+}
+
+.report-section {
+  margin-bottom: 16px;
+}
+
+.report-section h4 {
+  font-size: 14px;
+  margin-bottom: 8px;
+  color: #1a56db;
+}
+
+@media print {
+  nav, button { display: none; }
+  .modal-box { box-shadow: none; padding: 0; }
+}
+
+/* ── ROLE BADGES ── */
+.badge.badge-teacher {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.badge.badge-supervisor {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.badge.badge-admin {
+  background: #fee2e2;
+  color: #991b1b;
+}

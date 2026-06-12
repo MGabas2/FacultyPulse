@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FacultyPulse – Submission Monitoring</title>
+  <link rel="stylesheet" href="../css/style.css" />
+  <style>
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .toolbar input[type="text"] { width: 200px; }
+    .toolbar select { width: auto; }
+
+    /* Status badges */
+    .badge.submitted   { background:#d1fae5; color:#065f46; }
+    .badge.not-submitted { background:#fef3c7; color:#92400e; }
+    .badge.never-login { background:#fee2e2; color:#991b1b; }
+
+    /* Comment cell */
+    .comment-cell {
+      max-width: 260px;
+      font-size: 12px;
+      color: #475569;
+      line-height: 1.4;
+    }
+    .comment-empty { color: #cbd5e1; font-style: italic; }
+
+    /* Verify buttons */
+    .verify-btns { display: flex; gap: 6px; }
+    .btn-tiny {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      border: 1px solid;
+    }
+    .btn-valid {
+      background: #f0fdf4; color: #166534; border-color: #86efac;
+    }
+    .btn-valid.active { background: #16a34a; color: white; }
+    .btn-invalid {
+      background: #fef2f2; color: #991b1b; border-color: #fca5a5;
+    }
+    .btn-invalid.active { background: #dc2626; color: white; }
+
+    /* Summary cards */
+    .monitor-cards {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .monitor-card {
+      flex: 1;
+      min-width: 150px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+    }
+    .monitor-card .num { font-size: 26px; font-weight: bold; }
+    .monitor-card .lbl { font-size: 12px; color: #64748b; margin-top: 4px; }
+
+    .progress-bar {
+      height: 8px;
+      background: #e2e8f0;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: #16a34a;
+      transition: width 0.3s;
+    }
+
+    .last-login-cell { font-size: 12px; color: #475569; }
+
+    /* Pagination buttons */
+    .page-btn {
+      padding: 6px 11px;
+      border: 1px solid #cbd5e1;
+      background: white;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #1e293b;
+    }
+    .page-btn:hover:not(:disabled) { background: #eff6ff; border-color: #1a56db; }
+    .page-btn.active { background: #1a56db; color: white; border-color: #1a56db; }
+    .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <nav>
+    <span><b>FacultyPulse</b> — Submission Monitoring</span>
+    <div>
+      <span id="nav-user"></span>
+      <a href="admin.html">← Back to Dashboard</a>
+      &nbsp;
+      <a href="../index.html" id="logout-btn">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <h2 style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      Submission Monitoring
+      <button id="refresh-btn" style="font-size:13px; padding:6px 12px;">🔄 Refresh</button>
+    </h2>
+    <p>Track who has submitted evaluations, who hasn't, login activity, and verify comments.</p>
+
+    <!-- Summary cards -->
+    <div class="monitor-cards">
+      <div class="monitor-card">
+        <div class="num" id="card-total" style="color:#1a56db;">—</div>
+        <div class="lbl">Total Students</div>
+      </div>
+      <div class="monitor-card">
+        <div class="num" id="card-submitted" style="color:#16a34a;">—</div>
+        <div class="lbl">Submitted</div>
+      </div>
+      <div class="monitor-card">
+        <div class="num" id="card-pending" style="color:#d97706;">—</div>
+        <div class="lbl">Not Yet Submitted</div>
+      </div>
+      <div class="monitor-card">
+        <div class="num" id="card-rate" style="color:#7c3aed;">—</div>
+        <div class="lbl">Completion Rate</div>
+        <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%;"></div></div>
+      </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="section">
+      <div class="toolbar">
+        <input type="text" id="search-input" placeholder="🔍 Search Student ID..." />
+        <select id="filter-status">
+          <option value="">All Statuses</option>
+          <option value="submitted">Submitted</option>
+          <option value="not-submitted">Not Yet Submitted</option>
+          <option value="never-login">Never Logged In</option>
+        </select>
+        <select id="filter-section">
+          <option value="">All Sections</option>
+        </select>
+        <select id="filter-subject">
+          <option value="">All Subjects</option>
+        </select>
+        <span style="margin-left:auto; font-size:12px; color:#666;" id="row-count"></span>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Student ID</th>
+            <th>Section</th>
+            <th>Subject</th>
+            <th>Last Login</th>
+            <th>Status</th>
+            <th>Submitted At</th>
+            <th>Comment</th>
+            <th>Verify</th>
+          </tr>
+        </thead>
+        <tbody id="monitor-tbody">
+          <tr><td colspan="8">Loading...</td></tr>
+        </tbody>
+      </table>
+      <!-- Pagination -->
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-top:12px; flex-wrap:wrap; gap:8px;">
+        <span id="monitor-page-info" style="font-size:12px; color:#64748b;"></span>
+        <div id="monitor-page-buttons" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="../js/admin-monitoring.js"></script>
+</body>
+</html>

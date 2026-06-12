@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FacultyPulse – Login</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <style>
+    .login-wrapper {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f4f6f8;
+    }
+
+    .login-box {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      padding: 36px 32px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    }
+
+    .login-box h2 {
+      text-align: center;
+      font-size: 24px;
+      color: #1a56db;
+      margin-bottom: 6px;
+    }
+
+    .login-box .subtitle {
+      text-align: center;
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 24px;
+    }
+
+    /* ── Role Tab Buttons ── */
+    .role-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .role-tab {
+      flex: 1;
+      padding: 9px 0;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      background: white;
+      color: #888;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: Arial, sans-serif;
+    }
+
+    .role-tab:hover {
+      border-color: #1a56db;
+      color: #1a56db;
+    }
+
+    .role-tab.active {
+      background: #1a56db;
+      border-color: #1a56db;
+      color: white;
+    }
+
+    /* ── Form fields ── */
+    .field-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #444;
+      margin-bottom: 6px;
+      margin-top: 16px;
+    }
+
+    .field-input {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1.5px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+      font-family: Arial, sans-serif;
+    }
+
+    .field-input:focus {
+      outline: none;
+      border-color: #1a56db;
+      box-shadow: 0 0 0 3px rgba(26,86,219,0.1);
+    }
+
+    /* ── Hint box ── */
+    .id-hint {
+      font-size: 12px;
+      color: #1a56db;
+      background: #eef3ff;
+      border: 1px solid #c3d4f7;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-top: 8px;
+      line-height: 1.7;
+    }
+
+    .id-hint.hidden { display: none; }
+
+    /* ── Error ── */
+    .field-error {
+      font-size: 12px;
+      color: #dc2626;
+      margin-top: 6px;
+    }
+
+    .field-error.hidden { display: none; }
+
+    /* ── Login button ── */
+    .login-submit {
+      width: 100%;
+      margin-top: 24px;
+      padding: 12px;
+      background: #1a56db;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      font-family: Arial, sans-serif;
+    }
+
+    .login-submit:hover   { background: #1447b8; }
+    .login-submit:disabled { background: #aaa; cursor: not-allowed; }
+
+    /* ── Error message ── */
+    .login-error {
+      color: #dc2626;
+      font-size: 13px;
+      margin-top: 12px;
+      text-align: center;
+      min-height: 18px;
+    }
+
+    /* ── Test accounts hint ── */
+    .test-hint {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid #eee;
+      font-size: 12px;
+      color: #aaa;
+      text-align: center;
+      line-height: 1.9;
+    }
+
+    .test-hint b { color: #888; }
+  </style>
+</head>
+<body>
+  <div class="login-wrapper">
+    <div class="login-box">
+
+      <h2>FacultyPulse</h2>
+      <p class="subtitle">Faculty Performance Analytics System</p>
+
+      <!-- ── Role Tab Buttons ── -->
+      <div class="role-tabs">
+        <button class="role-tab active" id="tab-student"    data-role="student">Student</button>
+        <button class="role-tab"        id="tab-teacher"    data-role="teacher">Teacher</button>
+        <button class="role-tab"        id="tab-admin"      data-role="admin">Admin</button>
+      </div>
+
+      <!-- ── Username / ID field ── -->
+      <label class="field-label" id="username-label">Student ID</label>
+      <input
+        class="field-input"
+        type="text"
+        id="username"
+        placeholder="e.g. 20XX-XXXX-AB"
+        maxlength="13"
+        autocomplete="off"
+      />
+      <div class="id-hint" id="id-hint">
+        🔒 Use your <b>Student ID</b> — not your real name.<br/>
+      </div>
+      <div class="field-error hidden" id="format-error">
+        ⚠️ Format must be: 4 digits - 4 digits - 2 uppercase letters
+      </div>
+
+      <!-- ── Password field ── -->
+      <label class="field-label">Password</label>
+      <input
+        class="field-input"
+        type="password"
+        id="password"
+        placeholder="Enter password"
+        autocomplete="off"
+      />
+
+      <!-- ── Submit ── -->
+      <button class="login-submit" id="login-btn">Login</button>
+      <div class="login-error" id="error-msg"></div>
+
+      <!-- ── Test accounts ── -->
+      <div class="test-hint">
+        Test Accounts <br>
+        Student → <b>2023-1154-AB / 1154</b><br/>
+        Teacher → <b>santos@facultypulse.edu / 1234</b><br/>
+        Admin &nbsp;→ <b>admin@facultypulse.edu / 1234</b>
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module" src="js/login.js"></script>
+</body>
+</html>

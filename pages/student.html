@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FacultyPulse – Student Dashboard</title>
+  <link rel="stylesheet" href="../css/style.css" />
+  <style>
+    /* ── Evaluation Table ── */
+    .eval-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    .eval-table th {
+      background: #1a56db;
+      color: white;
+      padding: 10px 12px;
+      text-align: center;
+      border: 1px solid #1447b8;
+      font-size: 12px;
+    }
+
+    .eval-table th.question-col {
+      text-align: left;
+      width: 55%;
+    }
+
+    .eval-table td {
+      padding: 10px 12px;
+      border: 1px solid #e2e8f0;
+      vertical-align: middle;
+    }
+
+    .eval-table td.question-text {
+      text-align: left;
+      line-height: 1.5;
+      color: #1e293b;
+    }
+
+    .eval-table td.rating-cell {
+      text-align: center;
+      padding: 8px 4px;
+    }
+
+    /* Radio button styled as circle */
+    .eval-table input[type="radio"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      accent-color: #1a56db;
+      margin: 0;
+    }
+
+    /* Alternating row colors */
+    .eval-table tbody tr:nth-child(even) {
+      background: #f8fafc;
+    }
+
+    .eval-table tbody tr:hover {
+      background: #eff6ff;
+    }
+
+    /* Category header row */
+    .eval-table .category-row td {
+      background: #334155;
+      color: white;
+      font-weight: bold;
+      font-size: 12px;
+      padding: 8px 12px;
+      border-color: #1e293b;
+    }
+
+    /* Highlight unanswered on submit attempt */
+    .eval-table tr.unanswered td {
+      background: #fef2f2 !important;
+    }
+
+    /* ── Rating legend ── */
+    .rating-legend {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      padding: 10px 16px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      font-size: 11px;
+      color: #475569;
+    }
+
+    .rating-legend span { white-space: nowrap; }
+
+    /* ── Anonymity notice ── */
+    .anon-notice {
+      background: #f0fdf4;
+      border: 1px solid #86efac;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: #166534;
+      margin-bottom: 14px;
+    }
+
+    /* ── Comment box ── */
+    .comment-section {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 2px solid #e2e8f0;
+    }
+
+    .comment-section label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #444;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .comment-section textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1.5px solid #ddd;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: Arial, sans-serif;
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    .comment-section textarea:focus {
+      outline: none;
+      border-color: #1a56db;
+    }
+
+    .comment-note {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+
+    /* ── Modal wider for table ── */
+    #eval-modal .modal-box {
+      max-width: 720px;
+      width: 95vw;
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <span><b>FacultyPulse</b> — Student Portal</span>
+    <div>
+      <span id="nav-user"></span>
+      <a href="../index.html" id="logout-btn">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <h2>Welcome, <span id="welcome-name"></span></h2>
+    <p>Semester: <b id="semester-label">Loading...</b></p>
+
+    <div class="section">
+      <h3>My Subjects This Semester</h3>
+      <p style="font-size:13px; color:#666; margin-bottom:12px;">
+        Select a subject to evaluate your teacher. All evaluations are anonymous.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Subject</th>
+            <th>Teacher</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="subjects-tbody">
+          <tr><td colspan="4">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Evaluation Modal ── -->
+  <div id="eval-modal" class="modal hidden">
+    <div class="modal-box">
+
+      <h3 style="margin-bottom:4px;">Student Evaluation of Teachers (SET)</h3>
+      <p style="font-size:13px; color:#666; margin-bottom:4px;">
+        Teacher: <b id="modal-teacher"></b>
+      </p>
+      <p id="modal-subject" style="font-size:13px; color:#666; margin-bottom:12px;"></p>
+
+      <!-- Anonymity notice -->
+      <div class="anon-notice">
+        🔒 Your evaluation is <b>completely anonymous</b>. Your identity is protected
+        and cannot be traced back to you once submitted.
+      </div>
+
+      <!-- Rating scale legend -->
+      <div class="rating-legend">
+        <b>Rating Scale:</b>
+        <span><b>5</b> — Always manifested (91–100%)</span>
+        <span><b>4</b> — Often manifested (61–90%)</span>
+        <span><b>3</b> — Sometimes manifested (31–60%)</span>
+        <span><b>2</b> — Seldom manifested (11–30%)</span>
+        <span><b>1</b> — Never/Rarely manifested (0–10%)</span>
+      </div>
+
+      <!-- ── SET Questions Table ── -->
+      <table class="eval-table" id="eval-table">
+        <thead>
+          <tr>
+            <th class="question-col">Benchmark Statements for Faculty Teaching Effectiveness</th>
+            <th>5</th>
+            <th>4</th>
+            <th>3</th>
+            <th>2</th>
+            <th>1</th>
+          </tr>
+        </thead>
+        <tbody id="questions-tbody">
+          <!-- Filled by JS -->
+        </tbody>
+      </table>
+
+      <!-- Optional comment -->
+      <div class="comment-section">
+        <label>
+          Other Comments and Suggestions
+          <span style="color:#94a3b8; font-weight:400;">(Optional)</span>
+        </label>
+        <textarea
+          id="eval-comment"
+          placeholder="Share any additional feedback about your teacher...">
+        </textarea>
+        <p class="comment-note">
+          ⚠️ Do not include your name or any personal information in your comment.
+          Comments will be reviewed before being included in the report.
+        </p>
+      </div>
+
+      <!-- Action buttons -->
+      <div style="margin-top:20px; display:flex; gap:10px; align-items:center;">
+        <button id="submit-btn">Submit Evaluation</button>
+        <button class="btn-secondary" id="cancel-btn">Cancel</button>
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module" src="../js/student.js"></script>
+</body>
+</html>
