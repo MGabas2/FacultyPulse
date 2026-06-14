@@ -48,7 +48,8 @@ async function loadUsers() {
 
   const { data, error } = await supabase
     .from("users")
-    .select("id, student_id, role, name, email, section_id, sections(name)");
+    .select("id, student_id, role, name, email, section_id, sections(name), academic_rank, employment_type, is_active")
+    .neq("role", "admin");
 
   if (error) {
     tbody.innerHTML = `<tr><td colspan="6">Error loading users.</td></tr>`;
@@ -106,21 +107,31 @@ function renderTable() {
 
   tbody.innerHTML = "";
   filtered.forEach(u => {
-    const displayName = u.name || u.student_id || "—";
-    const roleLabel   = u.role.charAt(0).toUpperCase() + u.role.slice(1);
-    const section     = u.sections?.name || "—";
+    const displayName    = u.name || u.student_id || "—";
+    const roleLabel      = u.role.charAt(0).toUpperCase() + u.role.slice(1);
+    const section        = u.sections?.name || "—";
+    const employmentType = u.role === "teacher" ? (u.employment_type || "—") : "—";
+    const isActive       = u.is_active !== false; // treat null/undefined as active
+    const statusBadge    = isActive
+      ? `<span class="badge done">Active</span>`
+      : `<span class="badge pending">Inactive</span>`;
 
     tbody.innerHTML += `
-      <tr>
+      <tr style="${!isActive ? 'opacity:0.6;' : ''}">
         <td>${displayName}</td>
         <td>
           <span class="badge ${getRoleBadgeClass(u.role)}">${roleLabel}</span>
         </td>
         <td>${u.email || "—"}</td>
         <td>${section}</td>
-        <td><span class="badge done">Active</span></td>
-        <td>
+        <td>${employmentType}</td>
+        <td>${statusBadge}</td>
+        <td style="display:flex; gap:6px; flex-wrap:wrap;">
           <button class="btn-secondary" style="font-size:12px; padding:5px 10px;"
+            onclick="openEditModal('${u.id}')">
+            Edit
+          </button>
+          <button class="btn-secondary" style="font-size:12px; padding:5px 10px; color:#dc2626; border-color:#dc2626;"
             onclick="confirmDelete('${u.id}', '${displayName.replace(/'/g, "\\'")}')">
             Remove
           </button>
@@ -164,20 +175,23 @@ function setSort(key) {
 
 // ── Show/hide role-specific fields in Add User modal ──
 function onNewRoleChange() {
-  const role         = document.getElementById("new-role").value;
-  const studentFields = document.getElementById("student-fields");
-  const staffFields   = document.getElementById("staff-fields");
-  const supSection    = document.getElementById("supervisor-section-group");
+  const role           = document.getElementById("new-role").value;
+  const studentFields  = document.getElementById("student-fields");
+  const staffFields    = document.getElementById("staff-fields");
+  const supSection     = document.getElementById("supervisor-section-group");
+  const teacherExtras  = document.getElementById("teacher-extra-fields");
 
   studentFields.classList.add("hidden");
   staffFields.classList.add("hidden");
-  supSection.style.display = "none";
+  supSection.style.display    = "none";
+  teacherExtras.style.display = "none";
 
   if (role === "student") {
     studentFields.classList.remove("hidden");
-  } else if (["teacher", "supervisor", "admin"].includes(role)) {
+  } else if (["teacher", "supervisor"].includes(role)) {
     staffFields.classList.remove("hidden");
     if (role === "supervisor") supSection.style.display = "block";
+    if (role === "teacher")   teacherExtras.style.display = "block";
   }
 }
 
@@ -248,6 +262,15 @@ async function saveUser() {
         section_id: role === "supervisor" ? supSec || null : null,
       };
 
+      // Teacher-specific fields
+      if (role === "teacher") {
+        const academicRank     = document.getElementById("new-academic-rank").value;
+        const employmentType   = document.getElementById("new-employment-type").value;
+        if (academicRank)    insertData.academic_rank    = academicRank;
+        if (employmentType)  insertData.employment_type  = employmentType;
+        insertData.is_active = true;
+      }
+
       const { error: insertError } = await supabase.from("users").insert(insertData);
       if (insertError) {
         errorEl.textContent = insertError.code === "23505"
@@ -302,14 +325,17 @@ async function deleteUser() {
 
 // ── Modal helpers ──
 function openAddModal() {
-  document.getElementById("new-role").value     = "";
-  document.getElementById("new-student-id").value = "";
-  document.getElementById("new-name").value     = "";
-  document.getElementById("new-email").value    = "";
-  document.getElementById("new-password").value = "";
-  document.getElementById("add-error").textContent = "";
+  document.getElementById("new-role").value          = "";
+  document.getElementById("new-student-id").value    = "";
+  document.getElementById("new-name").value          = "";
+  document.getElementById("new-email").value         = "";
+  document.getElementById("new-password").value      = "";
+  document.getElementById("new-academic-rank").value = "";
+  document.getElementById("new-employment-type").value = "";
+  document.getElementById("add-error").textContent   = "";
   document.getElementById("student-fields").classList.add("hidden");
   document.getElementById("staff-fields").classList.add("hidden");
+  document.getElementById("teacher-extra-fields").style.display = "none";
   document.getElementById("add-modal").classList.remove("hidden");
 }
 
@@ -317,11 +343,152 @@ function closeAddModal() {
   document.getElementById("add-modal").classList.add("hidden");
 }
 
-// ── Expose to HTML (sort buttons use onclick) ──
-window.setSort       = setSort;
+// ══════════════════════════════════════════════════════════════
+//  EDIT USER
+// ══════════════════════════════════════════════════════════════
+let editTargetId   = null;
+let editTargetRole = null;
+
+function openEditModal(userId) {
+  const user = allUsers.find(u => u.id === userId);
+  if (!user) return;
+
+  editTargetId   = userId;
+  editTargetRole = user.role;
+
+  // Read-only fields
+  document.getElementById("edit-role-display").value  =
+    user.role.charAt(0).toUpperCase() + user.role.slice(1);
+  document.getElementById("edit-email-display").value = user.email || "—";
+  document.getElementById("edit-error").textContent   = "";
+
+  // Show/hide editable fields based on role
+  const nameGroup       = document.getElementById("edit-name-group");
+  const sectionGroup    = document.getElementById("edit-section-group");
+  const rankGroup       = document.getElementById("edit-rank-group");
+  const employmentGroup = document.getElementById("edit-employment-group");
+  const statusGroup     = document.getElementById("edit-status-group");
+
+  // Reset all
+  nameGroup.style.display       = "none";
+  sectionGroup.style.display    = "none";
+  rankGroup.style.display       = "none";
+  employmentGroup.style.display = "none";
+  statusGroup.style.display     = "none";
+
+  if (user.role === "student") {
+    sectionGroup.style.display = "block";
+    // Pre-fill section dropdown
+    const sel = document.getElementById("edit-section-id");
+    sel.innerHTML = `<option value="">-- Select Section --</option>`;
+    sections.forEach(s => {
+      sel.innerHTML += `<option value="${s.id}" ${s.id === user.section_id ? "selected" : ""}>${s.name}</option>`;
+    });
+
+  } else if (user.role === "teacher") {
+    nameGroup.style.display       = "block";
+    rankGroup.style.display       = "block";
+    employmentGroup.style.display = "block";
+    statusGroup.style.display     = "block";
+
+    document.getElementById("edit-name").value = user.name || "";
+
+    // Pre-select academic rank
+    const rankSel = document.getElementById("edit-academic-rank");
+    rankSel.value = user.academic_rank || "";
+
+    // Pre-select employment type
+    const empSel = document.getElementById("edit-employment-type");
+    empSel.value = user.employment_type || "";
+
+    // Pre-select status
+    document.getElementById("edit-status").value =
+      user.is_active === false ? "false" : "true";
+
+  } else {
+    // Supervisor, Dept Head — name only
+    nameGroup.style.display = "block";
+    document.getElementById("edit-name").value = user.name || "";
+  }
+
+  document.getElementById("edit-modal").classList.remove("hidden");
+}
+
+async function saveEdit() {
+  const errorEl  = document.getElementById("edit-error");
+  const saveBtn  = document.getElementById("save-edit-btn");
+  errorEl.textContent = "";
+
+  if (!editTargetId) return;
+
+  saveBtn.textContent = "Saving...";
+  saveBtn.disabled    = true;
+
+  try {
+    const updates = {};
+
+    if (editTargetRole === "student") {
+      const sectionId = document.getElementById("edit-section-id").value;
+      if (!sectionId) {
+        errorEl.textContent = "Please select a section.";
+        return;
+      }
+      updates.section_id = sectionId;
+
+    } else if (editTargetRole === "teacher") {
+      const name           = document.getElementById("edit-name").value.trim();
+      const academicRank   = document.getElementById("edit-academic-rank").value;
+      const employmentType = document.getElementById("edit-employment-type").value;
+      const isActive       = document.getElementById("edit-status").value === "true";
+
+      if (!name) { errorEl.textContent = "Full name is required."; return; }
+
+      updates.name            = name;
+      updates.academic_rank   = academicRank   || null;
+      updates.employment_type = employmentType || null;
+      updates.is_active       = isActive;
+
+    } else {
+      // Supervisor, Dept Head
+      const name = document.getElementById("edit-name").value.trim();
+      if (!name) { errorEl.textContent = "Full name is required."; return; }
+      updates.name = name;
+    }
+
+    const { error } = await supabase
+      .from("users")
+      .update(updates)
+      .eq("id", editTargetId);
+
+    if (error) {
+      errorEl.textContent = "Failed to save: " + error.message;
+      return;
+    }
+
+    closeEditModal();
+    loadUsers();
+
+  } catch (err) {
+    errorEl.textContent = "Unexpected error: " + err.message;
+    console.error(err);
+  } finally {
+    saveBtn.textContent = "Save Changes";
+    saveBtn.disabled    = false;
+  }
+}
+
+function closeEditModal() {
+  document.getElementById("edit-modal").classList.add("hidden");
+  editTargetId   = null;
+  editTargetRole = null;
+}
+
+// ── Expose to HTML (sort buttons + table onclicks) ──
+window.setSort         = setSort;
 window.onNewRoleChange = onNewRoleChange;
-window.autoUppercase = autoUppercase;
-window.confirmDelete = confirmDelete;
+window.autoUppercase   = autoUppercase;
+window.confirmDelete   = confirmDelete;
+window.openEditModal   = openEditModal;
 
 // ── Attach all events ──
 document.getElementById("add-user-btn").addEventListener("click", openAddModal);
@@ -331,6 +498,8 @@ document.getElementById("confirm-delete-btn").addEventListener("click", deleteUs
 document.getElementById("cancel-delete-btn").addEventListener("click", () => {
   document.getElementById("delete-modal").classList.add("hidden");
 });
+document.getElementById("save-edit-btn").addEventListener("click", saveEdit);
+document.getElementById("cancel-edit-btn").addEventListener("click", closeEditModal);
 document.getElementById("logout-btn").addEventListener("click", (e) => {
   e.preventDefault();
   supabase.auth.signOut();

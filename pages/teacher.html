@@ -75,7 +75,33 @@
 
   <div class="container">
     <h2>Welcome, <span id="welcome-name"></span></h2>
-    <p>Semester: <b id="semester-label">Loading...</b></p>
+
+    <!-- ── Semester Selector ── -->
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
+      <label style="font-size:14px; color:#475569; font-weight:600;">Semester:</label>
+      <select id="semester-select" style="
+        padding: 8px 14px;
+        border: 1.5px solid #1a56db;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #1a56db;
+        background: #eff6ff;
+        cursor: pointer;
+        min-width: 220px;
+      ">
+        <option>Loading...</option>
+      </select>
+      <span id="active-badge" style="
+        display:none;
+        background:#dcfce7; color:#166534;
+        border:1px solid #86efac;
+        border-radius:20px;
+        font-size:11px; font-weight:700;
+        padding:3px 10px;
+        letter-spacing:0.04em;
+      ">● CURRENT</span>
+    </div>
 
     <!-- ── Summary Cards ── -->
     <div class="cards-row">
@@ -147,7 +173,7 @@
 
     <!-- ── Subjects Handled ── -->
     <div class="section">
-      <h3>Subjects Handled This Semester</h3>
+      <h3>Subjects Handled — <span id="subjects-semester-label">This Semester</span></h3>
       <table>
         <thead>
           <tr>

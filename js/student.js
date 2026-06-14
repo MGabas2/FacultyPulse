@@ -87,25 +87,40 @@ async function loadSubjects() {
 
   tbody.innerHTML = "";
   subjects.forEach(sub => {
-    const evaluated = doneIds.has(sub.id);
-    tbody.innerHTML += `
-      <tr>
-        <td>${sub.name}</td>
-        <td>${sub.users?.name || "—"}</td>
-        <td>
-          <span class="badge ${evaluated ? "done" : "pending"}">
-            ${evaluated ? "Evaluated" : "Not Yet Evaluated"}
-          </span>
-        </td>
-        <td>
-          <button
-            onclick="openEval('${sub.id}', '${sub.name.replace(/'/g,"\\'")}', '${(sub.users?.name || "").replace(/'/g,"\\'")}')"
-            ${evaluated ? "disabled" : ""}>
-            Evaluate
-          </button>
-        </td>
-      </tr>
-    `;
+    const evaluated    = doneIds.has(sub.id);
+    const teacherName  = sub.users?.name || "";
+    const row          = document.createElement("tr");
+
+    // Use textContent for user-supplied data — never innerHTML
+    const tdSubject = document.createElement("td");
+    tdSubject.textContent = sub.name;
+
+    const tdTeacher = document.createElement("td");
+    tdTeacher.textContent = teacherName || "—";
+
+    const tdStatus = document.createElement("td");
+    tdStatus.innerHTML = `<span class="badge ${evaluated ? "done" : "pending"}">
+      ${evaluated ? "Evaluated" : "Not Yet Evaluated"}
+    </span>`;
+
+    const tdAction = document.createElement("td");
+    const btn = document.createElement("button");
+    btn.textContent = "Evaluate";
+    btn.disabled    = evaluated;
+    // Store data safely — no injection possible
+    btn.dataset.subjectId   = sub.id;
+    btn.dataset.subjectName = sub.name;
+    btn.dataset.teacherName = teacherName;
+    btn.addEventListener("click", () => {
+      openEval(btn.dataset.subjectId, btn.dataset.subjectName, btn.dataset.teacherName);
+    });
+    tdAction.appendChild(btn);
+
+    row.appendChild(tdSubject);
+    row.appendChild(tdTeacher);
+    row.appendChild(tdStatus);
+    row.appendChild(tdAction);
+    tbody.appendChild(row);
   });
 }
 
@@ -160,6 +175,12 @@ function computeSETRating(scores) {
 
 // ── Submit evaluation ──
 async function submitEval() {
+  // Guard: semester must be loaded before anything can be submitted
+  if (!window._activeSemesterId) {
+    alert("Something went wrong — the active semester could not be loaded.\nPlease refresh the page and try again.");
+    return;
+  }
+
   // Validate all 15 answered
   let allAnswered = true;
   let firstUnanswered = null;
@@ -193,7 +214,7 @@ async function submitEval() {
   submitBtn.disabled    = true;
 
   try {
-    // ── Step 1: Write to TRACKING (identity + comment, admin-only) ──
+    // ── Step 1: Write to TRACKING (participation only — identity, no comment) ──
     // The unique constraint here is the double-submission guard.
     const { error: trackError } = await supabase
       .from("evaluation_tracking")
@@ -201,8 +222,6 @@ async function submitEval() {
         student_id:  studentId,
         subject_id:  currentSubjectId,
         semester_id: window._activeSemesterId,
-        comment:     comment || null,
-        is_verified: null,
       });
 
     if (trackError) {
@@ -233,6 +252,21 @@ async function submitEval() {
         .eq("subject_id",  currentSubjectId)
         .eq("semester_id", window._activeSemesterId);
       throw new Error(scoreError.message);
+    }
+
+    // ── Step 3: Write the COMMENT to its own identity-free table ──
+    // No student_id and no timestamp, so it cannot be linked back to the
+    // student (not even by timestamp correlation). Best-effort: an optional
+    // comment failing must NOT void an otherwise-valid evaluation.
+    if (comment) {
+      const { error: commentError } = await supabase
+        .from("evaluation_comments")
+        .insert({
+          subject_id:  currentSubjectId,
+          semester_id: window._activeSemesterId,
+          comment:     comment,
+        });
+      if (commentError) console.warn("Comment not saved:", commentError.message);
     }
 
     alert(

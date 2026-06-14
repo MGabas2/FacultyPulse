@@ -25,6 +25,14 @@
     .chart-wrapper { position: relative; height: 260px; }
 
     @media print {
+      /* Force browsers to honor borders/line colors instead of stripping
+         them for ink-saving (Chrome/Edge default to dropping them). */
+      #report-content,
+      #report-content * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
       /* Hide everything except the report */
       nav, .charts-row, .section:not(.print-section),
       .cards-row, .no-print { display: none !important; }
@@ -80,9 +88,15 @@
     #report-content tr {
       color: #1e293b;
     }
-    /* Header cells with dark backgrounds keep white text (screen only) */
-    #report-content th {
-      color: #ffffff !important;
+    /* Header cells with dark backgrounds keep white text — SCREEN ONLY.
+       Must be scoped to @media screen, otherwise this !important rule
+       leaks into print and overrides the print-block's black-text rule
+       (equal specificity + later source order = white wins), making
+       headers print white-on-white. */
+    @media screen {
+      #report-content th {
+        color: #ffffff !important;
+      }
     }
     /* ── Pagination buttons ── */
     .page-btn {

@@ -100,6 +100,7 @@
             <th>Role</th>
             <th>Email</th>
             <th>Section</th>
+            <th>Employment Type</th>
             <th>Status</th>
             <th>Action</th>
           </tr>
@@ -123,7 +124,6 @@
           <option value="student">Student</option>
           <option value="teacher">Teacher</option>
           <option value="supervisor">Supervisor</option>
-          <option value="admin">Admin</option>
         </select>
       </div>
 
@@ -163,6 +163,52 @@
             <option value="">-- Select Section --</option>
           </select>
         </div>
+        <!-- Academic rank + employment type — teachers only -->
+        <div id="teacher-extra-fields" style="display:none;">
+          <div class="form-group">
+            <label>Academic Rank</label>
+            <select id="new-academic-rank">
+              <option value="">-- Select Rank --</option>
+              <optgroup label="Instructor">
+                <option>Instructor I</option>
+                <option>Instructor II</option>
+                <option>Instructor III</option>
+              </optgroup>
+              <optgroup label="Assistant Professor">
+                <option>Assistant Professor I</option>
+                <option>Assistant Professor II</option>
+                <option>Assistant Professor III</option>
+                <option>Assistant Professor IV</option>
+              </optgroup>
+              <optgroup label="Associate Professor">
+                <option>Associate Professor I</option>
+                <option>Associate Professor II</option>
+                <option>Associate Professor III</option>
+                <option>Associate Professor IV</option>
+                <option>Associate Professor V</option>
+              </optgroup>
+              <optgroup label="Professor">
+                <option>Professor I</option>
+                <option>Professor II</option>
+                <option>Professor III</option>
+                <option>Professor IV</option>
+                <option>Professor V</option>
+                <option>Professor VI</option>
+              </optgroup>
+              <option>University/College Professor</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Employment Type</label>
+            <select id="new-employment-type">
+              <option value="">-- Select Type --</option>
+              <option value="Full-Time">Full-Time</option>
+              <option value="Part-Time">Part-Time</option>
+              <option value="Lecturer">Lecturer</option>
+              <option value="Designee">Designee</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <p id="add-error" class="error"></p>
@@ -170,6 +216,107 @@
       <div style="display:flex; gap:10px; margin-top:16px;">
         <button id="save-user-btn">Save User</button>
         <button class="btn-secondary" id="cancel-add-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit User Modal -->
+  <div id="edit-modal" class="modal hidden">
+    <div class="modal-box">
+      <h3>Edit User</h3>
+
+      <!-- Read-only info -->
+      <div class="form-group">
+        <label style="color:#94a3b8;">Role</label>
+        <input type="text" id="edit-role-display" disabled
+          style="background:#f8fafc; color:#94a3b8; cursor:not-allowed;" />
+      </div>
+      <div class="form-group">
+        <label style="color:#94a3b8;">Email</label>
+        <input type="text" id="edit-email-display" disabled
+          style="background:#f8fafc; color:#94a3b8; cursor:not-allowed;" />
+        <p class="field-hint">Email changes require a Supabase Auth update — contact the system owner.</p>
+      </div>
+
+      <!-- Editable: Name (staff only) -->
+      <div class="form-group" id="edit-name-group">
+        <label>Full Name</label>
+        <input type="text" id="edit-name" placeholder="Full name" />
+      </div>
+
+      <!-- Editable: Section (students only) -->
+      <div class="form-group" id="edit-section-group" style="display:none;">
+        <label>Section</label>
+        <select id="edit-section-id">
+          <option value="">-- Select Section --</option>
+        </select>
+      </div>
+
+      <!-- Editable: Academic Rank (teachers only) -->
+      <div class="form-group" id="edit-rank-group" style="display:none;">
+        <label>Academic Rank</label>
+        <select id="edit-academic-rank">
+          <option value="">-- Select Rank --</option>
+          <optgroup label="Instructor">
+            <option>Instructor I</option>
+            <option>Instructor II</option>
+            <option>Instructor III</option>
+          </optgroup>
+          <optgroup label="Assistant Professor">
+            <option>Assistant Professor I</option>
+            <option>Assistant Professor II</option>
+            <option>Assistant Professor III</option>
+            <option>Assistant Professor IV</option>
+          </optgroup>
+          <optgroup label="Associate Professor">
+            <option>Associate Professor I</option>
+            <option>Associate Professor II</option>
+            <option>Associate Professor III</option>
+            <option>Associate Professor IV</option>
+            <option>Associate Professor V</option>
+          </optgroup>
+          <optgroup label="Professor">
+            <option>Professor I</option>
+            <option>Professor II</option>
+            <option>Professor III</option>
+            <option>Professor IV</option>
+            <option>Professor V</option>
+            <option>Professor VI</option>
+          </optgroup>
+          <option>University/College Professor</option>
+        </select>
+      </div>
+
+      <!-- Editable: Employment Type (teachers only) -->
+      <div class="form-group" id="edit-employment-group" style="display:none;">
+        <label>Employment Type</label>
+        <select id="edit-employment-type">
+          <option value="">-- Select Type --</option>
+          <option value="Full-Time">Full-Time</option>
+          <option value="Part-Time">Part-Time</option>
+          <option value="Lecturer">Lecturer</option>
+          <option value="Designee">Designee</option>
+        </select>
+      </div>
+
+      <!-- Editable: Status (teachers only) -->
+      <div class="form-group" id="edit-status-group" style="display:none;">
+        <label>Status</label>
+        <select id="edit-status">
+          <option value="true">Active</option>
+          <option value="false">Inactive</option>
+        </select>
+        <p class="field-hint" style="color:#f97316;">
+          ⚠️ Setting a teacher to <b>Inactive</b> hides them from new assignments and rankings.
+          Their evaluation history is preserved and they can be reactivated anytime.
+        </p>
+      </div>
+
+      <p id="edit-error" class="error"></p>
+
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button id="save-edit-btn">Save Changes</button>
+        <button class="btn-secondary" id="cancel-edit-btn">Cancel</button>
       </div>
     </div>
   </div>

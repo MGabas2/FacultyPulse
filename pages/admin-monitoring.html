@@ -10,11 +10,19 @@
       display: flex;
       gap: 10px;
       align-items: center;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
+      flex-wrap: wrap;       /* wrap to next line instead of a scroll slider */
+      margin-bottom: 12px;
     }
-    .toolbar input[type="text"] { width: 200px; }
-    .toolbar select { width: auto; }
+    .search-row { margin-bottom: 10px; }
+    .search-row input[type="text"] { width: 100%; max-width: 320px; }
+    .toolbar input[type="text"] { width: 180px; flex: none; }
+    .toolbar select {
+      width: auto;
+      max-width: 180px;   /* long teacher names can't stretch the row */
+      flex: none;
+    }
+    .toolbar #row-count,
+    .toolbar #comments-count { margin-left: auto; flex: none; }
 
     /* Status badges */
     .badge.submitted   { background:#d1fae5; color:#065f46; }
@@ -95,6 +103,46 @@
     .page-btn:hover:not(:disabled) { background: #eff6ff; border-color: #1a56db; }
     .page-btn.active { background: #1a56db; color: white; border-color: #1a56db; }
     .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* View tabs */
+    .view-tabs {
+      display: flex; gap: 8px;
+      margin: 16px 0 20px;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    .view-tab {
+      padding: 10px 18px; border: none; background: none; cursor: pointer;
+      font-size: 14px; font-weight: 600; color: #64748b;
+      border-bottom: 3px solid transparent; margin-bottom: -2px;
+    }
+    .view-tab.active { color: #1a56db; border-bottom-color: #1a56db; }
+    .view-tab:hover:not(.active) { color: #1e293b; }
+
+    /* Comments view — grouped by faculty → subject */
+    .faculty-group { margin-bottom: 28px; }
+    .faculty-group > h3 {
+      font-size: 16px; color: #1e293b; margin: 0 0 6px;
+      padding: 10px 14px; background: #f1f5f9;
+      border-left: 4px solid #1a56db; border-radius: 4px;
+    }
+    .subject-group { margin: 14px 0 14px 8px; }
+    .subject-group > h4 {
+      font-size: 13px; color: #475569; margin: 0 0 8px;
+      padding-bottom: 4px; border-bottom: 1px solid #e2e8f0;
+    }
+    .comment-card {
+      background: white; border: 1px solid #e2e8f0; border-radius: 8px;
+      padding: 12px 14px; margin-bottom: 10px;
+      display: flex; justify-content: space-between; gap: 14px; align-items: flex-start;
+    }
+    .comment-card .c-body { flex: 1; }
+    .comment-card .c-id { font-size: 12px; font-weight: bold; color: #1a56db; margin-bottom: 4px; }
+    .comment-card .c-text { font-size: 13px; color: #334155; line-height: 1.5; }
+    .comment-card .c-actions { flex: none; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+    .vstatus { font-size: 11px; padding: 3px 8px; border-radius: 10px; white-space: nowrap; }
+    .vstatus.valid   { background: #dcfce7; color: #166534; }
+    .vstatus.invalid { background: #fee2e2; color: #991b1b; }
+    .vstatus.pending { background: #f1f5f9; color: #64748b; }
   </style>
 </head>
 <body>
@@ -113,7 +161,16 @@
       Submission Monitoring
       <button id="refresh-btn" style="font-size:13px; padding:6px 12px;">🔄 Refresh</button>
     </h2>
-    <p>Track who has submitted evaluations, who hasn't, login activity, and verify comments.</p>
+    <p>Track who has submitted evaluations, who hasn't, and login activity. Student comments are in the 💬 Student Comments tab.</p>
+
+    <!-- View tabs -->
+    <div class="view-tabs">
+      <button class="view-tab active" id="tab-monitoring">📋 Submission Status</button>
+      <button class="view-tab" id="tab-comments">💬 Student Comments</button>
+    </div>
+
+    <!-- ============ MONITORING VIEW ============ -->
+    <div id="view-monitoring">
 
     <!-- Summary cards -->
     <div class="monitor-cards">
@@ -138,21 +195,28 @@
 
     <!-- Toolbar -->
     <div class="section">
-      <div class="toolbar">
+      <!-- Search on its own line -->
+      <div class="toolbar search-row">
         <input type="text" id="search-input" placeholder="🔍 Search Student ID..." />
+      </div>
+      <!-- Filters on their own line (wrap if narrow) -->
+      <div class="toolbar">
         <select id="filter-status">
           <option value="">All Statuses</option>
           <option value="submitted">Submitted</option>
           <option value="not-submitted">Not Yet Submitted</option>
           <option value="never-login">Never Logged In</option>
         </select>
+        <input list="faculty-datalist" id="filter-faculty" placeholder="All Faculty" autocomplete="off" />
+        <datalist id="faculty-datalist"></datalist>
         <select id="filter-section">
           <option value="">All Sections</option>
         </select>
         <select id="filter-subject">
           <option value="">All Subjects</option>
         </select>
-        <span style="margin-left:auto; font-size:12px; color:#666;" id="row-count"></span>
+        <button id="reset-filters" class="btn-secondary" style="flex:none; padding:6px 12px; white-space:nowrap;">↺ Reset</button>
+        <span style="font-size:12px; color:#666;" id="row-count"></span>
       </div>
 
       <table>
@@ -164,18 +228,40 @@
             <th>Last Login</th>
             <th>Status</th>
             <th>Submitted At</th>
-            <th>Comment</th>
-            <th>Verify</th>
           </tr>
         </thead>
         <tbody id="monitor-tbody">
-          <tr><td colspan="8">Loading...</td></tr>
+          <tr><td colspan="6">Loading...</td></tr>
         </tbody>
       </table>
       <!-- Pagination -->
       <div style="display:flex; align-items:center; justify-content:space-between; margin-top:12px; flex-wrap:wrap; gap:8px;">
         <span id="monitor-page-info" style="font-size:12px; color:#64748b;"></span>
         <div id="monitor-page-buttons" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
+      </div>
+    </div>
+    </div><!-- /view-monitoring -->
+
+    <!-- ============ STUDENT COMMENTS VIEW ============ -->
+    <div id="view-comments" style="display:none;">
+      <div class="section">
+        <!-- Search on its own line -->
+        <div class="toolbar search-row">
+          <input type="text" id="comments-search" placeholder="🔍 Search faculty or subject..." />
+        </div>
+        <!-- Filters on their own line -->
+        <div class="toolbar">
+          <input list="comments-faculty-datalist" id="comments-faculty" placeholder="All Faculty" autocomplete="off" />
+          <datalist id="comments-faculty-datalist"></datalist>
+          <select id="comments-subject">
+            <option value="">All Subjects</option>
+          </select>
+          <button id="comments-reset" class="btn-secondary" style="flex:none; padding:6px 12px; white-space:nowrap;">↺ Reset</button>
+          <span style="font-size:12px; color:#666;" id="comments-count"></span>
+        </div>
+        <div id="comments-container">
+          <p style="color:#94a3b8; padding:20px 0;">Loading...</p>
+        </div>
       </div>
     </div>
   </div>

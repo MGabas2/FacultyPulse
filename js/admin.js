@@ -5,39 +5,6 @@
 
 import { supabase } from "./supabase.js";
 
-// ══════════════════════════════════════════════════════════════
-//  AUDIT-TRAIL HASHING (faculty copy only)
-//
-//  When QA generates a report, each commenter's student ID is hashed
-//  with a RANDOM per-report salt that is immediately discarded. This
-//  produces an anonymous label (e.g. "a3f8c9d2") that proves the
-//  identity was processed/protected, while being impossible to
-//  reverse — even by QA — because the salt is never stored.
-//
-//  IMPORTANT: This does NOT modify the tracking table. QA keeps the
-//  raw student_id forever. Hashing happens only while building the
-//  faculty-facing report HTML.
-// ══════════════════════════════════════════════════════════════
-
-// Random salt generated fresh for each report, then thrown away.
-let REPORT_SALT = null;
-
-function newReportSalt() {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function hashRespondent(studentId) {
-  if (!REPORT_SALT) REPORT_SALT = newReportSalt();
-  const encoder    = new TextEncoder();
-  const data       = encoder.encode(studentId + REPORT_SALT);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hex        = Array.from(new Uint8Array(hashBuffer))
-    .map(b => b.toString(16).padStart(2, "0")).join("");
-  return hex.substring(0, 8); // short anonymous label
-}
-
-
 // ── Guard ──
 if (!sessionStorage.getItem("role") || sessionStorage.getItem("role") !== "admin") {
   window.location.href = "../index.html";
@@ -88,7 +55,6 @@ async function computeWeightedSET(teacherId, semesterId) {
   // Category accumulators
   const catTotals = { A: 0, B: 0, C: 0 };
   const catCounts = { A: 0, B: 0, C: 0 };
-  const allComments = [];
 
   for (const subject of subjects) {
     const { data: evals } = await supabase
@@ -131,26 +97,6 @@ async function computeWeightedSET(teacherId, semesterId) {
       catCounts.B++;
       catCounts.C++;
     });
-
-    // ── Fetch VERIFIED comments separately from tracking table ──
-    // Comments live with identity in tracking; admin/QA sees them.
-    // Only comments NOT marked invalid (is_verified != false) are included.
-    // We pull student_id ONLY to generate an anonymous hashed label for
-    // the faculty copy — the raw ID is never written into the report.
-    const { data: comments } = await supabase
-      .from("evaluation_tracking")
-      .select("student_id, comment, is_verified")
-      .eq("subject_id", subject.id)
-      .eq("semester_id", semesterId)
-      .not("comment", "is", null);
-
-    if (comments) {
-      comments.forEach(c => {
-        if (c.comment && c.is_verified !== false) {
-          allComments.push({ studentId: c.student_id, comment: c.comment });
-        }
-      });
-    }
 
     const respondents   = evals.length;
     const avgSETRating  = parseFloat((sumRatings / respondents).toFixed(2));
@@ -200,7 +146,6 @@ async function computeWeightedSET(teacherId, semesterId) {
     totalWeighted,
     totalRespondents,
     avgA, avgB, avgC,
-    allComments,
     subjects,
   };
 }
@@ -513,29 +458,17 @@ async function viewReport(teacherId, teacherName) {
   }
 
   const { overallSET, classData, totalEnrolled, totalWeighted,
-          avgA, avgB, avgC, allComments } = result;
+          avgA, avgB, avgC } = result;
 
   // Get SEF rating if available (from evaluation_scores with supervisor hash)
   // For now shows "—" until SEF module is implemented
   const sefRating = "—";
 
-  // ── Comments: show RAW IDs in QA preview, HASHED once released ──
-  let hashedComments = [];
-  if (window._reportReleased) {
-    // Released → hash for the faculty-facing audit trail
-    REPORT_SALT = newReportSalt();
-    for (const c of allComments) {
-      const label = c.studentId ? await hashRespondent(c.studentId) : "anonymous";
-      hashedComments.push({ label, comment: c.comment });
-    }
-    REPORT_SALT = null; // discard salt — irreversible
-  } else {
-    // Preview (QA only) → show raw student IDs so QA can verify
-    hashedComments = allComments.map(c => ({
-      label:   c.studentId || "—",
-      comment: c.comment,
-    }));
-  }
+  // NOTE: Student comments are intentionally left blank in the report.
+  // They are filled by hand during the supervisor–faculty meeting (CMO §10.2).
+  // Planned (post-defense, with backend): unlink commenter identity using a
+  // server-side keyed hash (HMAC) to satisfy CMO §6.10. A client-side hash
+  // would be reversible, so it is deferred until a server holds the secret.
 
   // ── Build IFER HTML — Annex C Format ──
   const dateGenerated = new Date().toLocaleDateString("en-PH", {
@@ -700,56 +633,106 @@ async function viewReport(teacherId, teacherName) {
         </tbody>
       </table>
 
-      <!-- D. Summary of Qualitative Comments -->
+      <!-- D. Summary of Qualitative Comments — Students (blank for meeting) -->
       <p style="font-weight:bold; font-size:13px; margin-bottom:8px;">
         D. Summary of Qualitative Comments and Suggestions
       </p>
-      <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:8px;">
+
+      <p style="font-size:12px; font-weight:bold; color:#475569; margin-bottom:6px;">
+        Comments and Suggestions from the Students
+      </p>
+      <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:6px;">
         <thead>
           <tr>
             <th style="background:#334155; color:#ffffff; padding:7px 10px; border:1px solid #1e293b; text-align:center; width:50px;">Seq</th>
-            <th style="background:#334155; color:#ffffff; padding:7px 10px; border:1px solid #1e293b; text-align:center; width:130px;">${window._reportReleased ? "Respondent (Hashed)" : "Student ID (QA only)"}</th>
             <th style="background:#334155; color:#ffffff; padding:7px 10px; border:1px solid #1e293b; text-align:left;">Comments and Suggestions from the Students</th>
           </tr>
         </thead>
-        <tbody>
-          ${hashedComments.length > 0
-            ? hashedComments.map((c, i) => `
-                <tr style="background:${i % 2 === 0 ? '#fff' : '#f8fafc'}">
-                  <td style="padding:7px 10px; border:1px solid #e2e8f0; text-align:center;">${i + 1}</td>
-                  <td style="padding:7px 10px; border:1px solid #e2e8f0; text-align:center; font-family:monospace; color:#64748b;">${c.label}</td>
-                  <td style="padding:7px 10px; border:1px solid #e2e8f0;">${c.comment}</td>
-                </tr>
-              `).join("")
-            : `<tr><td style="padding:10px; border:1px solid #e2e8f0; text-align:center; color:#94a3b8;"
-                colspan="3">No comments submitted.</td></tr>`
-          }
+        <tbody id="student-comments-tbody">
+          ${[1,2,3,4,5].map(n => `
+            <tr>
+              <td style="padding:16px 10px; border:1px solid #e2e8f0; text-align:center;">${n}</td>
+              <td style="padding:16px 10px; border:1px solid #e2e8f0;">&nbsp;</td>
+            </tr>
+          `).join("")}
         </tbody>
       </table>
-      <p style="font-size:10px; color:#64748b; margin-bottom:16px; font-style:italic;">
-        ${window._reportReleased
-          ? `🔒 Student identities have been protected using SHA-256 cryptographic hashing with a
-             single-use random salt. The respondent labels above are anonymous and cannot be reversed
-             to identify any student. Original identities are retained only by the Quality Assurance
-             Office for verification purposes and are never disclosed to faculty.`
-          : `⚠️ This is a QA preview showing raw student IDs. Upon release, these IDs will be replaced
-             with irreversible SHA-256 hashes before faculty can view the report.`
-        }
-      </p>
+      <div class="no-print" style="display:flex; gap:8px; margin-bottom:16px;">
+        <button onclick="addCommentRow('student-comments-tbody')"
+          style="font-size:12px; padding:5px 12px; background:white; color:#1a56db; border:1px solid #1a56db; border-radius:5px; cursor:pointer;">
+          + Add Row
+        </button>
+        <button onclick="removeCommentRow('student-comments-tbody')"
+          style="font-size:12px; padding:5px 12px; background:white; color:#dc2626; border:1px solid #dc2626; border-radius:5px; cursor:pointer;">
+          − Remove Row
+        </button>
+      </div>
 
-      <!-- Prepared by / Reviewed by -->
-      <div style="display:flex; gap:40px; margin-top:24px; font-size:12px;">
-        <div style="flex:1;">
-          <p style="margin-bottom:24px;"><b>Prepared by:</b></p>
-          <p style="border-top:1px solid #333; padding-top:4px;">Signature of Staff</p>
-          <p style="margin-top:12px; border-top:1px solid #333; padding-top:4px;">Name of Staff</p>
-          <p style="margin-top:12px; border-top:1px solid #333; padding-top:4px;">Date</p>
+      <!-- Comments and Suggestions from the Supervisor (SEF) -->
+      <p style="font-size:12px; font-weight:bold; color:#475569; margin-bottom:6px;">
+        Comments and Suggestions from the Supervisor
+      </p>
+      <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:6px;">
+        <thead>
+          <tr>
+            <th style="background:#334155; color:#ffffff; padding:7px 10px; border:1px solid #1e293b; text-align:center; width:50px;">Seq</th>
+            <th style="background:#334155; color:#ffffff; padding:7px 10px; border:1px solid #1e293b; text-align:left;">Comments and Suggestions from the Supervisor</th>
+          </tr>
+        </thead>
+        <tbody id="supervisor-comments-tbody">
+          ${[1,2,3,4,5].map(n => `
+            <tr>
+              <td style="padding:16px 10px; border:1px solid #e2e8f0; text-align:center;">${n}</td>
+              <td style="padding:16px 10px; border:1px solid #e2e8f0;">&nbsp;</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+      <div class="no-print" style="display:flex; gap:8px; margin-bottom:16px;">
+        <button onclick="addCommentRow('supervisor-comments-tbody')"
+          style="font-size:12px; padding:5px 12px; background:white; color:#1a56db; border:1px solid #1a56db; border-radius:5px; cursor:pointer;">
+          + Add Row
+        </button>
+        <button onclick="removeCommentRow('supervisor-comments-tbody')"
+          style="font-size:12px; padding:5px 12px; background:white; color:#dc2626; border:1px solid #dc2626; border-radius:5px; cursor:pointer;">
+          − Remove Row
+        </button>
+      </div>
+
+      <!-- Prepared by / Reviewed by (Annex C horizontal format) -->
+      <div style="margin-top:28px; font-size:12px; max-width:480px;">
+        <p style="margin-bottom:14px;"><b>Prepared by:</b></p>
+        <div style="display:flex; align-items:flex-end; margin-bottom:14px;">
+          <span style="width:230px; flex:none;">Signature of Staff</span>
+          <span style="margin:0 6px;">:</span>
+          <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
         </div>
-        <div style="flex:1;">
-          <p style="margin-bottom:24px;"><b>Reviewed by:</b></p>
-          <p style="border-top:1px solid #333; padding-top:4px;">Signature of Authorized Official</p>
-          <p style="margin-top:12px; border-top:1px solid #333; padding-top:4px;">Name of Authorized Official</p>
-          <p style="margin-top:12px; border-top:1px solid #333; padding-top:4px;">Date</p>
+        <div style="display:flex; align-items:flex-end; margin-bottom:14px;">
+          <span style="width:230px; flex:none;">Name of Staff</span>
+          <span style="margin:0 6px;">:</span>
+          <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
+        </div>
+        <div style="display:flex; align-items:flex-end; margin-bottom:22px;">
+          <span style="width:230px; flex:none;">Date</span>
+          <span style="margin:0 6px;">:</span>
+          <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
+        </div>
+
+        <p style="margin-bottom:14px;"><b>Reviewed by:</b></p>
+        <div style="display:flex; align-items:flex-end; margin-bottom:14px;">
+          <span style="width:230px; flex:none;">Signature of Authorized Official</span>
+          <span style="margin:0 6px;">:</span>
+          <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
+        </div>
+        <div style="display:flex; align-items:flex-end; margin-bottom:14px;">
+          <span style="width:230px; flex:none;">Name of Authorized Official</span>
+          <span style="margin:0 6px;">:</span>
+          <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <span style="width:230px; flex:none;">Date</span>
+          <span style="margin:0 6px;">:</span>
+          <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
         </div>
       </div>
 
@@ -915,6 +898,34 @@ function updateReleaseButton() {
 
 // ── Expose to HTML (rankings table uses onclick) ──
 window.viewReport = viewReport;
+
+// ── Add a blank row to a comment table (student or supervisor) ──
+function addCommentRow(tbodyId) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  const nextNum = tbody.querySelectorAll("tr").length + 1;
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td style="padding:16px 10px; border:1px solid #e2e8f0; text-align:center;">${nextNum}</td>
+    <td style="padding:16px 10px; border:1px solid #e2e8f0;">&nbsp;</td>
+  `;
+  tbody.appendChild(tr);
+}
+
+// ── Remove the last row from a comment table (keeps a minimum of 1) ──
+function removeCommentRow(tbodyId) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  const rows = tbody.querySelectorAll("tr");
+  if (rows.length <= 1) {
+    alert("At least one row must remain.");
+    return;
+  }
+  tbody.removeChild(rows[rows.length - 1]);
+}
+
+window.addCommentRow    = addCommentRow;
+window.removeCommentRow = removeCommentRow;
 
 // ── Attach events ──
 document.getElementById("logout-btn").addEventListener("click", (e) => {

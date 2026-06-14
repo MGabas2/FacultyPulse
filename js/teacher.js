@@ -43,52 +43,106 @@ function getRatingColor(score) {
   return "#ef4444";
 }
 
-// ── Load active semester ──
+// ── Load all semesters + build dropdown ──
 async function loadSemester() {
-  const { data: semester } = await supabase
+  const { data: semesters } = await supabase
     .from("semesters")
-    .select("id, label")
-    .eq("is_active", true)
-    .single();
+    .select("id, label, is_active")
+    .order("created_at", { ascending: false }); // newest first
 
-  if (!semester) {
-    document.getElementById("semester-label").textContent = "No active semester";
+  if (!semesters || semesters.length === 0) {
+    document.getElementById("semester-select").innerHTML =
+      `<option disabled>No semesters found</option>`;
+    showNotReleased();
     return;
   }
 
-  document.getElementById("semester-label").textContent = semester.label;
-  window._activeSemesterId = semester.id;
+  // Build dropdown — active semester at top, rest below
+  const activeSemester = semesters.find(s => s.is_active);
+  const select = document.getElementById("semester-select");
+
+  select.innerHTML = semesters.map(s =>
+    `<option value="${s.id}" ${s.is_active ? "selected" : ""}>
+      ${s.label}${s.is_active ? " (Current)" : ""}
+    </option>`
+  ).join("");
+
+  // Show/hide the CURRENT badge
+  const badge = document.getElementById("active-badge");
+  if (activeSemester) badge.style.display = "inline-block";
+
+  // Load data for the default selected semester
+  const defaultId = activeSemester?.id || semesters[0].id;
+  await loadForSemester(defaultId, !!activeSemester && semesters[0].id === defaultId);
+
+  // Switch semesters on dropdown change
+  select.addEventListener("change", async () => {
+    const selectedId       = select.value;
+    const selectedIsActive = semesters.find(s => s.id === selectedId)?.is_active || false;
+
+    // Update CURRENT badge visibility
+    badge.style.display = selectedIsActive ? "inline-block" : "none";
+
+    // Update subjects heading label
+    const selectedLabel = semesters.find(s => s.id === selectedId)?.label || "";
+    document.getElementById("subjects-semester-label").textContent = selectedLabel;
+
+    await loadForSemester(selectedId, selectedIsActive);
+  });
+}
+
+// ── Load scores + subjects for a given semester ──
+async function loadForSemester(semesterId, isActive) {
+  // Update subjects heading for initial load
+  const sel = document.getElementById("semester-select");
+  const selectedLabel = sel.options[sel.selectedIndex]?.text
+    .replace(" (Current)", "").trim() || "";
+  document.getElementById("subjects-semester-label").textContent = selectedLabel;
+
+  // Reset cards to loading state
+  document.getElementById("score-overall").textContent = "—";
+  document.getElementById("score-overall").style.color = "";
+  document.getElementById("score-label").textContent   = "";
+  document.getElementById("eval-count").textContent    = "—";
+  document.getElementById("score-catA").textContent    = "—";
+  document.getElementById("score-catB").textContent    = "—";
+  document.getElementById("score-catC").textContent    = "—";
 
   // ── GATE: faculty can only see results AFTER QA releases the report ──
   const { data: release } = await supabase
     .from("report_releases")
     .select("released_at")
     .eq("teacher_id", userId)
-    .eq("semester_id", semester.id)
+    .eq("semester_id", semesterId)
     .maybeSingle();
 
   if (!release) {
-    showNotReleased();
+    showNotReleased(isActive);
     return;
   }
 
-  await loadScores(semester.id);
-  await loadSubjects();
+  hideNotReleased();
+  await loadScores(semesterId);
+  await loadSubjects(semesterId);
 }
 
 // ── Show "results not yet available" gate ──
-function showNotReleased() {
+function showNotReleased(isCurrentSemester = true) {
   const container = document.querySelector(".container");
   if (!container) return;
 
-  // Hide the data sections, show a notice
   const sections = container.querySelectorAll(".cards-row, .charts-row, .section");
   sections.forEach(s => s.style.display = "none");
 
+  // Remove any existing notice first
+  const existing = document.getElementById("not-released-notice");
+  if (existing) existing.remove();
+
   const notice = document.createElement("div");
+  notice.id        = "not-released-notice";
   notice.className = "section";
   notice.style.cssText = "text-align:center; padding:48px 24px;";
-  notice.innerHTML = `
+  notice.innerHTML = isCurrentSemester ? `
     <div style="font-size:42px; margin-bottom:12px;">🕐</div>
     <h3 style="margin-bottom:8px; color:#1e293b;">Evaluation Results Not Yet Available</h3>
     <p style="color:#64748b; font-size:14px; max-width:440px; margin:0 auto; line-height:1.6;">
@@ -96,8 +150,26 @@ function showNotReleased() {
       Quality Assurance Office. You will be able to view your scores, charts, and
       feedback once the QA Office finalizes and releases your report.
     </p>
+  ` : `
+    <div style="font-size:42px; margin-bottom:12px;">📭</div>
+    <h3 style="margin-bottom:8px; color:#1e293b;">No Report for This Semester</h3>
+    <p style="color:#64748b; font-size:14px; max-width:440px; margin:0 auto; line-height:1.6;">
+      No evaluation report was released for this semester. This may mean evaluations
+      were not conducted, or the report has not been released by QA.
+    </p>
   `;
   container.appendChild(notice);
+}
+
+// ── Hide the not-released notice and show data sections ──
+function hideNotReleased() {
+  const existing = document.getElementById("not-released-notice");
+  if (existing) existing.remove();
+
+  const container = document.querySelector(".container");
+  if (!container) return;
+  const sections = container.querySelectorAll(".cards-row, .charts-row, .section");
+  sections.forEach(s => s.style.display = "");
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -111,7 +183,6 @@ function showNotReleased() {
 //  Overall SET = Total Weighted Score / Total Enrolled Students
 // ══════════════════════════════════════════════════════════════
 async function loadScores(semesterId) {
-  // Get all subjects taught by this teacher this semester
   const { data: subjects } = await supabase
     .from("subjects")
     .select("id, name, enrolled_count, sections(name)")
@@ -357,11 +428,12 @@ function renderCharts(avgA, avgB, avgC, overall) {
 }
 
 // ── Load subjects handled ──
-async function loadSubjects() {
+async function loadSubjects(semesterId) {
   const { data: subjects } = await supabase
     .from("subjects")
     .select("name, enrolled_count, sections(name)")
-    .eq("teacher_id", userId);
+    .eq("teacher_id", userId)
+    .eq("semester_id", semesterId);
 
   const tbody = document.getElementById("subjects-tbody");
   if (!subjects || subjects.length === 0) {
