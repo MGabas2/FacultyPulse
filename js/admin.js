@@ -480,12 +480,11 @@ async function viewReport(teacherId, teacherName) {
 
       ${window._reportReleased
         ? `<div class="no-print" style="background:#f0fdf4; border:1px solid #86efac; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#166534;">
-             ✅ <b>RELEASED TO FACULTY</b> — This report has been finalized. Student identities are
-             hashed and the faculty can now view their results.
+             ✅ <b>RELEASED TO FACULTY</b> — This report has been finalized.
+             The faculty can now view their results.
            </div>`
         : `<div class="no-print" style="background:#fef3c7; border:1px solid #fcd34d; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#92400e;">
-             📝 <b>PREVIEW (QA ONLY)</b> — Not yet released. Comments below show raw student IDs for
-             your verification. Faculty cannot see this report until you click "Release to Faculty".
+             📝 <b>PREVIEW (QA ONLY)</b> — Not yet released. Faculty cannot see this report until you click "Release to Faculty".
            </div>`
       }
 
@@ -842,7 +841,7 @@ function closeReportModal() {
 // ══════════════════════════════════════════════════════════════
 //  RELEASE REPORT TO FACULTY
 //  Marks the report as released so faculty can view it, then
-//  re-renders the report in hashed (released) mode.
+//  re-renders the report in released mode.
 // ══════════════════════════════════════════════════════════════
 async function releaseReport() {
   const teacherId   = window._reportTeacherId;
@@ -853,7 +852,6 @@ async function releaseReport() {
 
   const confirmed = confirm(
     `Release this report to ${teacherName}?\n\n` +
-    `• Student IDs will be hashed (irreversible) on the faculty copy\n` +
     `• ${teacherName} will be able to view their scores and comments\n` +
     `• You (QA) keep full access to identities for monitoring\n\n` +
     `Proceed?`
