@@ -6,9 +6,88 @@
 
 import { supabase } from "./supabase.js";
 
+// ── PASSWORD RECOVERY — onAuthStateChange (works with PKCE + implicit flow) ──
+// Supabase new projects use PKCE by default — the access_token is NO LONGER
+// in the URL hash. onAuthStateChange fires PASSWORD_RECOVERY automatically
+// when the user lands after clicking the reset email link.
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event !== "PASSWORD_RECOVERY") return;
+
+  // Show full-screen reset overlay, hide everything behind it
+  const overlay = document.getElementById("reset-overlay");
+  if (overlay) {
+    overlay.style.display        = "flex";
+    document.body.style.overflow = "hidden";
+  }
+
+  history.replaceState(null, "", window.location.pathname);
+
+  const saveBtn   = document.getElementById("reset-save-btn");
+  const errEl     = document.getElementById("reset-error");
+  const successEl = document.getElementById("reset-success");
+
+  if (!saveBtn) return;
+
+  saveBtn.addEventListener("click", async () => {
+    const newPw  = document.getElementById("reset-new-pw").value;
+    const confPw = document.getElementById("reset-confirm-pw").value;
+
+    errEl.style.display = "none";
+    errEl.textContent   = "";
+
+    if (!newPw || newPw.length < 8) {
+      errEl.textContent   = "Password must be at least 8 characters.";
+      errEl.style.display = "block";
+      return;
+    }
+    if (newPw !== confPw) {
+      errEl.textContent   = "Passwords do not match.";
+      errEl.style.display = "block";
+      return;
+    }
+
+    saveBtn.textContent = "Updating...";
+    saveBtn.disabled    = true;
+
+    const { error } = await supabase.auth.updateUser({ password: newPw });
+
+    saveBtn.textContent = "Update Password";
+    saveBtn.disabled    = false;
+
+    if (error) {
+      errEl.textContent   = "Failed: " + error.message;
+      errEl.style.display = "block";
+      return;
+    }
+
+    // Show success — hide form fields, show success card
+    document.getElementById("reset-form-fields").style.display = "none";
+    successEl.style.display = "block";
+
+    await supabase.auth.signOut();
+  });
+});
+
+// ── Legacy hash error handler (otp_expired etc. from old implicit flow) ──
+(function handleHashErrors() {
+  const hash = window.location.hash.substring(1);
+  if (!hash) return;
+  const params = Object.fromEntries(new URLSearchParams(hash));
+  if (!params.error) return;
+  const banner = document.getElementById("hash-error-banner");
+  if (!banner) return;
+  const messages = {
+    otp_expired:   "This password reset link has expired or was already used. Please request a new one.",
+    access_denied: "This link is no longer valid. Please request a new password reset.",
+  };
+  banner.textContent = messages[params.error_code]
+    || decodeURIComponent(params.error_description || "An error occurred. Please request a new reset link.");
+  banner.style.display = "block";
+  history.replaceState(null, "", window.location.pathname);
+})();
+
 const STUDENT_ID_FORMAT = /^\d{4}-\d{4}-[A-Z]{2}$/;
 
-// ── Elements ──
 const tabs          = document.querySelectorAll(".role-tab");
 const usernameInput = document.getElementById("username");
 const usernameLabel = document.getElementById("username-label");
@@ -51,10 +130,27 @@ tabs.forEach(tab => {
       idHint.classList.add("hidden");
     }
 
+    // Show "Forgot password?" only for staff roles
+    const forgotWrap = document.getElementById("forgot-wrap");
+    if (forgotWrap) {
+      forgotWrap.style.display = activeRole === "student" ? "none" : "block";
+    }
+    document.getElementById("forgot-success")?.style && (document.getElementById("forgot-success").style.display = "none");
+
     // Focus username after switching
     usernameInput.focus();
   });
 });
+
+// ── Restore tab from ?tab= query param — MUST run after listener setup ──
+const urlTab = new URLSearchParams(window.location.search).get("tab");
+if (urlTab && ["teacher","admin","supervisor"].includes(urlTab)) {
+  const tabBtn = document.querySelector(`.role-tab[data-role="${urlTab}"]`);
+  if (tabBtn) {
+    tabBtn.click();
+    history.replaceState(null, "", window.location.pathname);
+  }
+}
 
 // ── Auto-uppercase + live format check for students ──
 usernameInput.addEventListener("input", () => {
@@ -112,7 +208,7 @@ async function login() {
       // Step 1 — Check student ID exists
       const { data: userRow, error: lookupError } = await supabase
         .from("users")
-        .select("id, student_id, role, section_id")
+        .select("id, student_id, role, section_id, name")
         .eq("student_id", username)
         .eq("role", "student")
         .single();
@@ -140,7 +236,7 @@ async function login() {
       sessionStorage.setItem("studentId", username);
       sessionStorage.setItem("userId",    userRow.id);
       sessionStorage.setItem("sectionId", userRow.section_id);
-      sessionStorage.setItem("name",      username);
+      sessionStorage.setItem("name",      userRow.name || username); // real name if available
 
       window.location.href = "pages/student.html";
 
@@ -192,6 +288,33 @@ async function login() {
     loginBtn.textContent = "Login";
     loginBtn.disabled    = false;
   }
+}
+
+// ── Forgot password ──
+const forgotLink    = document.getElementById("forgot-link");
+const forgotSuccess = document.getElementById("forgot-success");
+const forgotWrap    = document.getElementById("forgot-wrap");
+
+if (forgotLink) {
+  forgotLink.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const email = usernameInput.value.trim();
+    if (!email) {
+      errorMsg.textContent = "Enter your email address first, then click Forgot password.";
+      return;
+    }
+    forgotLink.textContent = "Sending...";
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/index.html?tab=${activeRole}`,
+    });
+    forgotLink.textContent = "Forgot password?";
+    if (error) {
+      errorMsg.textContent = "Reset failed: " + error.message;
+    } else {
+      errorMsg.textContent  = "";
+      forgotSuccess.style.display = "block";
+    }
+  });
 }
 
 // ── Events ──

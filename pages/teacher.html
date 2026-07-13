@@ -3,190 +3,1024 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>FacultyPulse – Teacher Dashboard</title>
+  <title>FacultyPulse – Faculty Dashboard</title>
   <link rel="stylesheet" href="../css/style.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <style>
-    .charts-row {
+    /* ══════════════════════════════════════════════
+       LAYOUT
+    ══════════════════════════════════════════════ */
+    .dash-wrap {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px 32px 48px;
+    }
+
+    .dash-header {
       display: flex;
-      gap: 20px;
+      align-items: baseline;
+      gap: 12px;
       flex-wrap: wrap;
-      margin-bottom: 20px;
+      margin-bottom: 24px;
     }
-    .chart-card {
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: 20px;
-      flex: 1;
-      min-width: 280px;
+
+    .dash-header h2 { margin: 0; font-size: 26px; }
+    .dash-header .sem-label { font-size: 14px; color: #64748b; }
+
+    /* Hero + table = full width. Below that: 2-col (charts+sidebar) */
+    .dash-grid {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 22px;
+      align-items: start;
     }
-    .chart-card h3 { margin-bottom: 14px; font-size: 15px; }
-    .chart-wrapper { position: relative; height: 240px; }
+
+    /* ── LEFT COLUMN ── */
+    .left-col { display: flex; flex-direction: column; gap: 18px; }
+
+    /* Score hero */
+    .score-hero {
+      background: linear-gradient(135deg, #1e3a8a 0%, #1a56db 60%, #3b82f6 100%);
+      border-radius: 14px;
+      padding: 28px 36px;
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      flex-wrap: wrap;
+      color: white;
+    }
+
+    .score-circle {
+      width: 130px;
+      height: 130px;
+      border-radius: 50%;
+      border: 5px solid rgba(255,255,255,0.3);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.1);
+    }
+
+    .score-circle .big-num {
+      font-size: 36px;
+      font-weight: 800;
+      line-height: 1;
+      color: white;
+    }
+
+    .score-circle .denom {
+      font-size: 13px;
+      color: rgba(255,255,255,0.7);
+      margin-top: 3px;
+    }
+
+    .score-hero-info { flex: 1; min-width: 180px; }
+    .score-hero-info .rating-badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.4);
+      border-radius: 20px;
+      padding: 4px 16px;
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+    .score-hero-info h3 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: white;
+    }
+    .score-hero-info p {
+      font-size: 13px;
+      color: rgba(255,255,255,0.75);
+      margin: 0;
+    }
+
+    .score-hero-stats {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .hero-stat {
+      background: rgba(255,255,255,0.12);
+      border-radius: 10px;
+      padding: 10px 20px;
+      text-align: center;
+      min-width: 110px;
+    }
+
+    .hero-stat .val {
+      font-size: 22px;
+      font-weight: 700;
+      color: white;
+      line-height: 1;
+    }
+
+    .hero-stat .lbl {
+      font-size: 11px;
+      color: rgba(255,255,255,0.7);
+      margin-top: 3px;
+    }
 
     /* Weighted table */
+    .table-card {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 18px 20px;
+      overflow-x: auto;
+    }
+
+    .table-card h4 {
+      font-size: 14px;
+      color: #475569;
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+
+    .table-card .sub-label {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-bottom: 14px;
+    }
+
     .weighted-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 12px;
+      font-size: 13px;
+      min-width: 460px;
     }
+
     .weighted-table th {
       background: #1a56db;
       color: white;
-      padding: 8px 10px;
+      padding: 10px 12px;
       text-align: center;
       border: 1px solid #1447b8;
-      font-size: 11px;
-    }
-    .weighted-table th:first-child { text-align: left; }
-    .weighted-table td {
-      padding: 8px 10px;
-      border: 1px solid #e2e8f0;
       font-size: 12px;
+      white-space: nowrap;
     }
+
+    .weighted-table th:nth-child(2) { text-align: left; }
+    .weighted-table td { padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px; }
+    .weighted-table td:not(:nth-child(2)) { text-align: center; }
     .weighted-table tbody tr:nth-child(even) { background: #f8fafc; }
 
-    /* Overall score big display */
-    .overall-display {
-      text-align: center;
-      padding: 6px;
+    /* ── RIGHT COLUMN ── */
+    .right-col { display: flex; flex-direction: column; gap: 16px; }
+
+    .side-card {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 18px 20px;
     }
-    .overall-score-big {
-      font-size: 36px;
-      font-weight: bold;
-      color: #1a56db;
+
+    .side-card h4 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1e293b;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    /* Category breakdown */
+    .cat-item {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 14px;
+    }
+
+    .cat-item:last-child { margin-bottom: 0; }
+
+    .cat-item-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    .cat-item-top .cat-name {
+      color: #475569;
+      font-weight: 500;
+      min-width: 0;          /* allows truncation */
+    }
+    .cat-item-top .cat-val  {
+      font-weight: 700;
+      color: #1e293b;
+      font-size: 14px;
+      flex-shrink: 0;        /* score never wraps */
+      white-space: nowrap;
+    }
+
+    .cat-bar-bg {
+      height: 8px;
+      background: #f1f5f9;
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .cat-bar-fill {
+      height: 100%;
+      border-radius: 99px;
+      transition: width 0.6s ease;
+    }
+
+    /* SEF card */
+    .sef-card {
+      background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+      border: 1px solid #86efac;
+      border-radius: 12px;
+      padding: 18px 20px;
+    }
+
+    .sef-card h4 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #166534;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #bbf7d0;
+    }
+
+    .sef-score-display {
+      text-align: center;
+      padding: 10px 0 14px;
+    }
+
+    .sef-score-display .num {
+      font-size: 40px;
+      font-weight: 800;
+      color: #16a34a;
       line-height: 1;
     }
-    .overall-label-text {
-      font-size: 13px;
-      color: #64748b;
-      margin-top: 4px;
+
+    .sef-score-display .denom {
+      font-size: 15px;
+      color: #4ade80;
     }
+
+    .sef-score-display .label {
+      font-size: 13px;
+      color: #166534;
+      margin-top: 6px;
+      font-weight: 600;
+    }
+
+    .sef-info {
+      font-size: 12px;
+      color: #15803d;
+      line-height: 1.5;
+      text-align: center;
+      padding-top: 10px;
+      border-top: 1px solid #bbf7d0;
+    }
+
+    /* Remarks card */
+    .remarks-card {
+      background: #fefce8;
+      border: 1px solid #fde68a;
+      border-radius: 12px;
+      padding: 18px 20px;
+    }
+
+    .remarks-card h4 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #713f12;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #fde68a;
+    }
+
+    .remarks-text {
+      font-size: 14px;
+      color: #1e293b;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+
+    .remarks-hint {
+      font-size: 11px;
+      color: #a16207;
+      margin-top: 10px;
+    }
+
+    /* Subjects list */
+    .subject-list { display: flex; flex-direction: column; gap: 10px; }
+
+    .subject-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      background: #f8fafc;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+
+    .subject-item .subj-name { font-weight: 600; color: #1e293b; }
+    .subject-item .subj-sec  { color: #64748b; font-size: 12px; margin-top: 2px; }
+    .subject-item .subj-count {
+      background: #dbeafe;
+      color: #1e40af;
+      padding: 3px 10px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    /* ── NOT RELEASED STATE ── */
+    .not-released {
+      text-align: center;
+      padding: 100px 24px;
+      max-width: 520px;
+      margin: 0 auto;
+    }
+
+    .not-released .icon { font-size: 64px; margin-bottom: 20px; }
+    .not-released h3 { color: #1e293b; font-size: 22px; margin-bottom: 12px; }
+    .not-released p  { color: #64748b; font-size: 15px; line-height: 1.7; }
+
+    /* ======================================================
+   RESPONSIVE DESIGN
+====================================================== */
+
+/* Tablets */
+@media (max-width: 1024px){
+
+.dash-wrap{
+    padding:20px;
+}
+
+.dash-grid{
+    grid-template-columns:1fr;
+    gap:20px;
+}
+
+.left-col,
+.right-col{
+    width:100%;
+}
+
+.score-hero{
+    justify-content:center;
+}
+
+.score-hero-stats{
+    flex-direction:row;
+    justify-content:center;
+}
+
+.hero-stat{
+    min-width:120px;
+}
+
+}
+
+
+/* ======================================================
+   MOBILE
+====================================================== */
+
+@media (max-width:768px){
+
+*{
+    box-sizing:border-box;
+}
+
+html,
+body{
+    width:100%;
+    overflow-x:hidden;
+}
+
+/* Main */
+
+.dash-wrap{
+    padding:12px;
+}
+
+/* Header */
+
+.dash-header{
+    flex-direction:column;
+    align-items:flex-start;
+    gap:6px;
+}
+
+.dash-header h2{
+    font-size:24px;
+}
+
+.sem-label{
+    font-size:13px;
+}
+
+/* Grid */
+
+.dash-grid{
+    display:flex;
+    flex-direction:column;
+    gap:18px;
+}
+
+/* Hero */
+
+.score-hero{
+
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+
+    padding:18px;
+    gap:16px;
+}
+
+.score-circle{
+
+    width:100px;
+    height:100px;
+}
+
+.score-circle .big-num{
+    font-size:30px;
+}
+
+.score-hero-info{
+
+    width:100%;
+    text-align:center;
+}
+
+.score-hero-info h3{
+    font-size:20px;
+}
+
+.score-hero-info p{
+    font-size:12px;
+}
+
+.score-hero-stats{
+
+    width:100%;
+    flex-direction:row;
+    justify-content:center;
+}
+
+.hero-stat{
+
+    width:120px;
+}
+
+/* Cards */
+
+.table-card,
+.side-card,
+.sef-card,
+.remarks-card{
+
+    width:100%;
+    padding:16px;
+    overflow:hidden;
+}
+
+/* Table */
+
+.table-card{
+
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+}
+
+.weighted-table{
+
+    min-width:650px;
+}
+
+.weighted-table th,
+.weighted-table td{
+
+    padding:8px;
+    font-size:12px;
+}
+
+/* Charts */
+
+canvas{
+
+    max-width:100%;
+}
+
+.cat-item-top{
+
+    font-size:12px;
+}
+
+.cat-bar-bg{
+
+    height:7px;
+}
+
+.sef-score-display .num{
+
+    font-size:34px;
+}
+
+.remarks-text{
+
+    max-height:160px;
+}
+
+/* Subjects */
+
+.subject-item{
+
+    flex-direction:column;
+    align-items:flex-start;
+    gap:8px;
+}
+
+.subject-item .subj-count{
+
+    align-self:flex-end;
+}
+
+/* Navbar */
+
+nav{
+
+background:#2956d4;
+color:#fff;
+
+display:flex;
+justify-content:space-between;
+align-items:center;
+
+padding:12px 18px;
+gap:16px;
+
+box-shadow:0 3px 10px rgba(0,0,0,.15);
+}
+
+.nav-brand{
+
+display:flex;
+flex-direction:column;
+min-width:0;
+}
+
+.nav-brand strong{
+
+font-size:18px;
+}
+
+.nav-brand span{
+
+font-size:12px;
+opacity:.8;
+}
+
+.nav-actions{
+
+display:flex;
+align-items:center;
+gap:10px;
+}
+
+#change-password-btn,
+#logout-btn{
+
+height:40px;
+
+padding:0 14px;
+
+border-radius:10px;
+
+display:flex;
+align-items:center;
+justify-content:center;
+
+font-size:13px;
+
+white-space:nowrap;
+}
+
+}
+
+
+/* ======================================================
+   SMALL PHONES
+====================================================== */
+
+@media (max-width:480px){
+
+.dash-wrap{
+
+    padding:10px;
+}
+
+.dash-header h2{
+
+    font-size:21px;
+}
+
+/* Hero */
+
+.score-hero{
+
+    padding:15px;
+}
+
+.score-circle{
+
+    width:85px;
+    height:85px;
+}
+
+.score-circle .big-num{
+
+    font-size:24px;
+}
+
+.score-circle .denom{
+
+    font-size:11px;
+}
+
+.score-hero-info h3{
+
+    font-size:18px;
+}
+
+.rating-badge{
+
+    font-size:11px;
+}
+
+.score-hero-info p{
+
+    font-size:11px;
+}
+
+.hero-stat{
+
+    width:100%;
+}
+
+/* Cards */
+
+.table-card,
+.side-card,
+.sef-card,
+.remarks-card{
+
+    border-radius:10px;
+    padding:14px;
+}
+
+/* Donut */
+
+canvas{
+
+    max-height:180px;
+}
+
+/* SEF */
+
+.sef-score-display .num{
+
+    font-size:30px;
+}
+
+/* Recommendations */
+
+.cat-item-top{
+
+    flex-direction:column;
+    align-items:flex-start;
+}
+
+.cat-val{
+
+    align-self:flex-end;
+}
+
+/* Subject */
+
+.subject-item{
+
+    padding:12px;
+}
+
+/* Buttons */
+
+button,
+a#logout-btn{
+
+    min-height:40px;
+}
+
+/* Tables */
+
+.table-card{
+
+    overflow-x:auto;
+}
+
+.weighted-table{
+    width:100%;
+    min-width:600px;
+}
+/* ==========================================
+   MOBILE CARD LAYOUT FOR SUMMARY TABLE
+========================================== */
+
+@media (max-width: 600px){
+
+.table-card{
+    overflow:visible;
+}
+
+.weighted-table{
+    min-width:100%;
+    border-collapse:separate;
+}
+
+.weighted-table thead{
+    display:none;
+}
+
+.weighted-table,
+.weighted-table tbody,
+.weighted-table tr,
+.weighted-table td{
+    display:block;
+    width:100%;
+}
+
+.weighted-table tr{
+    background:#fff;
+    border:1px solid #dbe3f0;
+    border-radius:12px;
+    margin-bottom:15px;
+    overflow:hidden;
+    box-shadow:0 2px 8px rgba(0,0,0,.05);
+}
+
+.weighted-table td{
+
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+
+    padding:12px 14px;
+    border:none;
+    border-bottom:1px solid #eef2f7;
+
+    font-size:13px;
+}
+
+.weighted-table td:last-child{
+    border-bottom:none;
+}
+
+.weighted-table td:nth-child(1)::before{
+    content:"Sequence";
+    font-weight:bold;
+    color:#64748b;
+}
+
+.weighted-table td:nth-child(2)::before{
+    content:"Course";
+    font-weight:bold;
+    color:#64748b;
+}
+
+.weighted-table td:nth-child(3)::before{
+    content:"Section";
+    font-weight:bold;
+    color:#64748b;
+}
+
+.weighted-table td:nth-child(4)::before{
+    content:"Students";
+    font-weight:bold;
+    color:#64748b;
+}
+
+.weighted-table td:nth-child(5)::before{
+    content:"Average";
+    font-weight:bold;
+    color:#64748b;
+}
+
+.weighted-table td:nth-child(6)::before{
+    content:"Weighted";
+    font-weight:bold;
+    color:#64748b;
+}
+
+}
+}
   </style>
 </head>
 <body>
   <nav>
-    <span><b>FacultyPulse</b> — Faculty Portal</span>
-    <div>
-      <span id="nav-user"></span>
-      <a href="../index.html" id="logout-btn">Logout</a>
+    <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex-shrink:1;"><b>FacultyPulse</b> — Faculty Portal</span>
+    <div style="display:flex; align-items:center; gap:8px; flex-wrap:nowrap; flex-shrink:0;">
+      <span id="nav-user" style="font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:120px;"></span>
+      <button id="change-password-btn" style="font-size:12px; padding:4px 10px;
+        background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3);
+        color:white; border-radius:6px; cursor:pointer; white-space:nowrap;">🔑 Change Password</button>
+      <a href="../index.html" id="logout-btn" style="white-space:nowrap;">Logout</a>
     </div>
   </nav>
 
-  <div class="container">
-    <h2>Welcome, <span id="welcome-name"></span></h2>
-
-    <!-- ── Semester Selector ── -->
-    <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
-      <label style="font-size:14px; color:#475569; font-weight:600;">Semester:</label>
-      <select id="semester-select" style="
-        padding: 8px 14px;
-        border: 1.5px solid #1a56db;
-        border-radius: 8px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #1a56db;
-        background: #eff6ff;
-        cursor: pointer;
-        min-width: 220px;
-      ">
-        <option>Loading...</option>
-      </select>
-      <span id="active-badge" style="
-        display:none;
-        background:#dcfce7; color:#166534;
-        border:1px solid #86efac;
-        border-radius:20px;
-        font-size:11px; font-weight:700;
-        padding:3px 10px;
-        letter-spacing:0.04em;
-      ">● CURRENT</span>
-    </div>
-
-    <!-- ── Summary Cards ── -->
-    <div class="cards-row">
-      <div class="card small">
-        <p class="card-label">Overall SET Rating</p>
-        <p class="card-value" id="score-overall">—</p>
-        <p style="font-size:12px; color:#64748b; margin-top:2px;" id="score-label"></p>
+  <!-- Change Password Modal -->
+  <div id="change-password-modal" class="modal hidden">
+    <div class="modal-box" style="max-width:420px; width:95vw;">
+      <h3 style="margin-bottom:16px;">🔑 Change Password</h3>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:5px;">New Password</label>
+        <input type="password" id="cp-new" placeholder="At least 8 characters"
+          style="width:100%; padding:9px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px;" />
       </div>
-      <div class="card small">
-        <p class="card-label">Respondents</p>
-        <p class="card-value" id="eval-count">—</p>
+      <div class="form-group" style="margin-bottom:16px;">
+        <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:5px;">Confirm Password</label>
+        <input type="password" id="cp-confirm" placeholder="Re-enter new password"
+          style="width:100%; padding:9px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px;" />
       </div>
-      <div class="card small">
-        <p class="card-label">A. Mgmt of Teaching</p>
-        <p class="card-value" style="font-size:20px;" id="score-catA">—</p>
-      </div>
-      <div class="card small">
-        <p class="card-label">B. Content Knowledge</p>
-        <p class="card-value" style="font-size:20px;" id="score-catB">—</p>
-      </div>
-      <div class="card small">
-        <p class="card-label">C. Commitment</p>
-        <p class="card-value" style="font-size:20px;" id="score-catC">—</p>
+      <p id="cp-error" class="error" style="margin-bottom:10px;"></p>
+      <div style="display:flex; gap:10px;">
+        <button id="cp-save-btn" style="flex:1;">Save Password</button>
+        <button class="btn-secondary" id="cp-cancel-btn">Cancel</button>
       </div>
     </div>
+  </div>
 
-    <!-- ── Charts ── -->
-    <div class="charts-row">
-      <div class="chart-card">
-        <h3> Score per Category (out of 100)</h3>
-        <div class="chart-wrapper">
-          <canvas id="bar-chart"></canvas>
-        </div>
-      </div>
-      <div class="chart-card">
-        <h3> Category Breakdown</h3>
-        <div class="chart-wrapper">
-          <canvas id="donut-chart"></canvas>
-        </div>
-      </div>
+  <div class="dash-wrap">
+
+    <div class="dash-header">
+      <h2>Welcome, <span id="welcome-name"></span></h2>
+      <span class="sem-label">Semester: <b id="semester-label">Loading...</b></span>
     </div>
 
-    <!-- ── Weighted SET Table (Annex C format) ── -->
-    <div class="section">
-      <h3>Summary of Average SET Rating
-        <small style="font-weight:400; font-size:12px; color:#64748b;">
-          — CMO No. 19, s. 2025 (Annex C)
-        </small>
-      </h3>
-      <p style="font-size:12px; color:#64748b; margin-bottom:12px;">
-        Formula: Overall SET = Total Weighted Score ÷ Total No. of Students
-      </p>
-      <table class="weighted-table">
-        <thead>
-          <tr>
-            <th>Seq</th>
-            <th>Course Code/Title</th>
-            <th>Section</th>
-            <th>No. of Students</th>
-            <th>Average SET Rating</th>
-            <th>Weighted SET Score</th>
-          </tr>
-        </thead>
-        <tbody id="class-tbody">
-          <tr><td colspan="6" style="text-align:center;">Loading...</td></tr>
-        </tbody>
-      </table>
+    <!-- NOT RELEASED STATE -->
+    <div id="not-released-view" class="not-released" style="display:none;">
+      <div class="icon">🕐</div>
+      <h3>Results Not Yet Available</h3>
+      <p>Your evaluation results for this semester have not yet been released by the Quality Assurance Office. You will be able to view your scores and feedback once the QAO finalizes and releases your report.</p>
     </div>
 
-    <!-- ── Subjects Handled ── -->
-    <div class="section">
-      <h3>Subjects Handled — <span id="subjects-semester-label">This Semester</span></h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Subject</th>
-            <th>Section</th>
-            <th>Enrolled</th>
-          </tr>
-        </thead>
-        <tbody id="subjects-tbody">
-          <tr><td colspan="3">Loading...</td></tr>
-        </tbody>
-      </table>
-    </div>
+    <!-- MAIN DASHBOARD (hidden until released) -->
+    <div id="dashboard-view" style="display:none;">
+      <div class="dash-grid">
+
+        <!-- ── LEFT COLUMN ── -->
+        <div class="left-col">
+
+          <!-- Score Hero -->
+          <div class="score-hero">
+            <div class="score-circle">
+              <span class="big-num" id="score-overall">—</span>
+              <span class="denom">/ 100</span>
+            </div>
+            <div class="score-hero-info">
+              <span class="rating-badge" id="score-label">Loading...</span>
+              <h3>Overall SET Rating</h3>
+              <p>Student Evaluation of Teaching — CMO No. 19, s. 2025</p>
+            </div>
+            <div class="score-hero-stats">
+              <div class="hero-stat">
+                <div class="val" id="eval-count">—</div>
+                <div class="lbl">Respondents</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Charts -->
+          <!-- Weighted SET Table -->
+          <div class="table-card">
+            <h4>Summary of Average SET Rating</h4>
+            <p class="sub-label">Formula: Overall SET = Total Weighted Score ÷ Total No. of Students (CMO No. 19, s. 2025 — Annex C)</p>
+            <table class="weighted-table">
+              <thead>
+                <tr>
+                  <th>Seq</th>
+                  <th>Course Code/Title</th>
+                  <th>Section</th>
+                  <th>No. of Students</th>
+                  <th>Avg SET Rating</th>
+                  <th>Weighted Score</th>
+                </tr>
+              </thead>
+              <tbody id="class-tbody">
+                <tr><td colspan="6" style="text-align:center; padding:16px;">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+        </div><!-- /left-col -->
+
+        <!-- ── RIGHT COLUMN ── -->
+        <div class="right-col">
+
+          <!-- SEF Rating (hidden until available) -->
+          <div class="sef-card" id="sef-card" style="display:none;">
+            <h4>⭐ Supervisor's SEF Rating</h4>
+            <div class="sef-score-display">
+              <span class="num" id="sef-rating">—</span>
+              <span class="denom"> / 100</span>
+              <p class="label" id="sef-label"></p>
+            </div>
+            <p class="sef-info">
+              Rated by your Immediate Supervisor using the SEF instrument<br/>
+              (CMO No. 19, s. 2025 — Annex B)
+            </p>
+          </div>
+
+          <!-- Category Scores + Donut (combined) -->
+          <div class="side-card">
+            <h4>Category Breakdown</h4>
+
+            <!-- Donut chart -->
+            <div style="position:relative; height:160px; margin-bottom:16px;">
+              <canvas id="donut-chart"></canvas>
+            </div>
+
+            <!-- Progress bar scores -->
+            <div class="cat-item">
+              <div class="cat-item-top">
+                <span class="cat-name">A. Management of Teaching</span>
+                <span class="cat-val" id="score-catA">—</span>
+              </div>
+              <div class="cat-bar-bg">
+                <div class="cat-bar-fill" id="bar-catA" style="width:0%; background:#3b82f6;"></div>
+              </div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-item-top">
+                <span class="cat-name">B. Content Knowledge</span>
+                <span class="cat-val" id="score-catB">—</span>
+              </div>
+              <div class="cat-bar-bg">
+                <div class="cat-bar-fill" id="bar-catB" style="width:0%; background:#10b981;"></div>
+              </div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-item-top">
+                <span class="cat-name">C. Commitment &amp; Transparency</span>
+                <span class="cat-val" id="score-catC">—</span>
+              </div>
+              <div class="cat-bar-bg">
+                <div class="cat-bar-fill" id="bar-catC" style="width:0%; background:#f59e0b;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Preset Recommendations -->
+          <div class="side-card" id="rec-card" style="display:none;">
+            <h4>📋 Recommendations</h4>
+            <p style="font-size:11px; color:#94a3b8; margin-bottom:10px;">
+              Based on your lowest-rated item per category from student evaluations this semester.
+            </p>
+            <div id="rec-body"></div>
+            <p style="font-size:10px; color:#cbd5e1; margin-top:10px; line-height:1.5;">
+              Generated from preset guidelines based on CMO No. 19, s. 2025 benchmark statements.
+              AI-generated feedback coming in a future update.
+            </p>
+          </div>
+
+          <!-- Supervisor Remarks -->
+          <div class="remarks-card" id="remarks-card" style="display:none;">
+            <h4>💬 Supervisor's Remarks</h4>
+            <p class="remarks-text" id="supervisor-remarks-box">—</p>
+            <p class="remarks-hint">From your Immediate Supervisor based on professional observation of your teaching performance this semester.</p>
+          </div>
+
+          <!-- Subjects This Semester -->
+          <div class="side-card">
+            <h4>Subjects This Semester</h4>
+            <div class="subject-list" id="subjects-list">
+              <p style="color:#94a3b8; font-size:13px;">Loading...</p>
+            </div>
+          </div>
+
+        </div><!-- /right-col -->
+      </div><!-- /dash-grid -->
+    </div><!-- /dashboard-view -->
 
   </div>
 

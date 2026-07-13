@@ -1,25 +1,26 @@
 // ============================================================
-//  FacultyPulse — Student Dashboard
+//  FacultyPulse — Student Dashboard (Guided Step-by-Step)
 //  CMO No. 19, s. 2025 — 15 Official SET Questions
 //  Formula: Rating = (Total Score / 75) × 100
-//
-//  Anonymity model: Admin/QA can see who submitted (for monitoring
-//  and comment verification). The FACULTY never sees student identity
-//  — teacher.js only ever reads aggregated scores, never student_id.
 // ============================================================
 
 import { supabase } from "./supabase.js";
+import { fpAlert } from "./modal.js";
 
 // ── Guard ──
 if (!sessionStorage.getItem("role") || sessionStorage.getItem("role") !== "student") {
   window.location.href = "../index.html";
 }
 
-const studentId = sessionStorage.getItem("studentId");
-const sectionId = sessionStorage.getItem("sectionId");
+const studentId   = sessionStorage.getItem("studentId");
+const sectionId   = sessionStorage.getItem("sectionId");
+const studentName = sessionStorage.getItem("name") || studentId;
 
-document.getElementById("welcome-name").textContent = studentId;
-document.getElementById("nav-user").textContent     = "Logged in as: " + studentId;
+// Show real name in welcome, ID in nav bar for clarity
+document.getElementById("welcome-name").textContent = studentName !== studentId
+  ? `${studentName} (${studentId})`
+  : studentId;
+document.getElementById("nav-user").textContent = "Logged in as: " + studentId;
 
 // ══════════════════════════════════════════════════════════════
 //  OFFICIAL SET QUESTIONS — CMO No. 19, s. 2025 (Annex A)
@@ -42,103 +43,194 @@ const QUESTIONS = [
   { id: "q15", category: "C. Commitment and Transparency", text: "Provides transparent and clear criteria in rating student's performance." },
 ];
 
-let currentSubjectId   = null;
-let currentSubjectName = "";
-let currentTeacherName = "";
+// ══════════════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════════════
+let subjects        = [];   // all subjects for this student
+let submittedIds    = new Set(); // already submitted to DB
+let currentIdx      = null; // which subject is open in modal
+let drafts          = {};   // { subjectId: { scores: {}, comment: "" } }
+let activeSemId     = null;
 
-// ── Load subjects for this student's section ──
-async function loadSubjects() {
-  const tbody = document.getElementById("subjects-tbody");
-  tbody.innerHTML = `<tr><td colspan="4">Loading...</td></tr>`;
+const DRAFT_KEY = `fp_draft_${studentId}`;
+
+function saveDraftsToStorage() {
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(drafts)); } catch(e) {}
+}
+
+function loadDraftsFromStorage() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (raw) drafts = JSON.parse(raw);
+  } catch(e) { drafts = {}; }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  INIT — load semester + subjects
+// ══════════════════════════════════════════════════════════════
+async function init() {
+  loadDraftsFromStorage();
 
   const { data: semester } = await supabase
-    .from("semesters")
-    .select("id, label")
-    .eq("is_active", true)
-    .single();
+    .from("semesters").select("id, label").eq("is_active", true).single();
 
   if (!semester) {
-    tbody.innerHTML = `<tr><td colspan="4">No active semester. Contact admin.</td></tr>`;
+    document.getElementById("semester-label").textContent = "No active semester. Contact admin.";
     return;
   }
 
   document.getElementById("semester-label").textContent = semester.label;
-  window._activeSemesterId = semester.id;
+  activeSemId = semester.id;
 
-  const { data: subjects, error } = await supabase
+  const { data: subs, error } = await supabase
     .from("subjects")
     .select("id, name, users(name)")
     .eq("section_id", sectionId)
     .eq("semester_id", semester.id);
 
-  if (error || !subjects || subjects.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4">No subjects found for your section.</td></tr>`;
+  if (error || !subs || subs.length === 0) {
+    document.getElementById("progress-section").style.display = "block";
+    document.getElementById("subject-steps").innerHTML =
+      `<p style="color:#94a3b8; padding:12px 0;">No subjects found for your section.</p>`;
     return;
   }
 
-  // Check which subjects this student already evaluated (from tracking)
+  subjects = subs;
+
+  // Check which subjects already submitted in DB
   const { data: done } = await supabase
     .from("evaluation_tracking")
     .select("subject_id")
     .eq("student_id", studentId)
     .eq("semester_id", semester.id);
 
-  const doneIds = new Set((done || []).map(e => e.subject_id));
+  submittedIds = new Set((done || []).map(e => e.subject_id));
 
-  tbody.innerHTML = "";
-  subjects.forEach(sub => {
-    const evaluated    = doneIds.has(sub.id);
-    const teacherName  = sub.users?.name || "";
-    const row          = document.createElement("tr");
+  // Clear drafts for already-submitted subjects
+  subjects.forEach(s => {
+    if (submittedIds.has(s.id)) delete drafts[s.id];
+  });
+  saveDraftsToStorage();
 
-    // Use textContent for user-supplied data — never innerHTML
-    const tdSubject = document.createElement("td");
-    tdSubject.textContent = sub.name;
+  renderProgress();
+}
 
-    const tdTeacher = document.createElement("td");
-    tdTeacher.textContent = teacherName || "—";
+// ══════════════════════════════════════════════════════════════
+//  RENDER PROGRESS + SUBJECT STEPS
+// ══════════════════════════════════════════════════════════════
+function renderProgress() {
+  const total     = subjects.length;
+  const doneCount = submittedIds.size;
+  const pct       = total > 0 ? Math.round((doneCount / total) * 100) : 0;
 
-    const tdStatus = document.createElement("td");
-    tdStatus.innerHTML = `<span class="badge ${evaluated ? "done" : "pending"}">
-      ${evaluated ? "Evaluated" : "Not Yet Evaluated"}
-    </span>`;
+  // All submitted — show done screen
+  if (doneCount === total && total > 0) {
+    document.getElementById("progress-section").style.display    = "none";
+    document.getElementById("submit-all-section").classList.remove("visible");
+    document.getElementById("all-done-section").classList.add("visible");
+    return;
+  }
 
-    const tdAction = document.createElement("td");
-    const btn = document.createElement("button");
-    btn.textContent = "Evaluate";
-    btn.disabled    = evaluated;
-    // Store data safely — no injection possible
-    btn.dataset.subjectId   = sub.id;
-    btn.dataset.subjectName = sub.name;
-    btn.dataset.teacherName = teacherName;
-    btn.addEventListener("click", () => {
-      openEval(btn.dataset.subjectId, btn.dataset.subjectName, btn.dataset.teacherName);
-    });
-    tdAction.appendChild(btn);
+  document.getElementById("progress-section").style.display = "block";
+  document.getElementById("all-done-section").classList.remove("visible");
 
-    row.appendChild(tdSubject);
-    row.appendChild(tdTeacher);
-    row.appendChild(tdStatus);
-    row.appendChild(tdAction);
-    tbody.appendChild(row);
+  document.getElementById("progress-count").textContent = `${doneCount} / ${total} completed`;
+  const bar = document.getElementById("progress-bar");
+  bar.style.width = pct + "%";
+  bar.classList.toggle("complete", pct === 100);
+
+  // Check if all drafts are complete (all questions answered)
+  const allDrafted = subjects.every(s =>
+    submittedIds.has(s.id) || isDraftComplete(s.id)
+  );
+
+  // Show submit-all only if all drafted and none pending submission
+  const pendingSubmit = subjects.some(s => !submittedIds.has(s.id) && isDraftComplete(s.id));
+  if (allDrafted && pendingSubmit) {
+    document.getElementById("submit-all-section").classList.add("visible");
+  } else {
+    document.getElementById("submit-all-section").classList.remove("visible");
+  }
+
+  // Render subject steps
+  const container = document.getElementById("subject-steps");
+  container.innerHTML = "";
+
+  subjects.forEach((sub, idx) => {
+    const isSubmitted = submittedIds.has(sub.id);
+    const draft       = drafts[sub.id];
+    const isComplete  = isDraftComplete(sub.id);
+    const hasDraft    = draft && Object.keys(draft.scores || {}).length > 0;
+
+    let stepClass  = "";
+    let badgeClass = "pending";
+    let badgeText  = "Not Started";
+    let actionHTML = "";
+
+    if (isSubmitted) {
+      stepClass  = "done";
+      badgeClass = "done";
+      badgeText  = "✅ Submitted";
+      actionHTML = `<button class="btn-secondary" style="font-size:12px; padding:5px 12px;" onclick="openReview(${idx})">View</button>`;
+    } else if (isComplete) {
+      stepClass  = "active";
+      badgeClass = "draft";
+      badgeText  = "✔ Ready";
+      actionHTML = `<button style="font-size:12px; padding:5px 12px;" onclick="openEval(${idx})">Edit</button>`;
+    } else if (hasDraft) {
+      stepClass  = "active";
+      badgeClass = "draft";
+      badgeText  = "In Progress";
+      actionHTML = `<button style="font-size:12px; padding:5px 12px;" onclick="openEval(${idx})">Continue →</button>`;
+    } else {
+      badgeClass = "pending";
+      badgeText  = "Not Started";
+      actionHTML = `<button style="font-size:12px; padding:5px 12px;" onclick="openEval(${idx})">Start →</button>`;
+    }
+
+    const div = document.createElement("div");
+    div.className = `subject-step ${stepClass}`;
+    div.innerHTML = `
+      <div class="step-num">${isSubmitted ? "✓" : idx + 1}</div>
+      <div class="step-info">
+        <div class="step-name">${escapeHtml(sub.name)}</div>
+        <div class="step-teacher">${escapeHtml(sub.users?.name || "—")}</div>
+      </div>
+      <span class="step-badge ${badgeClass}">${badgeText}</span>
+      <div class="step-action">${actionHTML}</div>
+    `;
+    container.appendChild(div);
   });
 }
 
-// ── Open evaluation modal ──
-function openEval(subjectId, subjectName, teacherName) {
-  currentSubjectId   = subjectId;
-  currentSubjectName = subjectName;
-  currentTeacherName = teacherName;
+function isDraftComplete(subjectId) {
+  const draft = drafts[subjectId];
+  if (!draft || !draft.scores) return false;
+  return QUESTIONS.every(q => draft.scores[q.id] !== undefined);
+}
 
-  document.getElementById("modal-teacher").textContent = teacherName;
-  document.getElementById("modal-subject").textContent = "Subject: " + subjectName;
-  document.getElementById("eval-comment").value = "";
+// ══════════════════════════════════════════════════════════════
+//  OPEN EVAL MODAL
+// ══════════════════════════════════════════════════════════════
+function openEval(idx) {
+  currentIdx = idx;
+  const sub  = subjects[idx];
 
+  document.getElementById("modal-teacher").textContent  = sub.users?.name || "—";
+  document.getElementById("modal-subject").textContent  = "Subject: " + sub.name;
+  document.getElementById("modal-step-badge").textContent =
+    `${idx + 1} of ${subjects.length}`;
+
+  const draft = drafts[sub.id] || { scores: {}, comment: "" };
+
+  // Restore comment
+  document.getElementById("eval-comment").value = draft.comment || "";
+
+  // ── Desktop table ──
   const tbody = document.getElementById("questions-tbody");
   tbody.innerHTML = "";
-
   let currentCategory = "";
-  QUESTIONS.forEach((q, index) => {
+  QUESTIONS.forEach((q, qIdx) => {
     if (q.category !== currentCategory) {
       currentCategory = q.category;
       const catRow = document.createElement("tr");
@@ -149,165 +241,348 @@ function openEval(subjectId, subjectName, teacherName) {
     const row = document.createElement("tr");
     row.id = "row-" + q.id;
     row.innerHTML = `
-      <td class="question-text"><b>${index + 1}.</b> ${q.text}</td>
+      <td class="question-text"><b>${qIdx + 1}.</b> ${q.text}</td>
       ${[5,4,3,2,1].map(n => `
         <td class="rating-cell">
-          <input type="radio" name="${q.id}" value="${n}" />
+          <input type="radio" name="${q.id}" value="${n}"
+            ${draft.scores[q.id] === n ? "checked" : ""} />
         </td>
       `).join("")}
     `;
     tbody.appendChild(row);
   });
 
+  // ── Mobile cards ──
+  const mobileContainer = document.getElementById("mobile-questions-container");
+  mobileContainer.innerHTML = "";
+  currentCategory = "";
+  QUESTIONS.forEach((q, qIdx) => {
+    if (q.category !== currentCategory) {
+      currentCategory = q.category;
+      const div = document.createElement("div");
+      div.className = "category-divider";
+      div.textContent = q.category;
+      mobileContainer.appendChild(div);
+    }
+    const card = document.createElement("div");
+    card.className = "question-card";
+    card.id = "mrow-" + q.id;
+    card.innerHTML = `
+      <div class="q-text"><b>${qIdx + 1}.</b> ${q.text}</div>
+      <div class="q-ratings">
+        ${[5,4,3,2,1].map(n => `
+          <label class="q-rating-btn ${draft.scores[q.id] === n ? "selected" : ""}">
+            <input type="radio" name="m_${q.id}" value="${n}"
+              ${draft.scores[q.id] === n ? "checked" : ""}
+              onchange="onMobileRate('${q.id}', ${n}, this)" />
+            <span class="num">${n}</span>
+          </label>
+        `).join("")}
+      </div>
+    `;
+    mobileContainer.appendChild(card);
+  });
+
+  // Live save on desktop radio change
+  document.querySelectorAll("#questions-tbody input[type=radio]").forEach(r => {
+    r.addEventListener("change", () => saveDraftFromModal());
+  });
+
   document.getElementById("eval-modal").classList.remove("hidden");
 }
 
-function closeModal() {
-  document.getElementById("eval-modal").classList.add("hidden");
-  currentSubjectId = null;
-}
-
-// ── CMO formula: Rating = (Total Score / 75) × 100 ──
-function computeSETRating(scores) {
-  const totalScore = Object.values(scores).reduce((sum, val) => sum + val, 0);
-  return parseFloat(((totalScore / 75) * 100).toFixed(2));
-}
-
-// ── Submit evaluation ──
-async function submitEval() {
-  // Guard: semester must be loaded before anything can be submitted
-  if (!window._activeSemesterId) {
-    alert("Something went wrong — the active semester could not be loaded.\nPlease refresh the page and try again.");
-    return;
+function onMobileRate(qId, val, input) {
+  // Update selected style on siblings
+  const card = document.getElementById("mrow-" + qId);
+  if (card) {
+    card.querySelectorAll(".q-rating-btn").forEach(btn => btn.classList.remove("selected"));
+    input.closest(".q-rating-btn").classList.add("selected");
   }
+  saveDraftFromModal();
+}
+window.onMobileRate = onMobileRate;
 
-  // Validate all 15 answered
-  let allAnswered = true;
-  let firstUnanswered = null;
-  QUESTIONS.forEach(q => {
-    const row = document.getElementById("row-" + q.id);
-    if (!document.querySelector(`input[name="${q.id}"]:checked`)) {
-      allAnswered = false;
-      if (row) row.classList.add("unanswered");
-      if (!firstUnanswered) firstUnanswered = row;
-    } else {
-      if (row) row.classList.remove("unanswered");
-    }
-  });
-
-  if (!allAnswered) {
-    alert("Please answer all 15 questions before submitting.\nUnanswered questions are highlighted in red.");
-    if (firstUnanswered) firstUnanswered.scrollIntoView({ behavior: "smooth", block: "center" });
-    return;
-  }
-
+// ══════════════════════════════════════════════════════════════
+//  SAVE DRAFT FROM MODAL (live)
+// ══════════════════════════════════════════════════════════════
+function saveDraftFromModal() {
+  if (currentIdx === null) return;
+  const sub    = subjects[currentIdx];
   const scores = {};
+
   QUESTIONS.forEach(q => {
-    scores[q.id] = parseInt(document.querySelector(`input[name="${q.id}"]:checked`).value);
+    // Desktop
+    const checked = document.querySelector(`input[name="${q.id}"]:checked`);
+    // Mobile
+    const mChecked = document.querySelector(`input[name="m_${q.id}"]:checked`);
+    const val = checked ? parseInt(checked.value) : (mChecked ? parseInt(mChecked.value) : undefined);
+    if (val !== undefined) scores[q.id] = val;
   });
 
-  const comment   = document.getElementById("eval-comment").value.trim();
-  const setRating = computeSETRating(scores);
-
-  const submitBtn = document.getElementById("submit-btn");
-  submitBtn.textContent = "Submitting...";
-  submitBtn.disabled    = true;
-
-  try {
-    // ── Step 1: Write to TRACKING (participation only — identity, no comment) ──
-    // The unique constraint here is the double-submission guard.
-    const { error: trackError } = await supabase
-      .from("evaluation_tracking")
-      .insert({
-        student_id:  studentId,
-        subject_id:  currentSubjectId,
-        semester_id: window._activeSemesterId,
-      });
-
-    if (trackError) {
-      if (trackError.code === "23505") {
-        alert("You have already submitted an evaluation for this subject.");
-        closeModal();
-        loadSubjects();
-        return;
-      }
-      throw new Error(trackError.message);
-    }
-
-    // ── Step 2: Write to SCORES (no identity — safe for faculty) ──
-    const { error: scoreError } = await supabase
-      .from("evaluation_scores")
-      .insert({
-        subject_id:  currentSubjectId,
-        semester_id: window._activeSemesterId,
-        scores:      scores,
-      });
-
-    // ── Rollback if scores failed (prevents tracking/scores drift) ──
-    if (scoreError) {
-      await supabase
-        .from("evaluation_tracking")
-        .delete()
-        .eq("student_id",  studentId)
-        .eq("subject_id",  currentSubjectId)
-        .eq("semester_id", window._activeSemesterId);
-      throw new Error(scoreError.message);
-    }
-
-    // ── Step 3: Write the COMMENT to its own identity-free table ──
-    // No student_id and no timestamp, so it cannot be linked back to the
-    // student (not even by timestamp correlation). Best-effort: an optional
-    // comment failing must NOT void an otherwise-valid evaluation.
-    if (comment) {
-      const { error: commentError } = await supabase
-        .from("evaluation_comments")
-        .insert({
-          subject_id:  currentSubjectId,
-          semester_id: window._activeSemesterId,
-          comment:     comment,
-        });
-      if (commentError) console.warn("Comment not saved:", commentError.message);
-    }
-
-    alert(
-      `✅ Evaluation submitted successfully!\n\n` +
-      `Your SET Rating: ${setRating} / 100\n` +
-      `(Based on CMO No. 19, s. 2025 formula)\n\n` +
-      `Your teacher will only see anonymous, combined results — ` +
-      `never your individual responses.`
-    );
-
-    closeModal();
-    loadSubjects();
-
-  } catch (err) {
-    alert("Submission failed: " + err.message);
-    console.error(err);
-  } finally {
-    submitBtn.textContent = "Submit Evaluation";
-    submitBtn.disabled    = false;
-  }
+  const comment = document.getElementById("eval-comment").value.trim();
+  drafts[sub.id] = { scores, comment };
+  saveDraftsToStorage();
 }
 
-// ── Logout ──
-function logout() {
-  supabase.auth.signOut();
-  sessionStorage.clear();
-  window.location.href = "../index.html";
+// ══════════════════════════════════════════════════════════════
+//  NEXT BUTTON — save draft + close modal + refresh steps
+// ══════════════════════════════════════════════════════════════
+function onNext() {
+  saveDraftFromModal();
+  closeEvalModal();
+  renderProgress();
+}
+
+function closeEvalModal() {
+  document.getElementById("eval-modal").classList.add("hidden");
+  currentIdx = null;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  REVIEW MODAL — show saved draft answers read-only
+// ══════════════════════════════════════════════════════════════
+function openReview(idx) {
+  const sub   = subjects[idx];
+  const draft = drafts[sub.id] || {};
+
+  document.getElementById("review-teacher").textContent = sub.users?.name || "—";
+  document.getElementById("review-subject").textContent = "Subject: " + sub.name;
+
+  const content = document.getElementById("review-content");
+  let html = "";
+  let currentCategory = "";
+
+  QUESTIONS.forEach((q, qIdx) => {
+    if (q.category !== currentCategory) {
+      currentCategory = q.category;
+      html += `<div class="review-category">${q.category}</div>`;
+    }
+    const score = draft.scores?.[q.id] ?? "—";
+    html += `
+      <div class="review-answer">
+        <span>${qIdx + 1}. ${escapeHtml(q.text)}</span>
+        <span class="review-score">${score}</span>
+      </div>
+    `;
+  });
+
+  if (draft.comment) {
+    html += `
+      <div style="margin-top:14px; padding-top:14px; border-top:1px solid #e2e8f0;">
+        <div class="review-category">Comment</div>
+        <p style="font-size:13px; color:#475569; line-height:1.6;">${escapeHtml(draft.comment)}</p>
+      </div>
+    `;
+  }
+
+  content.innerHTML = html;
+  document.getElementById("review-modal").classList.remove("hidden");
+}
+
+function closeReviewModal() {
+  document.getElementById("review-modal").classList.add("hidden");
+}
+
+// Edit from review modal — open eval modal for that subject
+document.getElementById("review-edit-btn").addEventListener("click", () => {
+  // Find which subject the review is showing
+  const teacherName = document.getElementById("review-teacher").textContent;
+  const idx = subjects.findIndex(s => (s.users?.name || "—") === teacherName);
+  closeReviewModal();
+  if (idx !== -1) openEval(idx);
+});
+
+document.getElementById("review-close-btn").addEventListener("click", closeReviewModal);
+
+// ══════════════════════════════════════════════════════════════
+//  SUBMIT ALL — write all completed drafts to Supabase
+// ══════════════════════════════════════════════════════════════
+async function submitAll() {
+  const toSubmit = subjects.filter(s => !submittedIds.has(s.id) && isDraftComplete(s.id));
+
+  if (toSubmit.length === 0) {
+    await fpAlert("No completed evaluations to submit.", "info");
+    return;
+  }
+
+  const btn = document.getElementById("submit-all-btn");
+  btn.textContent = "Submitting...";
+  btn.disabled    = true;
+
+  let successCount = 0;
+  let failCount    = 0;
+
+  for (const sub of toSubmit) {
+    const draft = drafts[sub.id];
+    try {
+      // Step 1: Tracking (guard against double submit)
+      const { error: trackError } = await supabase
+        .from("evaluation_tracking")
+        .insert({
+          student_id:  studentId,
+          subject_id:  sub.id,
+          semester_id: activeSemId,
+        });
+
+      if (trackError) {
+        if (trackError.code === "23505") {
+          // Already submitted — mark done and continue
+          submittedIds.add(sub.id);
+          delete drafts[sub.id];
+          successCount++;
+          continue;
+        }
+        throw new Error(trackError.message);
+      }
+
+      // Step 2: Scores (identity-free)
+      const { error: scoreError } = await supabase
+        .from("evaluation_scores")
+        .insert({
+          subject_id:  sub.id,
+          semester_id: activeSemId,
+          scores:      draft.scores,
+        });
+
+      if (scoreError) {
+        // Rollback tracking
+        await supabase.from("evaluation_tracking").delete()
+          .eq("student_id",  studentId)
+          .eq("subject_id",  sub.id)
+          .eq("semester_id", activeSemId);
+        throw new Error(scoreError.message);
+      }
+
+      // Step 3: Comment (best-effort, identity-free)
+      if (draft.comment) {
+        await supabase.from("evaluation_comments").insert({
+          subject_id:  sub.id,
+          semester_id: activeSemId,
+          comment:     draft.comment,
+        });
+      }
+
+      submittedIds.add(sub.id);
+      delete drafts[sub.id];
+      successCount++;
+
+    } catch (err) {
+      console.error("Failed to submit", sub.name, err);
+      failCount++;
+    }
+  }
+
+  saveDraftsToStorage();
+
+  btn.textContent = "Submit All Evaluations";
+  btn.disabled    = false;
+
+  if (failCount > 0) {
+    await fpAlert(
+      `${successCount} evaluation(s) submitted successfully.\n${failCount} failed — please try again.`,
+      "error"
+    );
+  } else {
+    await fpAlert(
+      `All ${successCount} evaluation(s) submitted successfully!\n\nThank you. Your responses are recorded anonymously.`,
+      "success"
+    );
+  }
+
+  renderProgress();
+}
+
+// ══════════════════════════════════════════════════════════════
+//  UTILITIES
+// ══════════════════════════════════════════════════════════════
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 // ── Expose to HTML ──
 window.openEval   = openEval;
-window.submitEval = submitEval;
-window.closeModal = closeModal;
+window.openReview = openReview;
 
-// ── Attach events ──
-document.getElementById("submit-btn").addEventListener("click", submitEval);
-document.getElementById("cancel-btn").addEventListener("click", closeModal);
+// ── Change Email Request ──
+const REAL_NAME_EMAIL = /^[a-zA-Z][a-zA-Z0-9._%+\-]*@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+
+document.getElementById("change-email-btn")?.addEventListener("click", () => {
+  document.getElementById("ce-email").value       = "";
+  document.getElementById("ce-reason").value      = "";
+  document.getElementById("ce-error").textContent = "";
+  document.getElementById("ce-success").style.display = "none";
+  document.getElementById("ce-submit-btn").style.display = "inline-block";
+  document.getElementById("change-email-modal").classList.remove("hidden");
+});
+
+document.getElementById("ce-cancel-btn")?.addEventListener("click", () => {
+  document.getElementById("change-email-modal").classList.add("hidden");
+});
+
+document.getElementById("ce-submit-btn")?.addEventListener("click", async () => {
+  const email  = document.getElementById("ce-email").value.trim();
+  const reason = document.getElementById("ce-reason").value.trim();
+  const errEl  = document.getElementById("ce-error");
+  const btn    = document.getElementById("ce-submit-btn");
+  errEl.textContent = "";
+
+  // Real-name email check: local part must be at least 2 chars and look like a name
+  // Rejects: admin@, test@, 12345@, a@
+  const localPart = email.split("@")[0] || "";
+  const looksGeneric = /^(admin|test|info|user|noreply|no-reply|\d+)$/i.test(localPart);
+
+  if (!email)                       { errEl.textContent = "Email address is required."; return; }
+  if (!REAL_NAME_EMAIL.test(email)) { errEl.textContent = "Enter a valid email address."; return; }
+  if (localPart.length < 4)         { errEl.textContent = "Use a real-name email (e.g. juandelacruz@gmail.com)."; return; }
+  if (looksGeneric)                  { errEl.textContent = "Generic email addresses are not accepted. Use your real name."; return; }
+  if (!reason || reason.length < 10){ errEl.textContent = "Please provide a reason (at least 10 characters)."; return; }
+
+  btn.textContent = "Submitting...";
+  btn.disabled    = true;
+
+  const studentUserId = sessionStorage.getItem("userId");
+  const currentEmail  = sessionStorage.getItem("email") || "";
+
+  const { error } = await supabase
+    .from("email_change_requests")
+    .insert({
+      student_id:      studentUserId,
+      current_email:   currentEmail,
+      requested_email: email,
+      reason:          reason,
+      status:          "pending",
+    });
+
+  btn.textContent = "Submit Request";
+  btn.disabled    = false;
+
+  if (error) {
+    errEl.textContent = "Failed to submit: " + error.message;
+    return;
+  }
+
+  document.getElementById("ce-success").style.display = "block";
+  btn.style.display = "none";
+});
+
+// ── Events ──
+document.getElementById("next-btn").addEventListener("click", onNext);
+document.getElementById("cancel-btn").addEventListener("click", () => {
+  saveDraftFromModal();
+  closeEvalModal();
+  renderProgress();
+});
+document.getElementById("submit-all-btn").addEventListener("click", submitAll);
 document.getElementById("logout-btn").addEventListener("click", (e) => {
   e.preventDefault();
-  logout();
+  supabase.auth.signOut();
+  sessionStorage.clear();
+  window.location.href = "../index.html";
 });
 
 // ── Init ──
-loadSubjects();
+init();

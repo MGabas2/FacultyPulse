@@ -4,6 +4,14 @@
 // ============================================================
 
 import { supabase } from "./supabase.js";
+import { fpAlert, fpConfirm } from "./modal.js";
+
+function escHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+    .replace(/\n/g, "<br/>");
+}
 
 // ── Guard ──
 if (!sessionStorage.getItem("role") || sessionStorage.getItem("role") !== "admin") {
@@ -65,6 +73,7 @@ async function computeWeightedSET(teacherId, semesterId) {
 
     if (!evals || evals.length === 0) {
       classData.push({
+        subjectId:     subject.id,
         course:        subject.name,
         section:       subject.sections?.name || "—",
         noStudents:    subject.enrolled_count || 0,
@@ -115,6 +124,7 @@ async function computeWeightedSET(teacherId, semesterId) {
     const weightedScore = parseFloat((enrolled * avgSETRating).toFixed(2));
 
     classData.push({
+      subjectId:     subject.id,
       course:        subject.name,
       section:       subject.sections?.name || "—",
       noStudents:    enrolled,
@@ -196,32 +206,91 @@ async function loadRankings() {
     return;
   }
 
+  // Bulk fetch — 2 queries instead of N*M sequential queries
+  const { data: allSubjects } = await supabase
+    .from("subjects")
+    .select("id, name, teacher_id, enrolled_count, sections(name, department)")
+    .eq("semester_id", semester.id);
+
+  const { data: allEvals } = await supabase
+    .from("evaluation_scores")
+    .select("subject_id, scores")
+    .eq("semester_id", semester.id);
+
+  // Index by subject_id
+  const evalsBySubject = {};
+  (allEvals || []).forEach(e => {
+    if (!evalsBySubject[e.subject_id]) evalsBySubject[e.subject_id] = [];
+    evalsBySubject[e.subject_id].push(e);
+  });
+
+  // Index subjects by teacher_id
+  const subjectsByTeacher = {};
+  (allSubjects || []).forEach(s => {
+    if (!subjectsByTeacher[s.teacher_id]) subjectsByTeacher[s.teacher_id] = [];
+    subjectsByTeacher[s.teacher_id].push(s);
+  });
+
   const ranked = [];
+
   for (const teacher of teachers) {
-    const result = await computeWeightedSET(teacher.id, semester.id);
-    if (!result || result.totalRespondents === 0) continue;
+    const subjects = subjectsByTeacher[teacher.id] || [];
+    if (subjects.length === 0) continue;
+
+    let totalWeighted = 0, totalEnrolled = 0, totalRespondents = 0;
+
+    for (const subject of subjects) {
+      const evals = evalsBySubject[subject.id] || [];
+      if (evals.length === 0) continue;
+
+      let sumRatings = 0;
+      evals.forEach(e => {
+        const total = Object.values(e.scores).reduce((s, v) => s + v, 0);
+        sumRatings += (total / 75) * 100;
+      });
+
+      const avgSETRating  = parseFloat((sumRatings / evals.length).toFixed(2));
+      const enrolledCount = subject.enrolled_count || evals.length;
+      totalWeighted    += avgSETRating * enrolledCount;
+      totalEnrolled    += enrolledCount;
+      totalRespondents += evals.length;
+    }
+
+    if (totalRespondents === 0) continue;
+
+    const overallSET = parseFloat((totalWeighted / totalEnrolled).toFixed(2));
+    const program    = subjects[0]?.sections?.department || "—";
+
     ranked.push({
       id:          teacher.id,
       name:        teacher.name,
       rank:        teacher.academic_rank || "—",
-      overallSET:  result.overallSET,
-      respondents: result.totalRespondents,
+      overallSET,
+      respondents: totalRespondents,
+      program,
     });
   }
 
   ranked.sort((a, b) => b.overallSET - a.overallSET);
-
   allRanked = ranked;
-  rankPage  = 1;
+
+  const progFilter = document.getElementById("dash-program-filter");
+  if (progFilter && progFilter.options.length <= 1) {
+    const programs = [...new Set(ranked.map(t => t.program).filter(p => p && p !== "—"))].sort();
+    programs.forEach(p => { progFilter.innerHTML += `<option value="${p}">${p}</option>`; });
+  }
+
+  rankPage = 1;
   renderRankingsPage();
+  populateDashFacultyFilter();
 
-  // Populate report dropdown (all faculty, not paginated)
   const select = document.getElementById("report-faculty");
-  select.innerHTML = ranked.map(t =>
-    `<option value="${t.id}|${t.name}">${t.name}</option>`
-  ).join("");
+  if (select) {
+    select.innerHTML = ranked.map(t =>
+      `<option value="${t.id}|${t.name}">${t.name}</option>`
+    ).join("");
+  }
 
-  // Charts use the full ranked list
   renderBarChart(ranked);
   renderDonutChart(ranked);
 }
@@ -230,19 +299,35 @@ async function loadRankings() {
 function renderRankingsPage() {
   const tbody = document.getElementById("rankings-tbody");
 
-  if (allRanked.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5">No evaluation data yet.</td></tr>`;
+  // Apply program + faculty filters
+  const progFilter = document.getElementById("dash-program-filter")?.value || "";
+  const facFilter  = document.getElementById("dash-faculty-filter")?.value || "";
+
+  let filtered = progFilter
+    ? allRanked.filter(t => t.program === progFilter)
+    : allRanked;
+
+  if (facFilter) {
+    filtered = filtered.filter(t => t.id === facFilter);
+  }
+
+  // Bar chart reflects the current program filter (department averages when
+  // "All Programs", individual faculty when a specific program is chosen)
+  renderBarChart(filtered);
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5">No evaluation data ${progFilter ? "for this program" : "yet"}.</td></tr>`;
     document.getElementById("rank-page-info").textContent = "";
     document.getElementById("rank-page-buttons").innerHTML = "";
     return;
   }
 
-  const totalPages = Math.ceil(allRanked.length / RANK_SIZE);
+  const totalPages = Math.ceil(filtered.length / RANK_SIZE);
   if (rankPage > totalPages) rankPage = totalPages;
 
   const start = (rankPage - 1) * RANK_SIZE;
   const end   = start + RANK_SIZE;
-  const pageRows = allRanked.slice(start, end);
+  const pageRows = filtered.slice(start, end);
 
   tbody.innerHTML = "";
   pageRows.forEach((t, idx) => {
@@ -268,7 +353,7 @@ function renderRankingsPage() {
   });
 
   document.getElementById("rank-page-info").textContent =
-    `Showing ${start + 1}–${Math.min(end, allRanked.length)} of ${allRanked.length} faculty`;
+    `Showing ${start + 1}–${Math.min(end, filtered.length)} of ${filtered.length} faculty`;
 
   renderPager("rank-page-buttons", totalPages, rankPage, (p) => {
     rankPage = p;
@@ -422,15 +507,17 @@ async function viewReport(teacherId, teacherName) {
   }
   window._reportSemesterId = semester.id;
 
-  // ── Check if this report has already been released to faculty ──
+  // ── Check release stage ──
   const { data: release } = await supabase
     .from("report_releases")
-    .select("released_at, released_by")
+    .select("released_at, released_by, stage")
     .eq("teacher_id", teacherId)
     .eq("semester_id", semester.id)
     .maybeSingle();
 
-  window._reportReleased = !!release;
+  window._reportStage    = release?.stage || "pending";
+  window._reportReleased = release?.stage === "released";
+
 
   // Get teacher info
   const { data: teacher } = await supabase
@@ -460,15 +547,49 @@ async function viewReport(teacherId, teacherName) {
   const { overallSET, classData, totalEnrolled, totalWeighted,
           avgA, avgB, avgC } = result;
 
-  // Get SEF rating if available (from evaluation_scores with supervisor hash)
-  // For now shows "—" until SEF module is implemented
-  const sefRating = "—";
+  // Get SEF rating and supervisor comments from supervisor_remarks
+  const { data: supRemarks } = await supabase
+    .from("supervisor_remarks")
+    .select("sef_score, comments, remarks")
+    .eq("teacher_id", teacherId)
+    .eq("semester_id", semester.id)
+    .order("submitted_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  // NOTE: Student comments are intentionally left blank in the report.
-  // They are filled by hand during the supervisor–faculty meeting (CMO §10.2).
-  // Planned (post-defense, with backend): unlink commenter identity using a
-  // server-side keyed hash (HMAC) to satisfy CMO §6.10. A client-side hash
-  // would be reversible, so it is deferred until a server holds the secret.
+  const sefRating      = supRemarks?.sef_score
+    ? `${supRemarks.sef_score} / 100`
+    : "—";
+  const supComments    = supRemarks?.comments || "";
+  const supRemarksTxt  = supRemarks?.remarks  || "";
+
+  // Get FEDAF development plan (Annex D) — prints attached to IFER
+  const { data: fedaf } = await supabase
+    .from("fedaf")
+    .select("areas_improvement, proposed_activities, action_plan, supervisor_signed")
+    .eq("teacher_id", teacherId)
+    .eq("semester_id", semester.id)
+    .maybeSingle();
+
+  // Fetch student comments from evaluation_comments for this teacher's subjects.
+  // Comments are linked to subject_id only — not to a specific student.
+  // This satisfies CMO §6.10 (student anonymity) — QAO sees the comment
+  // but cannot identify the student who wrote it.
+  const subjectIds = classData.map(c => c.subjectId).filter(Boolean);
+  let studentComments = [];
+  if (subjectIds.length > 0) {
+    const { data: rawComments } = await supabase
+      .from("evaluation_comments")
+      .select("comment, subject_id")
+      .in("subject_id", subjectIds)
+      .eq("semester_id", semester.id);
+    studentComments = (rawComments || [])
+      .map(r => r.comment?.trim())
+      .filter(Boolean);
+  }
+
+  // Store on window so the Restore button can access it without re-fetching
+  window._studentComments = studentComments;
 
   // ── Build IFER HTML — Annex C Format ──
   const dateGenerated = new Date().toLocaleDateString("en-PH", {
@@ -476,186 +597,223 @@ async function viewReport(teacherId, teacherName) {
   });
 
   reportContent.innerHTML = `
-    <div style="font-family: Arial, sans-serif; font-size: 13px; color: #000;">
+    <div style="font-family: Arial, sans-serif; font-size: 12px; color: #000; line-height: 1.4;">
 
-      ${window._reportReleased
-        ? `<div class="no-print" style="background:#f0fdf4; border:1px solid #86efac; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#166534;">
-             ✅ <b>RELEASED TO FACULTY</b> — This report has been finalized.
-             The faculty can now view their results.
-           </div>`
-        : `<div class="no-print" style="background:#fef3c7; border:1px solid #fcd34d; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#92400e;">
-             📝 <b>PREVIEW (QA ONLY)</b> — Not yet released. Faculty cannot see this report until you click "Release to Faculty".
-           </div>`
-      }
+      ${(() => {
+        const s = window._reportStage;
+        if (s === 'released')
+          return `<div class="no-print" style="background:#f0fdf4; border:1px solid #86efac; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#166534;">
+            ✅ <b>RELEASED TO FACULTY</b> — This report has been finalized. Faculty can now view their results.
+          </div>`;
+        if (s === 'supervisor_done')
+          return `<div class="no-print" style="background:#eff6ff; border:1px solid #93c5fd; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#1e40af;">
+            📋 <b>SUPERVISOR REVIEWED</b> — Supervisor has submitted remarks. Ready for your final release.
+          </div>`;
+        if (s === 'forwarded_to_supervisor')
+          return `<div class="no-print" style="background:#faf5ff; border:1px solid #c4b5fd; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#6d28d9;">
+            ⏳ <b>AWAITING SUPERVISOR REVIEW</b> — Forwarded to supervisor. Waiting for their remarks.
+          </div>`;
+        return `<div class="no-print" style="background:#fef3c7; border:1px solid #fcd34d; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#92400e;">
+          📝 <b>PREVIEW (QA ONLY)</b> — Not yet forwarded. Faculty cannot see this report yet.
+        </div>`;
+      })()}
 
-      <!-- A. Faculty Information -->
-      <h3 style="text-align:center; font-size:14px; margin-bottom:4px;">
-        INDIVIDUAL FACULTY EVALUATION REPORT
-      </h3>
-      <p style="text-align:center; font-size:11px; color:#555; margin-bottom:16px;">
-        Pursuant to CMO No. 19, s. 2025 | Generated: ${dateGenerated}
+      <!-- ══ ANNEX C HEADER ══ -->
+      <p style="text-align:right; font-size:10px; color:#000; margin-bottom:8px;">
+        ANNEX C – Individual Faculty Evaluation Report
       </p>
 
+      <h3 style="text-align:center; font-size:13px; font-weight:bold; margin-bottom:16px; text-transform:uppercase; letter-spacing:.02em;">
+        Individual Faculty Evaluation Report
+      </h3>
+
+      <!-- A. Faculty Information -->
+      <p style="font-weight:bold; font-size:12px; margin-bottom:8px;">A. Faculty Information</p>
       <table style="width:100%; font-size:12px; margin-bottom:16px; border-collapse:collapse;">
         <tr>
-          <td style="width:40%; color:#555;">Name of Faculty Evaluated</td>
-          <td style="font-weight:bold;">: ${teacher?.name || teacherName}</td>
+          <td style="width:42%; padding:3px 0; color:#000; border:none;">Name of Faculty Evaluated</td>
+          <td style="padding:3px 0; font-weight:bold; color:#000; border:none;">: ${teacher?.name || teacherName}</td>
         </tr>
         <tr>
-          <td style="color:#555;">Department/College</td>
-          <td>: ${department}</td>
+          <td style="padding:3px 0; color:#000; border:none;">Department/College</td>
+          <td style="padding:3px 0; color:#000; border:none;">: ${department}</td>
         </tr>
         <tr>
-          <td style="color:#555;">Current Faculty Rank</td>
-          <td>: ${teacher?.academic_rank || "—"}</td>
+          <td style="padding:3px 0; color:#000; border:none;">Current Faculty Rank</td>
+          <td style="padding:3px 0; color:#000; border:none;">: ${teacher?.academic_rank || "—"}</td>
         </tr>
         <tr>
-          <td style="color:#555;">Semester/Term &amp; Academic Year</td>
-          <td>: ${semester.label}</td>
+          <td style="padding:3px 0; color:#000; border:none;">Semester/Term &amp; Academic Year</td>
+          <td style="padding:3px 0; color:#000; border:none;">: ${semester.label}</td>
         </tr>
       </table>
 
       <!-- B. Summary of Average SET Rating -->
-      <p style="font-weight:bold; font-size:13px; margin-bottom:4px;">
-        B. Summary of Average SET Rating
+      <p style="font-weight:bold; font-size:12px; margin-bottom:4px;">B. Summary of Average SET Rating</p>
+      <p style="font-size:11px; color:#000; margin-bottom:4px;">Computation:</p>
+      <p style="font-size:11px; color:#000; margin-bottom:2px; padding-left:16px;">
+        <b>Step 1</b>: Get the average SET rating for each class.
       </p>
-      <p style="font-size:11px; color:#555; margin-bottom:8px;">
-        <b>Step 1:</b> Get the average SET rating for each class.<br/>
-        <b>Step 2:</b> Multiply the number of students in each class with its average SET rating
-        to get the Weighted SET Score per class.<br/>
-        <b>Step 3:</b> Get the total number of students and the total weighted SET score.
+      <p style="font-size:11px; color:#000; margin-bottom:2px; padding-left:16px;">
+        <b>Step 2</b>: Multiply the number of students in each class with its average SET rating to get the Weighted SET Score per class.
+      </p>
+      <p style="font-size:11px; color:#000; margin-bottom:10px; padding-left:16px;">
+        <b>Step 3</b>: Get the total number of students and the total weighted SET score
       </p>
 
-      <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:12px;">
+      <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:10px;">
         <thead>
           <tr>
-            <th style="background:#1a56db; color:#ffffff; padding:7px 10px; border:1px solid #1447b8; text-align:center;">Seq</th>
-            <th style="background:#1a56db; color:#ffffff; padding:7px 10px; border:1px solid #1447b8; text-align:left;">Course Code/Title</th>
-            <th style="background:#1a56db; color:#ffffff; padding:7px 10px; border:1px solid #1447b8; text-align:center;">Year/Section</th>
-            <th style="background:#1a56db; color:#ffffff; padding:7px 10px; border:1px solid #1447b8; text-align:center;">No. of Students</th>
-            <th style="background:#1a56db; color:#ffffff; padding:7px 10px; border:1px solid #1447b8; text-align:center;">Average SET Rating</th>
-            <th style="background:#1a56db; color:#ffffff; padding:7px 10px; border:1px solid #1447b8; text-align:center;">(3×4) Weighted SET Score</th>
+            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold;">Seq</th>
+            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold;">(1)<br/>Course Code</th>
+            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold;">(2)<br/>Year/Section</th>
+            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold;">(3)<br/>No. of Students</th>
+            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold;">(4)<br/>Average SET Rating</th>
+            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold;">(3 x 4)<br/>Weighted SET Score</th>
           </tr>
         </thead>
         <tbody>
           ${classData.map((c, i) => `
-            <tr style="background:${i % 2 === 0 ? '#fff' : '#f8fafc'}">
-              <td style="padding:7px 10px; border:1px solid #e2e8f0; text-align:center;">${i + 1}</td>
-              <td style="padding:7px 10px; border:1px solid #e2e8f0;">${c.course}</td>
-              <td style="padding:7px 10px; border:1px solid #e2e8f0; text-align:center;">${c.section}</td>
-              <td style="padding:7px 10px; border:1px solid #e2e8f0; text-align:center;">${c.noStudents}</td>
-              <td style="padding:7px 10px; border:1px solid #e2e8f0; text-align:center;">${c.avgSETRating}</td>
-              <td style="padding:7px 10px; border:1px solid #e2e8f0; text-align:center;">${c.weightedScore}</td>
+            <tr>
+              <td style="padding:7px 8px; border:1px solid #000; text-align:center; color:#000;">${i + 1}</td>
+              <td style="padding:7px 8px; border:1px solid #000; color:#000; font-style:italic;">${c.course}</td>
+              <td style="padding:7px 8px; border:1px solid #000; text-align:center; color:#000;">${c.section}</td>
+              <td style="padding:7px 8px; border:1px solid #000; text-align:center; color:#000;">${c.noStudents}</td>
+              <td style="padding:7px 8px; border:1px solid #000; text-align:center; color:#000;">${c.avgSETRating}</td>
+              <td style="padding:7px 8px; border:1px solid #000; text-align:center; color:#000;">${c.weightedScore}</td>
             </tr>
           `).join("")}
-          <tr style="font-weight:bold; background:#f0f4ff;">
-            <td colspan="3" style="padding:7px 10px; border:1px solid #e2e8f0; text-align:right;">TOTAL</td>
-            <td style="padding:7px 10px; border:1px solid #e2e8f0; text-align:center;">${totalEnrolled}</td>
-            <td style="padding:7px 10px; border:1px solid #e2e8f0; text-align:center;">TOTAL</td>
-            <td style="padding:7px 10px; border:1px solid #e2e8f0; text-align:center;">${totalWeighted.toFixed(2)}</td>
+          <tr>
+            <td colspan="3" style="padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold; color:#000;">TOTAL</td>
+            <td style="padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold; color:#000;">${totalEnrolled}</td>
+            <td style="padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold; color:#000;">TOTAL</td>
+            <td style="padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold; color:#000;">${totalWeighted.toFixed(2)}</td>
           </tr>
         </tbody>
       </table>
-
-      <p style="font-size:12px; margin-bottom:16px;">
-        <b>Computation:</b> Overall SET Rating =
-        ${totalWeighted.toFixed(2)} ÷ ${totalEnrolled} =
-        <b style="color:#1a56db;">${overallSET}</b>
-      </p>
 
       <!-- C. SET and SEF Ratings -->
-      <p style="font-weight:bold; font-size:13px; margin-bottom:8px;">
-        C. SET and SEF Ratings
-      </p>
-      <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:16px;">
-        <thead>
-          <tr>
-            <th style="background:#334155; color:#ffffff; padding:8px 12px; border:1px solid #1e293b;"></th>
-            <th style="background:#334155; color:#ffffff; padding:8px 12px; border:1px solid #1e293b; text-align:center;">SET Rating</th>
-            <th style="background:#334155; color:#ffffff; padding:8px 12px; border:1px solid #1e293b; text-align:center;">*SEF Rating</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td style="padding:8px 12px; border:1px solid #e2e8f0; font-weight:bold;">OVERALL RATING</td>
-            <td style="padding:8px 12px; border:1px solid #e2e8f0; text-align:center;
-              font-weight:bold; font-size:16px; color:${getRatingColor(overallSET)};">
-              ${overallSET}
-            </td>
-            <td style="padding:8px 12px; border:1px solid #e2e8f0; text-align:center;">${sefRating}</td>
-          </tr>
-          <tr style="background:#f8fafc;">
-            <td style="padding:8px 12px; border:1px solid #e2e8f0; font-weight:bold;">RATING DESCRIPTION</td>
-            <td style="padding:8px 12px; border:1px solid #e2e8f0; text-align:center;">
-              <span style="background:${getRatingColor(overallSET)}20;
-                color:${getRatingColor(overallSET)};
-                padding:3px 10px; border-radius:12px; font-weight:bold; font-size:12px;">
-                ${getRatingLabel(overallSET)}
-              </span>
-            </td>
-            <td style="padding:8px 12px; border:1px solid #e2e8f0; text-align:center;">—</td>
-          </tr>
-        </tbody>
-      </table>
-      <p style="font-size:11px; color:#555; margin-bottom:16px;">
-        *Note: SEF rating is given by the supervisor using the SEF instrument.
+      <p style="font-weight:bold; font-size:12px; margin-bottom:8px;">C. SET and SEF Ratings</p>
+      <p style="font-size:11px; color:#000; margin-bottom:8px;">
+        <b>Computation</b>: Calculate the Overall SET Rating by dividing the total Weighted SET Score by the total number of students.
+        In the example above, the total weighted value is ${totalWeighted.toFixed(2)} while the total number of students is ${totalEnrolled}.
+        Therefore, ${totalWeighted.toFixed(2)}÷${totalEnrolled} = <b>${overallSET}</b>
       </p>
 
-      <!-- Category Breakdown -->
-      <p style="font-weight:bold; font-size:13px; margin-bottom:8px;">
-        Category Breakdown
-      </p>
-      <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:16px;">
-        <thead>
-          <tr>
-            <th style="background:#1a56db; color:#ffffff; padding:7px 10px; border:1px solid #1447b8; text-align:left;">Category</th>
-            <th style="background:#1a56db; color:#ffffff; padding:7px 10px; border:1px solid #1447b8; text-align:center;">Score (out of 100)</th>
-            <th style="background:#1a56db; color:#ffffff; padding:7px 10px; border:1px solid #1447b8; text-align:center;">Description</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td style="padding:7px 10px; border:1px solid #e2e8f0;">A. Management of Teaching and Learning</td>
-            <td style="padding:7px 10px; border:1px solid #e2e8f0; text-align:center;">${avgA}</td>
-            <td style="padding:7px 10px; border:1px solid #e2e8f0; text-align:center;">${getRatingLabel(avgA)}</td>
-          </tr>
-          <tr style="background:#f8fafc;">
-            <td style="padding:7px 10px; border:1px solid #e2e8f0;">B. Content Knowledge, Pedagogy and Technology</td>
-            <td style="padding:7px 10px; border:1px solid #e2e8f0; text-align:center;">${avgB}</td>
-            <td style="padding:7px 10px; border:1px solid #e2e8f0; text-align:center;">${getRatingLabel(avgB)}</td>
-          </tr>
-          <tr>
-            <td style="padding:7px 10px; border:1px solid #e2e8f0;">C. Commitment and Transparency</td>
-            <td style="padding:7px 10px; border:1px solid #e2e8f0; text-align:center;">${avgC}</td>
-            <td style="padding:7px 10px; border:1px solid #e2e8f0; text-align:center;">${getRatingLabel(avgC)}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <!-- D. Summary of Qualitative Comments — Students (blank for meeting) -->
-      <p style="font-weight:bold; font-size:13px; margin-bottom:8px;">
-        D. Summary of Qualitative Comments and Suggestions
-      </p>
-
-      <p style="font-size:12px; font-weight:bold; color:#475569; margin-bottom:6px;">
-        Comments and Suggestions from the Students
-      </p>
       <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:6px;">
         <thead>
           <tr>
-            <th style="background:#334155; color:#ffffff; padding:7px 10px; border:1px solid #1e293b; text-align:center; width:50px;">Seq</th>
-            <th style="background:#334155; color:#ffffff; padding:7px 10px; border:1px solid #1e293b; text-align:left;">Comments and Suggestions from the Students</th>
+            <th style="background:#fff; color:#000; padding:8px 10px; border:1px solid #000; width:40%;"></th>
+            <th style="background:#fff; color:#000; padding:8px 10px; border:1px solid #000; text-align:center; font-weight:bold;">SET Rating</th>
+            <th style="background:#fff; color:#000; padding:8px 10px; border:1px solid #000; text-align:center; font-weight:bold;">*SEF Rating</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding:10px; border:1px solid #000; font-weight:bold; color:#000;">OVERALL RATING</td>
+            <td style="padding:10px; border:1px solid #000; text-align:center; font-weight:bold; font-size:15px; color:#000;">${overallSET}</td>
+            <td style="padding:10px; border:1px solid #000; text-align:center; color:#000;">${sefRating}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="font-size:10px; color:#000; margin-bottom:16px; font-style:italic;">
+        *Note: rating given by the supervisor using the SEF instrument
+      </p>
+
+      <!-- Category Breakdown (FacultyPulse addition — not in CMO but useful for panel) -->
+      <p style="font-size:11px; color:#000; font-weight:bold; margin-bottom:6px;">Category Breakdown</p>
+      <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:16px;">
+        <thead>
+          <tr>
+            <th style="background:#fff; color:#000; padding:6px 8px; border:1px solid #000; text-align:left; font-weight:bold;">Category</th>
+            <th style="background:#fff; color:#000; padding:6px 8px; border:1px solid #000; text-align:center; font-weight:bold;">Score (out of 100)</th>
+            <th style="background:#fff; color:#000; padding:6px 8px; border:1px solid #000; text-align:center; font-weight:bold;">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding:6px 8px; border:1px solid #000; color:#000;">A. Management of Teaching and Learning</td>
+            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#000;">${avgA}</td>
+            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#000;">${getRatingLabel(avgA)}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 8px; border:1px solid #000; color:#000;">B. Content Knowledge, Pedagogy and Technology</td>
+            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#000;">${avgB}</td>
+            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#000;">${getRatingLabel(avgB)}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 8px; border:1px solid #000; color:#000;">C. Commitment and Transparency</td>
+            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#000;">${avgC}</td>
+            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#000;">${getRatingLabel(avgC)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- D. Summary of Qualitative Comments and Suggestions -->
+      <p style="font-weight:bold; font-size:12px; margin-bottom:8px;">D. Summary of Qualitative Comments and Suggestions</p>
+
+      <!-- Students comment table -->
+      <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:6px;">
+        <thead>
+          <tr>
+            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; width:40px; font-weight:bold;">Seq</th>
+            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold;">Comments and Suggestions from the Students</th>
+            <th class="no-print" style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; width:36px; font-weight:bold;">✕</th>
           </tr>
         </thead>
         <tbody id="student-comments-tbody">
-          ${[1,2,3,4,5].map(n => `
-            <tr>
-              <td style="padding:16px 10px; border:1px solid #e2e8f0; text-align:center;">${n}</td>
-              <td style="padding:16px 10px; border:1px solid #e2e8f0;">&nbsp;</td>
-            </tr>
-          `).join("")}
+          ${(() => {
+            // Show at least 5 rows; auto-expand if more comments
+            const rows = studentComments.length > 0
+              ? studentComments
+              : [];
+            const count = Math.max(rows.length, 5);
+            const extra = rows.length - 5;
+            let html = "";
+            for (let i = 0; i < count; i++) {
+              const text = rows[i] || "";
+              html += `
+                <tr>
+                  <td style="padding:14px 8px; border:1px solid #000; text-align:center; color:#000;">${i+1}</td>
+                  <td style="padding:14px 8px; border:1px solid #000; color:#000;" contenteditable="true">${escHtml(text)}</td>
+                  <td class="no-print" style="padding:4px; border:1px solid #e2e8f0; text-align:center;">
+                    <button onclick="removeSpecificCommentRow(this, 'student-comments-tbody')"
+                      style="font-size:11px; padding:2px 8px; background:#fee2e2; color:#dc2626;
+                        border:1px solid #fca5a5; border-radius:4px; cursor:pointer;">✕</button>
+                  </td>
+                </tr>`;
+            }
+            html += `
+              <tr data-hint="1">
+                <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#555;">…</td>
+                <td style="padding:6px 8px; border:1px solid #000; color:#555; font-style:italic;">(add additional rows if necessary)</td>
+                <td class="no-print" style="border:1px solid #e2e8f0;"></td>
+              </tr>`;
+            return html;
+          })()}
         </tbody>
       </table>
+
+      ${studentComments.length > 0 ? `
+        <div class="no-print" style="background:#eff6ff; border:1px solid #93c5fd; border-radius:6px;
+          padding:8px 14px; margin-bottom:8px; font-size:12px; color:#1e40af;
+          display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <span>💬 <b>${studentComments.length} student comment${studentComments.length !== 1 ? "s" : ""} loaded.</b>
+          Use ✕ to remove any that are invalid, irrelevant, or inappropriate before printing.</span>
+          <button onclick="restoreStudentComments()"
+            style="font-size:11px; padding:3px 10px; background:white; color:#1e40af;
+              border:1px solid #93c5fd; border-radius:4px; cursor:pointer; white-space:nowrap; flex-shrink:0;">
+            ↩ Restore All
+          </button>
+        </div>
+      ` : `
+        <div class="no-print" style="background:#fef3c7; border:1px solid #fcd34d; border-radius:6px;
+          padding:8px 14px; margin-bottom:8px; font-size:12px; color:#92400e;">
+          📭 No student comments submitted for this faculty this semester.
+          Rows are blank — fill by hand during the feedback meeting if needed.
+        </div>
+      `}
+
       <div class="no-print" style="display:flex; gap:8px; margin-bottom:16px;">
         <button onclick="addCommentRow('student-comments-tbody')"
           style="font-size:12px; padding:5px 12px; background:white; color:#1a56db; border:1px solid #1a56db; border-radius:5px; cursor:pointer;">
@@ -663,28 +821,36 @@ async function viewReport(teacherId, teacherName) {
         </button>
         <button onclick="removeCommentRow('student-comments-tbody')"
           style="font-size:12px; padding:5px 12px; background:white; color:#dc2626; border:1px solid #dc2626; border-radius:5px; cursor:pointer;">
-          − Remove Row
+          − Remove Last Row
         </button>
       </div>
 
-      <!-- Comments and Suggestions from the Supervisor (SEF) -->
-      <p style="font-size:12px; font-weight:bold; color:#475569; margin-bottom:6px;">
-        Comments and Suggestions from the Supervisor
-      </p>
-      <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:6px;">
+      <!-- Supervisor comment table -->
+      <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:16px;">
         <thead>
           <tr>
-            <th style="background:#334155; color:#ffffff; padding:7px 10px; border:1px solid #1e293b; text-align:center; width:50px;">Seq</th>
-            <th style="background:#334155; color:#ffffff; padding:7px 10px; border:1px solid #1e293b; text-align:left;">Comments and Suggestions from the Supervisor</th>
+            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; width:40px; font-weight:bold;">Seq</th>
+            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold;">Comments and Suggestions from the Supervisor</th>
           </tr>
         </thead>
         <tbody id="supervisor-comments-tbody">
-          ${[1,2,3,4,5].map(n => `
-            <tr>
-              <td style="padding:16px 10px; border:1px solid #e2e8f0; text-align:center;">${n}</td>
-              <td style="padding:16px 10px; border:1px solid #e2e8f0;">&nbsp;</td>
-            </tr>
-          `).join("")}
+          ${(() => {
+            const lines = supComments
+              ? supComments.split(/\n|(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean)
+              : [];
+            const rows = [...lines];
+            while (rows.length < 5) rows.push("");
+            return rows.map((line, i) => `
+              <tr>
+                <td style="padding:14px 8px; border:1px solid #000; text-align:center; color:#000;">${i+1}</td>
+                <td style="padding:14px 8px; border:1px solid #000; color:#000;">${line || "&nbsp;"}</td>
+              </tr>
+            `).join("");
+          })()}
+          <tr data-hint="1">
+            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#555;">…</td>
+            <td style="padding:6px 8px; border:1px solid #000; color:#555; font-style:italic;">(add additional rows if necessary)</td>
+          </tr>
         </tbody>
       </table>
       <div class="no-print" style="display:flex; gap:8px; margin-bottom:16px;">
@@ -698,50 +864,229 @@ async function viewReport(teacherId, teacherName) {
         </button>
       </div>
 
-      <!-- Prepared by / Reviewed by (Annex C horizontal format) -->
-      <div style="margin-top:28px; font-size:12px; max-width:480px;">
-        <p style="margin-bottom:14px;"><b>Prepared by:</b></p>
-        <div style="display:flex; align-items:flex-end; margin-bottom:14px;">
-          <span style="width:230px; flex:none;">Signature of Staff</span>
-          <span style="margin:0 6px;">:</span>
-          <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
+      <!-- Prepared by / Reviewed by -->
+      <div style="margin-top:28px; font-size:12px; max-width:500px;
+                  page-break-inside:avoid; break-inside:avoid;">
+        <div style="page-break-inside:avoid; break-inside:avoid; margin-bottom:22px;">
+          <p style="margin-bottom:14px; color:#000;"><b>Prepared by:</b></p>
+          <div style="display:flex; align-items:flex-end; margin-bottom:14px;">
+            <span style="width:230px; flex:none; font-weight:bold; color:#000;">Signature of Staff</span>
+            <span style="margin:0 6px; color:#000;">:</span>
+            <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
+          </div>
+          <div style="display:flex; align-items:flex-end; margin-bottom:14px;">
+            <span style="width:230px; flex:none; color:#000;">Name of Staff</span>
+            <span style="margin:0 6px; color:#000;">:</span>
+            <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
+          </div>
+          <div style="display:flex; align-items:flex-end;">
+            <span style="width:230px; flex:none; color:#000;">Date</span>
+            <span style="margin:0 6px; color:#000;">:</span>
+            <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
+          </div>
         </div>
-        <div style="display:flex; align-items:flex-end; margin-bottom:14px;">
-          <span style="width:230px; flex:none;">Name of Staff</span>
-          <span style="margin:0 6px;">:</span>
-          <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
-        </div>
-        <div style="display:flex; align-items:flex-end; margin-bottom:22px;">
-          <span style="width:230px; flex:none;">Date</span>
-          <span style="margin:0 6px;">:</span>
-          <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
-        </div>
-
-        <p style="margin-bottom:14px;"><b>Reviewed by:</b></p>
-        <div style="display:flex; align-items:flex-end; margin-bottom:14px;">
-          <span style="width:230px; flex:none;">Signature of Authorized Official</span>
-          <span style="margin:0 6px;">:</span>
-          <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
-        </div>
-        <div style="display:flex; align-items:flex-end; margin-bottom:14px;">
-          <span style="width:230px; flex:none;">Name of Authorized Official</span>
-          <span style="margin:0 6px;">:</span>
-          <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
-        </div>
-        <div style="display:flex; align-items:flex-end;">
-          <span style="width:230px; flex:none;">Date</span>
-          <span style="margin:0 6px;">:</span>
-          <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
+        <div style="page-break-inside:avoid; break-inside:avoid;">
+          <p style="margin-bottom:14px; color:#000;"><b>Reviewed by:</b></p>
+          <div style="display:flex; align-items:flex-end; margin-bottom:14px;">
+            <span style="width:230px; flex:none; font-weight:bold; color:#000;">Signature of Authorized Official</span>
+            <span style="margin:0 6px; color:#000;">:</span>
+            <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
+          </div>
+          <div style="display:flex; align-items:flex-end; margin-bottom:14px;">
+            <span style="width:230px; flex:none; color:#000;">Name of Authorized Official</span>
+            <span style="margin:0 6px; color:#000;">:</span>
+            <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
+          </div>
+          <div style="display:flex; align-items:flex-end;">
+            <span style="width:230px; flex:none; color:#000;">Date</span>
+            <span style="margin:0 6px; color:#000;">:</span>
+            <span style="flex:1; border-bottom:1px solid #000; height:1em;">&nbsp;</span>
+          </div>
         </div>
       </div>
 
-      <p style="font-size:10px; color:#94a3b8; margin-top:20px; text-align:center;">
-        This report is generated by FacultyPulse in compliance with CMO No. 19, s. 2025
-        and DBM-CHED Joint Circular No. 3, Series of 2022.
-      </p>
+      <!-- ══════════════════════════════════════════════════════════
+           ANNEX D — FEDAF
+           Prints on a new page. Fields blank for hand-fill per CMO §10.2.
+           ══════════════════════════════════════════════════════════ -->
+      <div id="annex-d-section" style="page-break-before:always; padding-top:8px;">
+
+        <p style="text-align:right; font-size:10px; color:#000; margin-bottom:4px;">
+          ANNEX D – Faculty Evaluation and Development Acknowledgment Form
+        </p>
+
+        <h3 style="text-align:center; font-size:12px; font-weight:bold; margin-bottom:16px; text-transform:uppercase; letter-spacing:.02em;">
+          Faculty Evaluation and Development Acknowledgment Form
+        </h3>
+
+        <!-- A. Faculty Member Information -->
+        <p style="font-weight:bold; font-size:12px; margin-bottom:8px;">A. FACULTY MEMBER INFORMATION</p>
+        <table style="width:100%; font-size:12px; margin-bottom:16px; border-collapse:collapse;">
+          <tr>
+            <td style="width:42%; padding:3px 0; color:#000; border:none;">Name of Faculty</td>
+            <td style="padding:3px 0; font-weight:bold; color:#000; border:none;">: ${teacher?.name || teacherName}</td>
+          </tr>
+          <tr>
+            <td style="padding:3px 0; color:#000; border:none;">Department/College</td>
+            <td style="padding:3px 0; color:#000; border:none;">: ${department}</td>
+          </tr>
+          <tr>
+            <td style="padding:3px 0; color:#000; border:none;">Current Faculty Rank</td>
+            <td style="padding:3px 0; color:#000; border:none;">: ${teacher?.academic_rank || "—"}</td>
+          </tr>
+          <tr>
+            <td style="padding:3px 0; color:#000; border:none;">Semester/Term &amp; Academic Year</td>
+            <td style="padding:3px 0; color:#000; border:none;">: ${semester.label}</td>
+          </tr>
+        </table>
+
+        <!-- B. Faculty Evaluation Summary -->
+        <p style="font-weight:bold; font-size:12px; margin-bottom:8px;">B. FACULTY EVALUATION SUMMARY</p>
+        <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:16px;">
+          <thead>
+            <tr>
+              <th colspan="2" style="background:#fff; color:#000; padding:7px 10px; border:1px solid #000; text-align:center; font-weight:bold;">
+                Overall Rating
+              </th>
+            </tr>
+            <tr>
+              <th style="background:#fff; color:#000; padding:7px 10px; border:1px solid #000; text-align:center; width:50%; font-weight:bold;">
+                Student Evaluation of Teachers (SET)
+              </th>
+              <th style="background:#fff; color:#000; padding:7px 10px; border:1px solid #000; text-align:center; width:50%; font-weight:bold;">
+                Supervisor's Evaluation of Faculty (SAF)
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="padding:14px 10px; border:1px solid #000; text-align:center; font-size:20px; font-weight:bold; color:#000;">
+                ${overallSET}
+              </td>
+              <td style="padding:14px 10px; border:1px solid #000; text-align:center; font-size:20px; font-weight:bold; color:#000;">
+                ${supRemarks?.sef_score || "—"}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- C. Development Plan -->
+        <p style="font-weight:bold; font-size:12px; margin-bottom:4px;">
+          C. DEVELOPMENT PLAN
+          <span style="font-weight:normal; font-size:11px; color:#000;">
+            (to be jointly accomplished by the Supervisor and Faculty)
+          </span>
+        </p>
+
+        ${fedaf?.supervisor_signed
+          ? `<table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:16px;">
+               <tr>
+                 <td style="border:1px solid #000; padding:8px 10px; width:30%; vertical-align:top; font-weight:bold; color:#000;">
+                   Areas for Improvement
+                 </td>
+                 <td style="border:1px solid #000; padding:8px 10px; vertical-align:top; min-height:60px; line-height:1.7; color:#000;">
+                   ${escHtml(fedaf.areas_improvement || "")}
+                 </td>
+               </tr>
+               <tr>
+                 <td style="border:1px solid #000; padding:8px 10px; vertical-align:top; font-weight:bold; color:#000;">
+                   Proposed Learning and Development Activities
+                 </td>
+                 <td style="border:1px solid #000; padding:8px 10px; vertical-align:top; min-height:60px; line-height:1.7; color:#000;">
+                   ${escHtml(fedaf.proposed_activities || "")}
+                 </td>
+               </tr>
+               <tr>
+                 <td style="border:1px solid #000; padding:8px 10px; vertical-align:top; font-weight:bold; color:#000;">
+                   Action Plan
+                 </td>
+                 <td style="border:1px solid #000; padding:8px 10px; vertical-align:top; min-height:60px; line-height:1.7; color:#000;">
+                   ${escHtml(fedaf.action_plan || "")}
+                 </td>
+               </tr>
+             </table>`
+          : `<table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:16px;">
+               <tr>
+                 <td style="border:1px solid #000; padding:8px 10px; width:30%; vertical-align:top; font-weight:bold; color:#000;">
+                   Areas for Improvement
+                 </td>
+                 <td style="border:1px solid #000; padding:8px 10px; vertical-align:top; height:70px; color:#000;"></td>
+               </tr>
+               <tr>
+                 <td style="border:1px solid #000; padding:8px 10px; vertical-align:top; font-weight:bold; color:#000;">
+                   Proposed Learning and Development Activities
+                 </td>
+                 <td style="border:1px solid #000; padding:8px 10px; vertical-align:top; height:70px; color:#000;"></td>
+               </tr>
+               <tr>
+                 <td style="border:1px solid #000; padding:8px 10px; vertical-align:top; font-weight:bold; color:#000;">
+                   Action Plan
+                 </td>
+                 <td style="border:1px solid #000; padding:8px 10px; vertical-align:top; height:70px; color:#000;"></td>
+               </tr>
+             </table>`
+        }
+
+        <!-- Acknowledgment statement -->
+        <p style="font-size:12px; line-height:1.8; margin-bottom:20px; text-align:justify; color:#000; font-weight:bold;">
+          I acknowledge that I have received and reviewed the faculty evaluation conducted for
+          the period mentioned above. I understand that my signature below does not necessarily
+          indicate agreement with the evaluation but confirms that I have been given the
+          opportunity to discuss it with my supervisor.
+        </p>
+
+        <!-- Signature blocks -->
+        <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:8px;">
+          <thead>
+            <tr>
+              <th colspan="2" style="background:#333; color:white; padding:7px 10px; border:1px solid #000; text-align:center; font-weight:bold;">
+                SUPERVISOR
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="border:1px solid #000; padding:6px 10px; width:30%; color:#000;">Signature</td>
+              <td style="border:1px solid #000; padding:6px 10px; height:36px; color:#000;"></td>
+            </tr>
+            <tr>
+              <td style="border:1px solid #000; padding:6px 10px; color:#000;">Name</td>
+              <td style="border:1px solid #000; padding:6px 10px; color:#000;"></td>
+            </tr>
+            <tr>
+              <td style="border:1px solid #000; padding:6px 10px; color:#000;">Date Signed</td>
+              <td style="border:1px solid #000; padding:6px 10px; height:32px; color:#000;"></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead>
+            <tr>
+              <th colspan="2" style="background:#333; color:white; padding:7px 10px; border:1px solid #000; text-align:center; font-weight:bold;">
+                FACULTY
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="border:1px solid #000; padding:6px 10px; width:30%; color:#000;">Signature</td>
+              <td style="border:1px solid #000; padding:6px 10px; height:36px; color:#000;"></td>
+            </tr>
+            <tr>
+              <td style="border:1px solid #000; padding:6px 10px; color:#000;">Name</td>
+              <td style="border:1px solid #000; padding:6px 10px; color:#000;"></td>
+            </tr>
+            <tr>
+              <td style="border:1px solid #000; padding:6px 10px; color:#000;">Date Signed</td>
+              <td style="border:1px solid #000; padding:6px 10px; height:32px; color:#000;"></td>
+            </tr>
+          </tbody>
+        </table>
+
+      </div><!-- /annex-d-section -->
     </div>
   `;
-
   // Show/hide the Release button based on release status
   updateReleaseButton();
 }
@@ -753,14 +1098,65 @@ function renderBarChart(ranked) {
   const ctx = document.getElementById("bar-chart").getContext("2d");
   if (barChart) barChart.destroy();
 
+  const progFilter = document.getElementById("dash-program-filter")?.value || "";
+  const facFilter  = document.getElementById("dash-faculty-filter")?.value || "";
+
+  // Apply program filter to the working set first
+  let scoped = progFilter ? ranked.filter(t => t.program === progFilter) : ranked;
+
+  let labels, data, colors, chartTitle, tooltipSuffix;
+
+  if (facFilter) {
+    // ── Single faculty selected: show just their score as one bar ──
+    const t = scoped.find(x => x.id === facFilter);
+    labels        = t ? [t.name.split(",")[0]] : [];
+    data          = t ? [t.overallSET] : [];
+    colors        = t ? [getRatingColor(t.overallSET)] : [];
+    tooltipSuffix = [""];
+    chartTitle    = t ? `${t.name} — SET Rating` : "Faculty SET Rating";
+  } else if (!progFilter) {
+    // ── All Programs: show department-level averages ──
+    const byProgram = new Map();
+    ranked.forEach(t => {
+      const prog = t.program || "—";
+      if (!byProgram.has(prog)) byProgram.set(prog, []);
+      byProgram.get(prog).push(t.overallSET);
+    });
+
+    const programAverages = [...byProgram.entries()].map(([prog, scores]) => ({
+      program: prog,
+      avg: parseFloat((scores.reduce((a,b) => a+b, 0) / scores.length).toFixed(2)),
+      count: scores.length,
+    }));
+
+    programAverages.sort((a, b) => b.avg - a.avg);
+
+    labels        = programAverages.map(p => p.program);
+    data          = programAverages.map(p => p.avg);
+    colors        = programAverages.map(p => getRatingColor(p.avg));
+    tooltipSuffix = programAverages.map(p => ` (${p.count} faculty)`);
+    chartTitle    = "Program-Level SET Rating Comparison (out of 100)";
+  } else {
+    // ── Specific program selected, no faculty filter: show individual faculty ──
+    labels        = scoped.map(t => t.name.split(",")[0]);
+    data          = scoped.map(t => t.overallSET);
+    colors        = scoped.map(t => getRatingColor(t.overallSET));
+    tooltipSuffix = scoped.map(() => "");
+    chartTitle    = `Faculty SET Rating Comparison — ${progFilter} (out of 100)`;
+  }
+
+  // Update chart card heading to reflect current scope
+  const headingEl = document.querySelector("#bar-chart").closest(".chart-card")?.querySelector("h3");
+  if (headingEl) headingEl.textContent = `📊 ${chartTitle}`;
+
   barChart = new Chart(ctx, {
     type: "bar",
     data: {
-      labels: ranked.map(t => t.name.split(",")[0]),
+      labels,
       datasets: [{
         label: "Overall SET Rating",
-        data: ranked.map(t => t.overallSET),
-        backgroundColor: ranked.map(t => getRatingColor(t.overallSET)),
+        data,
+        backgroundColor: colors,
         borderRadius: 6,
       }]
     },
@@ -772,7 +1168,7 @@ function renderBarChart(ranked) {
         tooltip: {
           callbacks: {
             label: ctx =>
-              ` ${ctx.parsed.y} / 100 — ${getRatingLabel(ctx.parsed.y)}`
+              ` ${ctx.parsed.y} / 100 — ${getRatingLabel(ctx.parsed.y)}${tooltipSuffix[ctx.dataIndex] || ""}`
           }
         }
       },
@@ -788,6 +1184,12 @@ function renderDonutChart(ranked) {
   const ctx = document.getElementById("donut-chart").getContext("2d");
   if (donutChart) donutChart.destroy();
 
+  const progFilter = document.getElementById("dash-program-filter")?.value || "";
+  const facFilter  = document.getElementById("dash-faculty-filter")?.value || "";
+
+  let scoped = progFilter ? ranked.filter(t => t.program === progFilter) : ranked;
+  if (facFilter) scoped = scoped.filter(t => t.id === facFilter);
+
   const buckets = {
     "Outstanding":       { count: 0, color: "#10b981" },
     "Very Satisfactory": { count: 0, color: "#3b82f6" },
@@ -796,7 +1198,7 @@ function renderDonutChart(ranked) {
     "Poor":              { count: 0, color: "#ef4444" },
   };
 
-  ranked.forEach(t => {
+  scoped.forEach(t => {
     const label = getRatingLabel(t.overallSET);
     if (buckets[label]) buckets[label].count++;
   });
@@ -839,22 +1241,207 @@ function closeReportModal() {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  RELEASE REPORT TO FACULTY
-//  Marks the report as released so faculty can view it, then
-//  re-renders the report in released mode.
+//  STAGE-AWARE RELEASE BUTTON
+//  pending / no row      → Forward to Supervisor
+//  forwarded_to_supervisor → disabled (waiting)
+//  supervisor_done        → Final Release to Faculty
+//  released               → hidden
 // ══════════════════════════════════════════════════════════════
-async function releaseReport() {
+function updateReleaseButton() {
+  const btn   = document.getElementById("release-btn");
+  if (!btn) return;
+
+  const stage = window._reportStage || "pending";
+
+  btn.style.display = "inline-block";
+  btn.disabled      = false;
+  btn.onclick       = null;
+
+  if (stage === "released") {
+    btn.style.display = "none";
+    return;
+  }
+
+  if (stage === "forwarded_to_supervisor") {
+    btn.textContent      = "⏳ Awaiting Supervisor Review";
+    btn.disabled         = true;
+    btn.style.background = "#7c3aed";
+    return;
+  }
+
+  if (stage === "supervisor_done") {
+    btn.textContent      = "✅ Final Release to Faculty";
+    btn.style.background = "#16a34a";
+    btn.onclick          = finalRelease;
+    return;
+  }
+
+  // pending or no row — forward to supervisor
+  btn.textContent      = "📤 Forward to Supervisor";
+  btn.style.background = "#1a56db";
+  btn.onclick          = forwardToSupervisor;
+}
+
+// ── Navigate to Monitoring panel filtered by this teacher ──
+function goToMonitoringFiltered(teacherId, teacherName) {
+  // Close all open modals first
+  document.querySelectorAll(".modal").forEach(m => m.classList.add("hidden"));
+
+  // Switch to monitoring panel (lazy-loads admin-monitoring.js if not yet loaded)
+  if (typeof switchPanel === "function") {
+    switchPanel("panel-monitoring");
+  }
+
+  // After panel is visible and JS has loaded, apply the filter
+  // Poll briefly since the JS may still be injecting
+  let attempts = 0;
+  const apply = setInterval(() => {
+    const input = document.getElementById("filter-faculty");
+    if (input) {
+      input.value = teacherName;
+      // Dispatch input event so monitoring JS picks it up
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      clearInterval(apply);
+      sessionStorage.removeItem("mon_filter_faculty");
+    }
+    if (++attempts > 20) clearInterval(apply); // give up after 2s
+  }, 100);
+}
+
+// ── Forward to Supervisor ──
+async function forwardToSupervisor() {
   const teacherId   = window._reportTeacherId;
   const teacherName = window._reportTeacherName;
   const semesterId  = window._reportSemesterId;
-
   if (!teacherId || !semesterId) return;
 
-  const confirmed = confirm(
-    `Release this report to ${teacherName}?\n\n` +
-    `• ${teacherName} will be able to view their scores and comments\n` +
-    `• You (QA) keep full access to identities for monitoring\n\n` +
-    `Proceed?`
+  // Look up this teacher's assigned supervisor name
+  const { data: teacherRow } = await supabase
+    .from("users")
+    .select("supervisor_id")
+    .eq("id", teacherId)
+    .maybeSingle();
+
+  let supervisorName = "Immediate Supervisor";
+  if (teacherRow?.supervisor_id) {
+    const { data: supRow } = await supabase
+      .from("users")
+      .select("name")
+      .eq("id", teacherRow.supervisor_id)
+      .maybeSingle();
+    if (supRow?.name) supervisorName = supRow.name;
+  } else {
+    // No supervisor_id set — fall back to the single supervisor account
+    const { data: supRow } = await supabase
+      .from("users")
+      .select("name")
+      .eq("role", "supervisor")
+      .limit(1)
+      .maybeSingle();
+    if (supRow?.name) supervisorName = supRow.name;
+  }
+
+  // Get submission counts — use raw enrolled_count from subjects table,
+  // NOT the clamped value from computeWeightedSET (which adjusts for math validity).
+  const { data: subjectsForCount } = await supabase
+    .from("subjects")
+    .select("id, name, enrolled_count, sections(name)")
+    .eq("teacher_id", teacherId)
+    .eq("semester_id", semesterId);
+
+  let submissionLines = "";
+  let totalRespondents = 0;
+  let totalEnrolled = 0;
+
+  if (subjectsForCount && subjectsForCount.length > 0) {
+    for (const sub of subjectsForCount) {
+      const { count } = await supabase
+        .from("evaluation_tracking")
+        .select("*", { count: "exact", head: true })
+        .eq("subject_id", sub.id)
+        .eq("semester_id", semesterId);
+
+      const respondents = count || 0;
+      const enrolled    = sub.enrolled_count || 0;
+      totalRespondents += respondents;
+      totalEnrolled    += enrolled;
+      submissionLines  += `\n  • ${sub.name} (${sub.sections?.name || "—"}): ${respondents}/${enrolled} submitted`;
+    }
+  }
+
+  const submissionSummary = totalEnrolled > 0
+    ? `\nSubmission Status: ${totalRespondents}/${totalEnrolled} students submitted${submissionLines}`
+    : "";
+
+  const confirmed = await fpConfirm(
+    `Forward this report to the Supervisor for review?\n\n` +
+    `Faculty: ${teacherName}\n` +
+    `Supervisor: ${supervisorName}` +
+    submissionSummary +
+    `\n\n• Evaluation results will be sent for supervisor remarks\n` +
+    `• You can do the Final Release after the supervisor submits`,
+    {
+      confirmLabel: "Forward",
+      confirmStyle: "fp-btn-primary",
+      extraButton: {
+        label: "View in Monitoring →",
+        action: () => goToMonitoringFiltered(teacherId, teacherName),
+      },
+    }
+  );
+  if (!confirmed) return;
+
+  const btn = document.getElementById("release-btn");
+  if (btn) { btn.textContent = "Forwarding..."; btn.disabled = true; }
+
+  // Upsert: insert if no row, update stage if row exists
+  const { data: existing } = await supabase
+    .from("report_releases")
+    .select("id")
+    .eq("teacher_id", teacherId)
+    .eq("semester_id", semesterId)
+    .maybeSingle();
+
+  let error;
+  if (existing) {
+    ({ error } = await supabase
+      .from("report_releases")
+      .update({ stage: "forwarded_to_supervisor" })
+      .eq("teacher_id", teacherId)
+      .eq("semester_id", semesterId));
+  } else {
+    ({ error } = await supabase
+      .from("report_releases")
+      .insert({
+        teacher_id:  teacherId,
+        semester_id: semesterId,
+        released_by: sessionStorage.getItem("name") || "QA Admin",
+        stage:       "forwarded_to_supervisor",
+      }));
+  }
+
+  if (error) {
+    await fpAlert("Failed to forward: " + error.message, "error");
+    updateReleaseButton();
+    return;
+  }
+
+  await fpAlert(`Report forwarded to Supervisor.\nThe supervisor can now review and submit remarks for ${teacherName}.`, "success");
+  viewReport(teacherId, teacherName);
+}
+
+// ── Final Release to Faculty ──
+async function finalRelease() {
+  const teacherId   = window._reportTeacherId;
+  const teacherName = window._reportTeacherName;
+  const semesterId  = window._reportSemesterId;
+  if (!teacherId || !semesterId) return;
+
+  const confirmed = await fpConfirm(
+    `Final Release: publish this report to ${teacherName}?\n\n` +
+    `• Faculty will be able to view their scores and supervisor remarks\n` +
+    `• This action cannot be undone`,
+    { confirmLabel: "Release to Faculty", confirmStyle: "fp-btn-success" }
   );
   if (!confirmed) return;
 
@@ -863,67 +1450,119 @@ async function releaseReport() {
 
   const { error } = await supabase
     .from("report_releases")
-    .insert({
-      teacher_id:  teacherId,
-      semester_id: semesterId,
-      released_by: sessionStorage.getItem("name") || "QA Admin",
-    });
+    .update({ stage: "released" })
+    .eq("teacher_id", teacherId)
+    .eq("semester_id", semesterId);
 
-  if (error && error.code !== "23505") { // 23505 = already released
-    alert("Failed to release: " + error.message);
-    if (btn) { btn.textContent = "📤 Release to Faculty"; btn.disabled = false; }
+  if (error) {
+    await fpAlert("Failed to release: " + error.message, "error");
+    updateReleaseButton();
     return;
   }
 
-  alert(`✅ Report released to ${teacherName}.\nThe faculty can now view their evaluation results.`);
-
-  // Re-render in released (hashed) mode
+  await fpAlert(`Report released to ${teacherName}.\nThe faculty can now view their evaluation results.`, "success");
   viewReport(teacherId, teacherName);
-}
-
-// ── Toggle Release button visibility based on release status ──
-function updateReleaseButton() {
-  const btn = document.getElementById("release-btn");
-  if (!btn) return;
-  if (window._reportReleased) {
-    btn.style.display = "none";  // already released, hide button
-  } else {
-    btn.style.display = "inline-block";
-    btn.textContent   = "📤 Release to Faculty";
-    btn.disabled      = false;
-  }
 }
 
 // ── Expose to HTML (rankings table uses onclick) ──
 window.viewReport = viewReport;
 
-// ── Add a blank row to a comment table (student or supervisor) ──
+// ── Restore student comments to original loaded state ──
+function restoreStudentComments() {
+  const tbody   = document.getElementById("student-comments-tbody");
+  const comments = window._studentComments || [];
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+  const count = Math.max(comments.length, 5);
+
+  for (let i = 0; i < count; i++) {
+    const text = comments[i] || "";
+    const tr   = document.createElement("tr");
+    tr.innerHTML = `
+      <td style="padding:14px 8px; border:1px solid #000; text-align:center; color:#000;">${i+1}</td>
+      <td style="padding:14px 8px; border:1px solid #000; color:#000;" contenteditable="true">${escHtml(text)}</td>
+      <td class="no-print" style="padding:4px; border:1px solid #e2e8f0; text-align:center;">
+        <button onclick="removeSpecificCommentRow(this, 'student-comments-tbody')"
+          style="font-size:11px; padding:2px 8px; background:#fee2e2; color:#dc2626;
+            border:1px solid #fca5a5; border-radius:4px; cursor:pointer;">✕</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  // Re-add hint row
+  const hintRow = document.createElement("tr");
+  hintRow.dataset.hint = "1";
+  hintRow.innerHTML = `
+    <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#555;">…</td>
+    <td style="padding:6px 8px; border:1px solid #000; color:#555; font-style:italic;">(add additional rows if necessary)</td>
+    <td class="no-print" style="border:1px solid #e2e8f0;"></td>
+  `;
+  tbody.appendChild(hintRow);
+}
+
+window.restoreStudentComments = restoreStudentComments;
+
+// ── Add a blank row to a comment table ──
 function addCommentRow(tbodyId) {
   const tbody = document.getElementById(tbodyId);
   if (!tbody) return;
-  const nextNum = tbody.querySelectorAll("tr").length + 1;
-  const tr = document.createElement("tr");
-  tr.innerHTML = `
-    <td style="padding:16px 10px; border:1px solid #e2e8f0; text-align:center;">${nextNum}</td>
-    <td style="padding:16px 10px; border:1px solid #e2e8f0;">&nbsp;</td>
+  const dataRows = Array.from(tbody.querySelectorAll("tr")).filter(r => !r.dataset.hint);
+  const newSeq   = dataRows.length + 1;
+  const isStudent = tbodyId === "student-comments-tbody";
+  const hintRow  = tbody.querySelector("tr[data-hint]");
+  const tr       = document.createElement("tr");
+  tr.innerHTML   = `
+    <td style="padding:14px 8px; border:1px solid #000; text-align:center; color:#000;">${newSeq}</td>
+    <td style="padding:14px 8px; border:1px solid #000; color:#000;" contenteditable="true">&nbsp;</td>
+    ${isStudent ? `<td class="no-print" style="padding:4px; border:1px solid #e2e8f0; text-align:center;">
+      <button onclick="removeSpecificCommentRow(this, '${tbodyId}')"
+        style="font-size:11px; padding:2px 8px; background:#fee2e2; color:#dc2626;
+          border:1px solid #fca5a5; border-radius:4px; cursor:pointer;">✕</button>
+    </td>` : ""}
   `;
-  tbody.appendChild(tr);
+  if (hintRow) tbody.insertBefore(tr, hintRow);
+  else tbody.appendChild(tr);
+  renumberCommentRows(tbodyId);
 }
 
-// ── Remove the last row from a comment table (keeps a minimum of 1) ──
+// ── Remove the last data row ──
 function removeCommentRow(tbodyId) {
   const tbody = document.getElementById(tbodyId);
   if (!tbody) return;
-  const rows = tbody.querySelectorAll("tr");
-  if (rows.length <= 1) {
-    alert("At least one row must remain.");
-    return;
-  }
-  tbody.removeChild(rows[rows.length - 1]);
+  const dataRows = Array.from(tbody.querySelectorAll("tr")).filter(r => !r.dataset.hint);
+  if (dataRows.length <= 1) return;
+  dataRows[dataRows.length - 1].remove();
+  renumberCommentRows(tbodyId);
 }
 
-window.addCommentRow    = addCommentRow;
-window.removeCommentRow = removeCommentRow;
+// ── Remove a specific row via its ✕ button ──
+function removeSpecificCommentRow(btn, tbodyId) {
+  const row = btn.closest("tr");
+  if (!row) return;
+  const tbody    = document.getElementById(tbodyId);
+  const dataRows = Array.from(tbody.querySelectorAll("tr")).filter(r => !r.dataset.hint);
+  if (dataRows.length <= 1) return;
+  row.remove();
+  renumberCommentRows(tbodyId);
+}
+
+// ── Renumber seq after add/remove ──
+function renumberCommentRows(tbodyId) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  Array.from(tbody.querySelectorAll("tr"))
+    .filter(r => !r.dataset.hint)
+    .forEach((row, i) => {
+      const cell = row.querySelector("td:first-child");
+      if (cell) cell.textContent = i + 1;
+    });
+}
+
+window.addCommentRow            = addCommentRow;
+window.removeCommentRow         = removeCommentRow;
+window.removeSpecificCommentRow = removeSpecificCommentRow;
 
 // ── Attach events ──
 document.getElementById("logout-btn").addEventListener("click", (e) => {
@@ -939,11 +1578,45 @@ document.getElementById("generate-report-btn").addEventListener("click", () => {
   viewReport(id, nameParts.join("|"));
 });
 
-document.getElementById("print-btn").addEventListener("click", () => window.print());
+// ── Print IFER only (Annex C) — hide Annex D before printing ──
+// ── Print (full document — IFER + FEDAF on page 2) ──
+document.getElementById("print-btn").addEventListener("click", () => {
+  window.print();
+});
+
+// ── Save as PDF (full document — IFER + FEDAF) ──
+document.getElementById("pdf-btn").addEventListener("click", async () => {
+  const btn         = document.getElementById("pdf-btn");
+  const teacherName = window._reportTeacherName || "IFER";
+  const element     = document.getElementById("report-content");
+
+  btn.textContent = "Generating...";
+  btn.disabled    = true;
+
+  // Hide all no-print elements (Add Row buttons, status banners)
+  const noPrint = element.querySelectorAll(".no-print");
+  noPrint.forEach(el => el.setAttribute("data-pdf-hidden", el.style.display));
+  noPrint.forEach(el => el.style.display = "none");
+
+  await html2pdf().set({
+    margin:      [10, 10, 10, 10],
+    filename:    `IFER_${teacherName.replace(/\s+/g, "_")}.pdf`,
+    image:       { type: "jpeg", quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true, logging: false },
+    jsPDF:       { unit: "mm", format: "a4", orientation: "portrait" },
+    pagebreak:   { mode: ["css", "legacy"] },
+  }).from(element).save();
+
+  // Restore no-print elements
+  noPrint.forEach(el => el.style.display = el.getAttribute("data-pdf-hidden") || "");
+  noPrint.forEach(el => el.removeAttribute("data-pdf-hidden"));
+
+  btn.textContent = "💾 Save as PDF";
+  btn.disabled    = false;
+});
+
 document.getElementById("close-report-btn").addEventListener("click", closeReportModal);
 
-const releaseBtnEl = document.getElementById("release-btn");
-if (releaseBtnEl) releaseBtnEl.addEventListener("click", releaseReport);
 
 // ── Refresh button — reloads all dashboard data ──
 function refreshDashboard() {
@@ -952,7 +1625,7 @@ function refreshDashboard() {
     btn.textContent = "🔄 Refreshing...";
     btn.disabled = true;
   }
-  Promise.all([loadSummary(), loadRankings(), loadUsers()]).finally(() => {
+  Promise.all([loadSummary(), loadRankings()]).finally(() => {
     if (btn) {
       btn.textContent = "🔄 Refresh";
       btn.disabled = false;
@@ -962,7 +1635,329 @@ function refreshDashboard() {
 const refreshBtnEl = document.getElementById("refresh-btn");
 if (refreshBtnEl) refreshBtnEl.addEventListener("click", refreshDashboard);
 
+const dashProgramFilterEl = document.getElementById("dash-program-filter");
+if (dashProgramFilterEl) {
+  dashProgramFilterEl.addEventListener("change", () => {
+    rankPage = 1;
+    // Refresh faculty filter options to only show faculty in selected program
+    populateDashFacultyFilter();
+    document.getElementById("dash-faculty-filter").value = ""; // reset on program change
+    renderRankingsPage();
+    renderBarChart(allRanked);
+    renderDonutChart(allRanked);
+  });
+}
+
+const dashFacultyFilterEl = document.getElementById("dash-faculty-filter");
+if (dashFacultyFilterEl) {
+  dashFacultyFilterEl.addEventListener("change", () => {
+    rankPage = 1;
+    renderRankingsPage();
+    renderBarChart(allRanked);
+    renderDonutChart(allRanked);
+  });
+}
+
+// ── Populate faculty filter dropdown, scoped to current program filter ──
+function populateDashFacultyFilter() {
+  const facultySel = document.getElementById("dash-faculty-filter");
+  if (!facultySel) return;
+
+  const progFilter = document.getElementById("dash-program-filter")?.value || "";
+  const pool = progFilter
+    ? allRanked.filter(t => t.program === progFilter)
+    : allRanked;
+
+  facultySel.innerHTML = `<option value="">All Faculty</option>` +
+    pool.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
+}
+
+// ══════════════════════════════════════════════════════════════
+//  PRINT HISTORY — audit log of released reports
+// ══════════════════════════════════════════════════════════════
+let allHistory      = [];
+let historyPage     = 1;
+const HISTORY_PAGE_SIZE = 10;
+
+async function loadPrintHistory() {
+  const tbody = document.getElementById("history-tbody");
+  if (!tbody) return; // panel not yet loaded
+  tbody.innerHTML = `<tr><td colspan="5">Loading...</td></tr>`;
+
+  const { data, error } = await supabase
+    .from("report_releases")
+    .select("teacher_id, semester_id, released_at, released_by, stage, users(name), semesters(label)")
+    .eq("stage", "released")
+    .order("released_at", { ascending: false });
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="5">Error loading history: ${error.message}</td></tr>`;
+    return;
+  }
+
+  allHistory = data || [];
+
+  // Populate semester filter (once)
+  const semFilter = document.getElementById("history-semester-filter");
+  if (semFilter && semFilter.options.length <= 1) {
+    const uniqueSemesters = [...new Map(
+      allHistory.filter(h => h.semesters).map(h => [h.semester_id, h.semesters.label])
+    )];
+    uniqueSemesters.forEach(([id, label]) => {
+      semFilter.innerHTML += `<option value="${id}">${label}</option>`;
+    });
+  }
+
+  historyPage = 1;
+  renderHistoryTable();
+}
+
+function renderHistoryTable() {
+  const search   = (document.getElementById("history-search")?.value || "").toLowerCase();
+  const semFilt  = document.getElementById("history-semester-filter")?.value || "";
+
+  let filtered = allHistory.filter(h => {
+    const name = (h.users?.name || "").toLowerCase();
+    const matchSearch = !search || name.includes(search);
+    const matchSem    = !semFilt || h.semester_id === semFilt;
+    return matchSearch && matchSem;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / HISTORY_PAGE_SIZE));
+  if (historyPage > totalPages) historyPage = totalPages;
+  const startIdx = (historyPage - 1) * HISTORY_PAGE_SIZE;
+  const pageItems = filtered.slice(startIdx, startIdx + HISTORY_PAGE_SIZE);
+
+  const countEl = document.getElementById("history-count");
+  if (countEl) {
+    countEl.textContent = filtered.length === 0
+      ? "No records found."
+      : `Showing ${startIdx+1}–${Math.min(startIdx+HISTORY_PAGE_SIZE, filtered.length)} of ${filtered.length}`;
+  }
+
+  const tbody = document.getElementById("history-tbody");
+  if (!tbody) return;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:20px; color:#94a3b8;">No reports have been released yet.</td></tr>`;
+    renderHistoryPagination(0);
+    return;
+  }
+
+  tbody.innerHTML = pageItems.map(h => {
+    const releasedDate = h.released_at
+      ? new Date(h.released_at).toLocaleDateString("en-PH", { year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" })
+      : "—";
+    const teacherName = h.users?.name || "Unknown";
+    return `
+      <tr>
+        <td>${teacherName}</td>
+        <td>${h.semesters?.label || "—"}</td>
+        <td>${h.released_by || "—"}</td>
+        <td>${releasedDate}</td>
+        <td>
+          <button style="font-size:12px; padding:5px 12px;"
+            onclick="viewReport('${h.teacher_id}','${teacherName.replace(/'/g,"\\'")}')">
+            View Report
+          </button>
+        </td>
+      </tr>`;
+  }).join("");
+
+  renderHistoryPagination(totalPages);
+}
+
+function renderHistoryPagination(totalPages) {
+  const container = document.getElementById("history-page-buttons");
+  if (!container) return;
+  container.innerHTML = "";
+  if (totalPages <= 1) return;
+
+  const makeBtn = (label, page, opts = {}) => {
+    const btn = document.createElement("button");
+    btn.className = "page-btn" + (opts.active ? " active" : "");
+    btn.textContent = label;
+    btn.disabled = !!opts.disabled;
+    btn.onclick = () => { historyPage = page; renderHistoryTable(); };
+    return btn;
+  };
+
+  container.appendChild(makeBtn("← Prev", historyPage - 1, { disabled: historyPage === 1 }));
+  let start = Math.max(1, historyPage - 2);
+  let end   = Math.min(totalPages, start + 4);
+  start     = Math.max(1, end - 4);
+  if (start > 1) {
+    container.appendChild(makeBtn("1", 1));
+    if (start > 2) container.appendChild(makeBtn("…", historyPage, { disabled:true }));
+  }
+  for (let p = start; p <= end; p++) {
+    container.appendChild(makeBtn(String(p), p, { active: p === historyPage }));
+  }
+  if (end < totalPages) {
+    if (end < totalPages - 1) container.appendChild(makeBtn("…", historyPage, { disabled:true }));
+    container.appendChild(makeBtn(String(totalPages), totalPages));
+  }
+  container.appendChild(makeBtn("Next →", historyPage + 1, { disabled: historyPage === totalPages }));
+}
+
+// Attach history panel events (elements exist in initial admin.html, not lazy-loaded)
+const historyRefreshBtn = document.getElementById("refresh-btn-history");
+if (historyRefreshBtn) historyRefreshBtn.addEventListener("click", loadPrintHistory);
+
+const historySearchEl = document.getElementById("history-search");
+if (historySearchEl) historySearchEl.addEventListener("input", () => { historyPage = 1; renderHistoryTable(); });
+
+const historySemFilterEl = document.getElementById("history-semester-filter");
+if (historySemFilterEl) historySemFilterEl.addEventListener("change", () => { historyPage = 1; renderHistoryTable(); });
+
+// Load history data on init too (panel is hidden but data ready when user clicks)
+loadPrintHistory();
+
+// ══════════════════════════════════════════════════════════════
+//  EMAIL CHANGE REQUESTS PANEL
+// ══════════════════════════════════════════════════════════════
+let emailRequests = [];
+
+async function loadEmailRequests() {
+  const statusFilter = document.getElementById("email-req-filter")?.value;
+  const tbody        = document.getElementById("email-req-tbody");
+  const countEl      = document.getElementById("email-req-count");
+  if (!tbody) return;
+
+  tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:#94a3b8;">Loading...</td></tr>`;
+
+  let query = supabase
+    .from("email_change_requests")
+    .select("id, student_id, current_email, requested_email, reason, status, created_at, reviewed_at, student:student_id(name, student_id, email)")
+    .order("created_at", { ascending: false });
+
+  if (statusFilter) query = query.eq("status", statusFilter);
+
+  const { data, error } = await query;
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:#dc2626;">Failed to load: ${escHtml(error.message)}</td></tr>`;
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:#94a3b8;">No requests found.</td></tr>`;
+    if (countEl) countEl.textContent = "0 requests";
+    return;
+  }
+
+  emailRequests = data;
+  if (countEl) countEl.textContent = `${data.length} request${data.length !== 1 ? "s" : ""}`;
+
+  // Update pending badge
+  const pending = data.filter(r => r.status === "pending").length;
+  const badge   = document.getElementById("email-req-badge");
+  if (badge) { badge.textContent = pending; badge.style.display = pending > 0 ? "inline-block" : "none"; }
+
+  tbody.innerHTML = data.map(r => {
+    const student   = r.student;
+    const name      = student?.name       || "—";
+    const studentNo = student?.student_id || "—";
+    const date      = new Date(r.created_at).toLocaleDateString("en-PH");
+    const statusBadge = {
+      pending:  `<span style="background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;">⏳ Pending</span>`,
+      approved: `<span style="background:#d1fae5; color:#065f46; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;">✅ Approved</span>`,
+      rejected: `<span style="background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;">❌ Rejected</span>`,
+    }[r.status] || r.status;
+
+    const actions = r.status === "pending" ? `
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button onclick="approveEmailRequest('${r.id}', '${r.student_id}')"
+          style="font-size:11px; padding:4px 10px; background:#16a34a;">✅ Approve</button>
+        <button onclick="rejectEmailRequest('${r.id}')"
+          style="font-size:11px; padding:4px 10px; background:#dc2626;">❌ Reject</button>
+      </div>` : "—";
+
+    return `<tr>
+      <td><b>${escHtml(name)}</b><br/><span style="font-size:11px; color:#64748b;">${escHtml(studentNo)}</span></td>
+      <td style="font-size:12px;">${escHtml(r.current_email || r.student?.email || "—")}</td>
+      <td style="font-size:12px; font-weight:bold;">${escHtml(r.requested_email)}</td>
+      <td style="font-size:12px; max-width:200px;">${escHtml(r.reason)}</td>
+      <td style="font-size:12px; white-space:nowrap;">${date}</td>
+      <td>${statusBadge}</td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join("");
+}
+
+
+async function approveEmailRequest(requestId, studentUuid) {
+  const req = emailRequests.find(r => r.id === requestId);
+  if (!req) return;
+
+  const confirmed = await fpConfirm(
+    `Approve email change for this student?\n\nNew email: ${req.requested_email}\n\nThis will immediately update their email on record.`
+  );
+  if (!confirmed) return;
+
+  // Use studentUuid passed directly — req.users?.id is unreliable from the join
+  const { error: updateError } = await supabase
+    .from("users")
+    .update({ email: req.requested_email })
+    .eq("id", studentUuid);
+
+  if (updateError) { await fpAlert("Failed to update email: " + updateError.message, "error"); return; }
+
+  const { error: reqError } = await supabase
+    .from("email_change_requests")
+    .update({ status: "approved", reviewed_at: new Date().toISOString() })
+    .eq("id", requestId);
+
+  if (reqError) { await fpAlert("Email updated but failed to mark request approved.", "error"); return; }
+
+  await fpAlert("Email change approved and updated successfully.", "success");
+  loadEmailRequests();
+}
+
+async function rejectEmailRequest(requestId) {
+  const confirmed = await fpConfirm("Reject this email change request?");
+  if (!confirmed) return;
+
+  const { error } = await supabase
+    .from("email_change_requests")
+    .update({ status: "rejected", reviewed_at: new Date().toISOString() })
+    .eq("id", requestId);
+
+  if (error) { await fpAlert("Failed to reject: " + error.message, "error"); return; }
+  await fpAlert("Request rejected.", "success");
+  loadEmailRequests();
+}
+
+window.approveEmailRequest = approveEmailRequest;
+window.rejectEmailRequest  = rejectEmailRequest;
+
+// Email requests panel events
+document.getElementById("refresh-email-req-btn")?.addEventListener("click", loadEmailRequests);
+document.getElementById("email-req-filter")?.addEventListener("change", loadEmailRequests);
+
+// Load pending badge count on init
+loadEmailRequests();
+
+// ── Admin Reset Password (fires Supabase reset email for staff) ──
+document.getElementById("reset-password-btn")?.addEventListener("click", async () => {
+  const u = allUsers?.find(x => x.id === editTargetId);
+  if (!u || u.role === "student") {
+    await fpAlert("Password reset is only available for staff accounts (teacher, admin, supervisor).", "error");
+    return;
+  }
+  const confirmed = await fpConfirm(
+    `Send a password reset email to:\n\n${u.email}\n\nThe user will receive a link to set a new password.`
+  );
+  if (!confirmed) return;
+
+  const { error } = await supabase.auth.resetPasswordForEmail(u.email, {
+    redirectTo: window.location.origin + "/index.html",
+  });
+
+  if (error) { await fpAlert("Failed to send reset email: " + error.message, "error"); return; }
+  await fpAlert(`Password reset email sent to ${u.email}.`, "success");
+});
+
 // ── Init ──
 loadSummary();
 loadRankings();
-loadUsers();

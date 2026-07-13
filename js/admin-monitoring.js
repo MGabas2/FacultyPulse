@@ -51,7 +51,7 @@ async function loadMonitoring() {
   // 2. All students with their section + last login
   const { data: students } = await supabase
     .from("users")
-    .select("id, student_id, section_id, last_login, sections(name)")
+    .select("id, student_id, section_id, last_login, sections(name, department)")
     .eq("role", "student");
 
   if (!students || students.length === 0) {
@@ -62,7 +62,7 @@ async function loadMonitoring() {
   // 3. All subjects this semester (with teacher + section)
   const { data: subs } = await supabase
     .from("subjects")
-    .select("id, name, section_id, teacher_id, users(name)")
+    .select("id, name, section_id, teacher_id, users(name), sections(department)")
     .eq("semester_id", semester.id);
 
   subjects = subs || [];
@@ -117,6 +117,7 @@ async function loadMonitoring() {
         studentId:   student.student_id,
         section:     student.sections?.name || "—",
         sectionId:   student.section_id,
+        department:  student.sections?.department || "—",
         subjectId:   subject.id,
         subjectName: subject.name,
         teacherName: subject.users?.name || "—",
@@ -139,8 +140,9 @@ async function loadMonitoring() {
 
 // ── Populate section + subject filters ──
 function populateFilters() {
-  // Submission-tab filters (Faculty + Section + Subject) are interdependent —
-  // each one narrows the others to combinations that actually exist.
+  // Submission-tab filters (Program + Faculty + Section + Subject) are
+  // interdependent — each one narrows the others to combinations that
+  // actually exist.
   refreshDependentFilters();
 
   // Comments-tab filters (Faculty + Subject) are also interdependent
@@ -169,38 +171,46 @@ function refreshCommentsFilters() {
 }
 
 // ── Interdependent (faceted) filters for the Submission Status tab ──
-//    Each of Faculty / Section / Subject is rebuilt to show only the
-//    options consistent with the OTHER two current selections, so:
-//      • pick a faculty → Section + Subject narrow to that faculty
-//      • pick a section → Faculty + Subject narrow to that section
-//      • pick a subject → Faculty + Section narrow to that subject
+//    Each of Program / Faculty / Section / Subject is rebuilt to show only
+//    the options consistent with the OTHER three current selections, so:
+//      • pick a program → Faculty + Section + Subject narrow to that program
+//      • pick a faculty → Program + Section + Subject narrow to that faculty
+//      • pick a section → Program + Faculty + Subject narrow to that section
+//      • pick a subject → Program + Faculty + Section narrow to that subject
 //    A current selection is kept if still valid, otherwise reset to "All".
 function refreshDependentFilters() {
+  const progSel    = document.getElementById("filter-program");
   const facList    = document.getElementById("faculty-datalist");
-  const sectionSel = document.getElementById("filter-section");
+  const sectionSel = document.getElementById("mon-filter-section");
   const subjectSel = document.getElementById("filter-subject");
-  if (!facList || !sectionSel || !subjectSel) return;
+  if (!progSel || !facList || !sectionSel || !subjectSel) return;
 
-  const fac = facultyIdFromInput("filter-faculty"); // resolved teacherId or ""
-  const sec = sectionSel.value;
-  const sub = subjectSel.value;
+  const prog = progSel.value;
+  const fac  = facultyIdFromInput("filter-faculty"); // resolved teacherId or ""
+  const sec  = sectionSel.value;
+  const sub  = subjectSel.value;
 
-  // Faculty options ← rows matching current Section + Subject
+  // Program options ← rows matching current Faculty + Section + Subject
+  const progPairs = new Map();
+  // Faculty options ← rows matching current Program + Section + Subject
   const facPairs = new Map();
-  // Section options ← rows matching current Faculty + Subject
+  // Section options ← rows matching current Program + Faculty + Subject
   const secPairs = new Map();
-  // Subject options ← rows matching current Faculty + Section
+  // Subject options ← rows matching current Program + Faculty + Section
   const subPairs = new Map();
 
   rows.forEach(r => {
-    if ((!sec || r.sectionId === sec) && (!sub || r.subjectId === sub) && r.teacherId)
+    if ((!fac || r.teacherId === fac) && (!sec || r.sectionId === sec) && (!sub || r.subjectId === sub) && r.department)
+      progPairs.set(r.department, r.department);
+    if ((!prog || r.department === prog) && (!sec || r.sectionId === sec) && (!sub || r.subjectId === sub) && r.teacherId)
       facPairs.set(r.teacherId, r.teacherName);
-    if ((!fac || r.teacherId === fac) && (!sub || r.subjectId === sub) && r.sectionId)
+    if ((!prog || r.department === prog) && (!fac || r.teacherId === fac) && (!sub || r.subjectId === sub) && r.sectionId)
       secPairs.set(r.sectionId, r.section);
-    if ((!fac || r.teacherId === fac) && (!sec || r.sectionId === sec) && r.subjectId)
+    if ((!prog || r.department === prog) && (!fac || r.teacherId === fac) && (!sec || r.sectionId === sec) && r.subjectId)
       subPairs.set(r.subjectId, r.subjectName);
   });
 
+  rebuildSelect(progSel, "All Programs", progPairs, prog);
   rebuildFacultyDatalist(facList, facPairs);          // narrow suggestions
   rebuildSelect(sectionSel, "All Sections", secPairs, sec);
   rebuildSelect(subjectSel, "All Subjects", subPairs, sub);
@@ -282,17 +292,19 @@ const MONITOR_SIZE = 20;
 // the summary cards report the submitted/pending breakdown, so filtering them
 // by status would be circular.
 function applyStructuralFilters(list) {
-  const search        = document.getElementById("search-input").value.toLowerCase();
-  const filterSection = document.getElementById("filter-section").value;
+  const search        = document.getElementById("mon-search-input").value.toLowerCase();
+  const filterSection = document.getElementById("mon-filter-section").value;
   const filterFaculty = facultyIdFromInput("filter-faculty");
   const filterSubject = document.getElementById("filter-subject").value;
+  const filterProgram = document.getElementById("filter-program")?.value || "";
 
   return list.filter(r => {
     const matchSearch  = !search        || r.studentId.toLowerCase().includes(search);
     const matchSection = !filterSection || r.sectionId === filterSection;
     const matchFaculty = !filterFaculty || r.teacherId === filterFaculty;
     const matchSubject = !filterSubject || r.subjectId === filterSubject;
-    return matchSearch && matchSection && matchFaculty && matchSubject;
+    const matchProgram = !filterProgram || r.department === filterProgram;
+    return matchSearch && matchSection && matchFaculty && matchSubject && matchProgram;
   });
 }
 
@@ -340,19 +352,47 @@ function renderTable() {
       badge = `<span class="badge never-login">Never Logged In</span>`;
     }
 
+// ── Relative time formatter ──
+// < 1 min   → "just now"
+// < 1 hour  → "X minutes ago"
+// < 24 hrs  → "X hours ago"
+// yesterday → "yesterday, HH:MM AM/PM"
+// < 7 days  → "X days ago"
+// >= 7 days → full date + time
+function timeAgo(dateStr) {
+  if (!dateStr) return "—";
+  const date  = new Date(dateStr);
+  const now   = new Date();
+  const diff  = Math.floor((now - date) / 1000); // seconds
+
+  if (diff < 60)   return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)} min${Math.floor(diff / 60) > 1 ? "s" : ""} ago`;
+
+  const diffHours = Math.floor(diff / 3600);
+  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
+
+  // Check if it was "yesterday"
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) {
+    return "yesterday, " + date.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  const diffDays = Math.floor(diff / 86400);
+  if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
+
+  // >= 7 days → full date and time
+  return date.toLocaleString("en-PH", {
+    month: "short", day: "numeric", year: "numeric",
+    hour: "2-digit", minute: "2-digit"
+  });
+}
+
     // Last login formatted
-    const lastLogin = r.lastLogin
-      ? new Date(r.lastLogin).toLocaleString("en-PH", {
-          month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
-        })
-      : "—";
+    const lastLogin    = timeAgo(r.lastLogin);
 
     // Submitted at formatted
-    const submittedAt = r.submittedAt
-      ? new Date(r.submittedAt).toLocaleString("en-PH", {
-          month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
-        })
-      : "—";
+    const submittedAt  = timeAgo(r.submittedAt);
 
     tbody.innerHTML += `
       <tr>
@@ -592,7 +632,7 @@ function onFilterChange() {
 
 // ── Refresh — reloads all data from Supabase ──
 function refreshMonitoring() {
-  const btn = document.getElementById("refresh-btn");
+  const btn = document.getElementById("refresh-btn-mon");
   if (btn) { btn.textContent = "🔄 Refreshing..."; btn.disabled = true; }
   loadMonitoring().finally(() => {
     if (btn) { btn.textContent = "🔄 Refresh"; btn.disabled = false; }
@@ -600,7 +640,7 @@ function refreshMonitoring() {
 }
 
 // ── Attach events ──
-document.getElementById("search-input").addEventListener("input", onFilterChange);
+document.getElementById("mon-search-input").addEventListener("input", onFilterChange);
 document.getElementById("filter-status").addEventListener("change", onFilterChange);
 
 // Faculty / Section / Subject are interdependent — refresh the other
@@ -610,24 +650,29 @@ function onStructuralFilterChange() {
   onFilterChange(); // reset to page 1 + re-render
 }
 document.getElementById("filter-faculty").addEventListener("input", onStructuralFilterChange);
-document.getElementById("filter-section").addEventListener("change", onStructuralFilterChange);
+document.getElementById("mon-filter-section").addEventListener("change", onStructuralFilterChange);
 document.getElementById("filter-subject").addEventListener("change", onStructuralFilterChange);
+
+const programFilterEl = document.getElementById("filter-program");
+if (programFilterEl) programFilterEl.addEventListener("change", onStructuralFilterChange);
 
 // Reset all filters back to "All"
 const resetBtn = document.getElementById("reset-filters");
 if (resetBtn) {
   resetBtn.addEventListener("click", () => {
-    document.getElementById("search-input").value = "";
+    document.getElementById("mon-search-input").value = "";
     document.getElementById("filter-status").value = "";
     document.getElementById("filter-faculty").value = "";
-    document.getElementById("filter-section").value = "";
+    document.getElementById("mon-filter-section").value = "";
     document.getElementById("filter-subject").value = "";
+    const progFilter = document.getElementById("filter-program");
+    if (progFilter) progFilter.value = "";
     refreshDependentFilters(); // rebuild full option lists
     onFilterChange();
   });
 }
 
-const monRefreshBtn = document.getElementById("refresh-btn");
+const monRefreshBtn = document.getElementById("refresh-btn-mon");
 if (monRefreshBtn) monRefreshBtn.addEventListener("click", refreshMonitoring);
 
 document.getElementById("logout-btn").addEventListener("click", (e) => {

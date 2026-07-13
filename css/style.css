@@ -340,6 +340,93 @@ tr:last-child td {
   .modal-box { box-shadow: none; padding: 0; }
 }
 
+/* ── MOBILE RESPONSIVE (shared across all pages) ── */
+@media (max-width: 640px) {
+
+  /* Nav — keep everything on one line */
+  nav {
+    padding: 8px 12px;
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+
+  body { overflow-x: hidden; }
+
+  /* Nav title truncates instead of pushing buttons off */
+  nav > span:first-child {
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex-shrink: 1;
+  }
+
+  nav > div {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+  }
+
+  #nav-user {
+    display: none;
+  }
+
+  nav a {
+    font-size: 11px !important;
+    margin-left: 0;
+    padding: 4px 8px !important;
+    background: rgba(255,255,255,0.15);
+    border-radius: 5px;
+    white-space: nowrap;
+  }
+
+  /* Nav buttons — stay small, don't inherit global button sizing */
+  nav button {
+    font-size: 11px !important;
+    padding: 4px 8px !important;
+    min-height: unset !important;
+    height: auto !important;
+    white-space: nowrap;
+    line-height: 1.4;
+  }
+
+  /* Container */
+  .container {
+    margin: 14px auto;
+    padding: 0 14px;
+  }
+
+  .container h2 { font-size: 20px; }
+
+  /* Cards row */
+  .cards-row { gap: 8px; }
+  .card.small { padding: 12px 10px; min-width: 0; flex: 1; }
+  .card-value { font-size: 22px; }
+  .card-label { font-size: 11px; }
+
+  /* Tables — horizontal scroll */
+  .section { overflow-x: auto; }
+
+  /* Non-nav buttons — proper touch targets */
+  .container button:not(nav button),
+  .modal-box button {
+    min-height: 42px;
+    font-size: 14px;
+  }
+
+  /* Modal full screen */
+  .modal-box {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    min-height: 100vh !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+}
+
 /* ── ROLE BADGES ── */
 .badge.badge-teacher {
   background: #dbeafe;

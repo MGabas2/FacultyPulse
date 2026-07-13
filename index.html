@@ -168,44 +168,151 @@
       <h2>FacultyPulse</h2>
       <p class="subtitle">Faculty Performance Analytics System</p>
 
-      <!-- ── Role Tab Buttons ── -->
-      <div class="role-tabs">
-        <button class="role-tab active" id="tab-student"    data-role="student">Student</button>
-        <button class="role-tab"        id="tab-teacher"    data-role="teacher">Teacher</button>
-        <button class="role-tab"        id="tab-admin"      data-role="admin">Admin</button>
+      <!-- ── Hash error banner (e.g. otp_expired) — shown by JS ── -->
+      <div id="hash-error-banner" style="display:none; background:#fef2f2; border:1px solid #fca5a5;
+        border-radius:8px; padding:12px 14px; margin-bottom:16px; font-size:13px; color:#991b1b; line-height:1.6;">
       </div>
 
-      <!-- ── Username / ID field ── -->
-      <label class="field-label" id="username-label">Student ID</label>
-      <input
-        class="field-input"
-        type="text"
-        id="username"
-        placeholder="e.g. 20XX-XXXX-AB"
-        maxlength="13"
-        autocomplete="off"
-      />
-      <div class="id-hint" id="id-hint">
-        🔒 Use your <b>Student ID</b> — not your real name.<br/>
-      </div>
-      <div class="field-error hidden" id="format-error">
-        ⚠️ Format must be: 4 digits - 4 digits - 2 uppercase letters
+      <!-- ── Normal login UI (hidden during recovery flow) ── -->
+      <div id="normal-login-ui">
+
+        <!-- ── Role Tab Buttons ── -->
+        <div class="role-tabs">
+          <button class="role-tab active" id="tab-student"    data-role="student">Student</button>
+          <button class="role-tab"        id="tab-teacher"    data-role="teacher">Teacher</button>
+          <button class="role-tab"        id="tab-supervisor" data-role="supervisor">Supervisor</button>
+          <button class="role-tab"        id="tab-admin"      data-role="admin">Admin</button>
+        </div>
+
+        <!-- ── Username / ID field ── -->
+        <label class="field-label" id="username-label">Student ID</label>
+        <input
+          class="field-input"
+          type="text"
+          id="username"
+          placeholder="e.g. 20XX-XXXX-AB"
+          maxlength="13"
+          autocomplete="off"
+        />
+        <div class="id-hint" id="id-hint">
+          🔒 Use your <b>Student ID</b> — not your real name.<br/>
+        </div>
+        <div class="field-error hidden" id="format-error">
+          ⚠️ Format must be: 4 digits - 4 digits - 2 uppercase letters
+        </div>
+
+        <!-- ── Password field ── -->
+        <label class="field-label">Password</label>
+        <input
+          class="field-input"
+          type="password"
+          id="password"
+          placeholder="Enter password"
+          autocomplete="off"
+        />
+
+        <!-- ── Submit ── -->
+        <button class="login-submit" id="login-btn">Login</button>
+        <div class="login-error" id="error-msg"></div>
+
+        <!-- Forgot password — staff only, hidden for student tab -->
+        <div id="forgot-wrap" style="text-align:center; margin-top:10px; display:none;">
+          <a href="#" id="forgot-link" style="font-size:12px; color:#1a56db; text-decoration:none;">
+            Forgot password?
+          </a>
+        </div>
+        <div id="forgot-success" style="display:none; font-size:12px; text-align:center;
+          background:#f0fdf4; border:1px solid #86efac; border-radius:6px;
+          padding:8px 12px; margin-top:10px; color:#166534;">
+          ✅ Password reset email sent. Check your inbox.
+        </div>
+      </div><!-- /normal-login-ui -->
+
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════
+       PASSWORD RESET OVERLAY
+       Shown via JS when onAuthStateChange fires PASSWORD_RECOVERY.
+       Completely replaces the login view — feels like a dedicated page.
+  ══════════════════════════════════════════════════════ -->
+  <div id="reset-overlay" style="display:none; position:fixed; inset:0;
+    background:linear-gradient(135deg, #1e3a8a 0%, #1a56db 60%, #3b82f6 100%);
+    z-index:9999; min-height:100vh; display:none;
+    align-items:center; justify-content:center; padding:20px;">
+
+    <div style="background:white; border-radius:16px; padding:40px 36px;
+      width:100%; max-width:420px; box-shadow:0 24px 64px rgba(0,0,0,0.25);">
+
+      <!-- Icon + heading -->
+      <div style="text-align:center; margin-bottom:28px;">
+        <div style="width:64px; height:64px; background:#eff6ff; border-radius:50%;
+          display:flex; align-items:center; justify-content:center;
+          margin:0 auto 16px; font-size:28px;">
+          🔑
+        </div>
+        <h2 style="font-size:22px; font-weight:700; color:#1e293b; margin-bottom:6px;">
+          Set New Password
+        </h2>
+        <p style="font-size:13px; color:#64748b; line-height:1.6; margin:0;">
+          Choose a strong password for your FacultyPulse account.
+        </p>
       </div>
 
-      <!-- ── Password field ── -->
-      <label class="field-label">Password</label>
-      <input
-        class="field-input"
-        type="password"
-        id="password"
-        placeholder="Enter password"
-        autocomplete="off"
-      />
+      <!-- Submit -->
+      <div id="reset-form-fields">
+        <div style="margin-bottom:14px;">
+          <label style="font-size:13px; font-weight:600; color:#374151;
+            display:block; margin-bottom:6px;">New Password</label>
+          <input type="password" id="reset-new-pw"
+            placeholder="At least 8 characters"
+            autocomplete="new-password"
+            style="width:100%; padding:11px 14px; border:1.5px solid #e2e8f0;
+              border-radius:8px; font-size:14px; outline:none; box-sizing:border-box;
+              transition:border-color 0.15s;"
+            onfocus="this.style.borderColor='#1a56db'"
+            onblur="this.style.borderColor='#e2e8f0'" />
+        </div>
 
-      <!-- ── Submit ── -->
-      <button class="login-submit" id="login-btn">Login</button>
-      <div class="login-error" id="error-msg"></div>
-      
+        <div style="margin-bottom:22px;">
+          <label style="font-size:13px; font-weight:600; color:#374151;
+            display:block; margin-bottom:6px;">Confirm Password</label>
+          <input type="password" id="reset-confirm-pw"
+            placeholder="Re-enter new password"
+            autocomplete="new-password"
+            style="width:100%; padding:11px 14px; border:1.5px solid #e2e8f0;
+              border-radius:8px; font-size:14px; outline:none; box-sizing:border-box;
+              transition:border-color 0.15s;"
+            onfocus="this.style.borderColor='#1a56db'"
+            onblur="this.style.borderColor='#e2e8f0'" />
+        </div>
+
+        <p id="reset-error" style="font-size:13px; color:#dc2626; margin-bottom:12px;
+          min-height:18px; display:none;"></p>
+
+        <button id="reset-save-btn"
+          style="width:100%; padding:13px; background:#1a56db; color:white;
+            border:none; border-radius:8px; font-size:15px; font-weight:600;
+            cursor:pointer; transition:background 0.2s;">
+          Update Password
+        </button>
+      </div>
+
+      <!-- Success state (replaces form fields) -->
+      <div id="reset-success" style="display:none; text-align:center; padding-top:8px;">
+        <div style="font-size:48px; margin-bottom:12px;">✅</div>
+        <h3 style="font-size:18px; color:#16a34a; margin-bottom:8px;">Password Updated!</h3>
+        <p style="font-size:13px; color:#64748b; margin-bottom:20px; line-height:1.6;">
+          Your password has been changed successfully.
+        </p>
+        <a href="index.html"
+          style="display:inline-block; padding:11px 28px; background:#1a56db;
+            color:white; border-radius:8px; font-size:14px; font-weight:600;
+            text-decoration:none;">
+          Back to Login
+        </a>
+      </div>
+
     </div>
   </div>
 
