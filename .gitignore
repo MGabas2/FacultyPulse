@@ -1,0 +1,3 @@
+# Supabase credentials — local only, never commit
+js/supabase.config.js
+.env
