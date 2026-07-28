@@ -1662,37 +1662,9 @@ function refreshDashboard() {
     }
   });
 }
-// ── Sync enrolled_count from actual students in each section ──
-const syncEnrolledBtn = document.getElementById("sync-enrolled-btn");
-if (syncEnrolledBtn) {
-  syncEnrolledBtn.addEventListener("click", async () => {
-    const confirmed = await fpConfirm(
-      "Sync enrolled counts?\n\nThis will update the enrolled student count for all subjects based on the actual number of active students in each section.\n\nRun this before generating IFERs to ensure accurate numbers."
-    );
-    if (!confirmed) return;
+const refreshBtnEl = document.getElementById("refresh-btn");
+if (refreshBtnEl) refreshBtnEl.addEventListener("click", refreshDashboard);
 
-    syncEnrolledBtn.textContent = "⏳ Syncing...";
-    syncEnrolledBtn.disabled = true;
-
-    const { data, error } = await supabase.rpc("sync_enrolled_counts");
-
-    syncEnrolledBtn.textContent = "🔢 Sync Enrolled";
-    syncEnrolledBtn.disabled = false;
-
-    if (error) {
-      await fpAlert("Sync failed: " + error.message, "error");
-      return;
-    }
-
-    await fpAlert(
-      `✅ Enrolled counts synced.\n${data.updated} subject(s) updated.\n\nYou can now generate IFERs with accurate student counts.`,
-      "success"
-    );
-
-    // Reload rankings so the updated counts reflect immediately
-    loadRankings();
-  });
-}
 const dashProgramFilterEl = document.getElementById("dash-program-filter");
 if (dashProgramFilterEl) {
   dashProgramFilterEl.addEventListener("change", () => {
@@ -1996,8 +1968,198 @@ document.getElementById("email-req-filter")?.addEventListener("change", loadEmai
 // Load pending badge count on init
 loadEmailRequests();
 
-// ── Admin Reset Password (fires Supabase reset email for staff) ──
 
+// ══════════════════════════════════════════════════════════════
+//  SYNC ENROLLED COUNTS
+// ══════════════════════════════════════════════════════════════
+const syncEnrolledBtn = document.getElementById("sync-enrolled-btn");
+if (syncEnrolledBtn) {
+  syncEnrolledBtn.addEventListener("click", async () => {
+    const confirmed = await fpConfirm(
+      "Sync enrolled counts?\n\nThis will update the enrolled student count for all subjects based on the actual number of active students in each section.\n\nRun this before generating IFERs to ensure accurate numbers."
+    );
+    if (!confirmed) return;
+
+    syncEnrolledBtn.textContent = "⏳ Syncing...";
+    syncEnrolledBtn.disabled = true;
+
+    const { data, error } = await supabase.rpc("sync_enrolled_counts");
+
+    syncEnrolledBtn.textContent = "🔢 Sync Enrolled";
+    syncEnrolledBtn.disabled = false;
+
+    if (error) {
+      await fpAlert("Sync failed: " + error.message, "error");
+      return;
+    }
+
+    await fpAlert(
+      `✅ Enrolled counts synced.\n${data.updated} subject(s) updated.\n\nYou can now generate IFERs with accurate student counts.`,
+      "success"
+    );
+    loadRankings();
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+//  SEMESTER MANAGEMENT
+// ══════════════════════════════════════════════════════════════
+const YEAR_FORMAT = /^\d{4}-\d{4}$/;
+
+async function loadSemesters() {
+  const tbody = document.getElementById("semesters-tbody");
+  if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="4">Loading...</td></tr>`;
+
+  const { data, error } = await supabase
+    .from("semesters")
+    .select("id, label, is_active, is_locked, created_at")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="4">Error: ${error.message}</td></tr>`;
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4">No semesters found.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = data.map(s => {
+    const created = s.created_at
+      ? new Date(s.created_at).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" })
+      : "—";
+
+    const statusBadge = s.is_active
+      ? `<span style="background:#d1fae5; color:#065f46; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">✅ Active</span>`
+      : s.is_locked
+        ? `<span style="background:#fee2e2; color:#991b1b; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">🔒 Locked</span>`
+        : `<span style="background:#f1f5f9; color:#475569; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">⏸ Inactive</span>`;
+
+    const action = s.is_active
+      ? `<span style="font-size:11px; color:#94a3b8;">Currently active</span>`
+      : s.is_locked
+        ? `<span style="font-size:11px; color:#94a3b8;">🔒 Data locked</span>`
+        : `<button onclick="activateSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
+            style="font-size:11px; padding:4px 10px; background:#1a56db; color:white; border:none; border-radius:4px; cursor:pointer;">
+            Set as Active
+          </button>`;
+
+    return `<tr>
+      <td><b>${s.label}</b></td>
+      <td>${statusBadge}</td>
+      <td style="font-size:12px; color:#64748b;">${created}</td>
+      <td>${action}</td>
+    </tr>`;
+  }).join("");
+}
+
+async function activateSemester(semesterId, semesterLabel) {
+  const confirmed = await fpConfirm(
+    `Activate "${semesterLabel}"?\n\n` +
+    `• This will become the active evaluation semester\n` +
+    `• The current active semester will be locked — its data cannot be changed\n` +
+    `• Students will only be able to submit evaluations for subjects in this semester\n\n` +
+    `This action affects the entire system. Proceed?`,
+    { confirmLabel: "Activate", confirmStyle: "fp-btn-primary" }
+  );
+  if (!confirmed) return;
+
+  const { data: current } = await supabase
+    .from("semesters")
+    .select("id")
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (current) {
+    const { error: lockError } = await supabase
+      .from("semesters")
+      .update({ is_active: false, is_locked: true })
+      .eq("id", current.id);
+    if (lockError) {
+      await fpAlert("Failed to lock current semester: " + lockError.message, "error");
+      return;
+    }
+  }
+
+  const { error: activateError } = await supabase
+    .from("semesters")
+    .update({ is_active: true, is_locked: false })
+    .eq("id", semesterId);
+
+  if (activateError) {
+    await fpAlert("Failed to activate semester: " + activateError.message, "error");
+    return;
+  }
+
+  await fpAlert(`"${semesterLabel}" is now the active semester.\nThe previous semester has been locked.`, "success");
+  loadSemesters();
+  loadSummary();
+  loadRankings();
+}
+
+async function createSemester() {
+  const term      = document.getElementById("new-sem-term").value;
+  const year      = document.getElementById("new-sem-year").value.trim();
+  const errorEl   = document.getElementById("sem-create-error");
+  const createBtn = document.getElementById("create-semester-btn");
+  errorEl.textContent = "";
+
+  if (!year) { errorEl.textContent = "Academic year is required."; return; }
+  if (!YEAR_FORMAT.test(year)) {
+    errorEl.textContent = "Format must be YYYY-YYYY (e.g. 2025-2026)"; return;
+  }
+
+  const [startYear, endYear] = year.split("-").map(Number);
+  if (endYear !== startYear + 1) {
+    errorEl.textContent = "Years must be consecutive (e.g. 2025-2026)."; return;
+  }
+
+  const label = `${term} ${year}`;
+
+  const { data: existing } = await supabase
+    .from("semesters")
+    .select("id")
+    .eq("label", label)
+    .maybeSingle();
+
+  if (existing) { errorEl.textContent = `"${label}" already exists.`; return; }
+
+  createBtn.textContent = "Creating...";
+  createBtn.disabled = true;
+
+  const { error } = await supabase
+    .from("semesters")
+    .insert({ label, is_active: false, is_locked: false });
+
+  createBtn.textContent = "Create Semester";
+  createBtn.disabled = false;
+
+  if (error) { errorEl.textContent = "Failed to create: " + error.message; return; }
+
+  await fpAlert(`"${label}" created.\n\nSet it as active when ready to start the next evaluation period.`, "success");
+  document.getElementById("new-sem-year").value = "";
+  document.getElementById("new-sem-preview").textContent = "—";
+  loadSemesters();
+}
+
+window.activateSemester = activateSemester;
+
+document.getElementById("new-sem-term")?.addEventListener("change", updateSemPreview);
+document.getElementById("new-sem-year")?.addEventListener("input", updateSemPreview);
+
+function updateSemPreview() {
+  const term = document.getElementById("new-sem-term")?.value || "";
+  const year = document.getElementById("new-sem-year")?.value.trim() || "";
+  const preview = document.getElementById("new-sem-preview");
+  if (preview) preview.textContent = term && year ? `${term} ${year}` : "—";
+}
+
+document.getElementById("create-semester-btn")?.addEventListener("click", createSemester);
+document.getElementById("refresh-btn-semesters")?.addEventListener("click", loadSemesters);
+
+loadSemesters();
 
 // ── Init ──
 loadSummary();
