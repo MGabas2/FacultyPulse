@@ -471,9 +471,7 @@ function openEditModal(userId) {
 
   document.getElementById("edit-modal").classList.remove("hidden");
 
-  // Reset Password only valid for staff with Supabase Auth accounts
-  const resetBtn = document.getElementById("reset-password-btn");
-  if (resetBtn) resetBtn.style.display = u.role === "student" ? "none" : "inline-block";
+
 }
 
 async function saveEdit() {

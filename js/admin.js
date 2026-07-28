@@ -34,6 +34,18 @@ function getRatingLabel(score) {
   return "Poor";
 }
 
+// ── Report pipeline stage badge ──
+function getReportStageBadge(stage) {
+  const map = {
+    pending:                 { label: "📝 Pending Review",      bg: "#fef3c7", color: "#92400e" },
+    forwarded_to_supervisor: { label: "📤 Awaiting Supervisor", bg: "#dbeafe", color: "#1e40af" },
+    supervisor_done:         { label: "✅ Supervisor Done",     bg: "#d1fae5", color: "#065f46" },
+    released:                { label: "🎓 Released",            bg: "#ede9fe", color: "#5b21b6" },
+  };
+  const s = map[stage] || map.pending;
+  return `<span style="background:${s.bg}; color:${s.color}; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; white-space:nowrap;">${s.label}</span>`;
+}
+
 function getRatingColor(score) {
   if (score >= 90) return "#10b981";
   if (score >= 75) return "#3b82f6";
@@ -188,13 +200,13 @@ const RANK_SIZE  = 10;
 
 async function loadRankings() {
   const tbody = document.getElementById("rankings-tbody");
-  tbody.innerHTML = `<tr><td colspan="5">Loading...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="6">Loading...</td></tr>`;
 
   const { data: semester } = await supabase
     .from("semesters").select("id").eq("is_active", true).single();
 
   if (!semester) {
-    tbody.innerHTML = `<tr><td colspan="5">No active semester.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6">No active semester.</td></tr>`;
     return;
   }
 
@@ -202,7 +214,7 @@ async function loadRankings() {
     .from("users").select("id, name, academic_rank").eq("role", "teacher");
 
   if (!teachers || teachers.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5">No faculty found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6">No faculty found.</td></tr>`;
     return;
   }
 
@@ -216,6 +228,17 @@ async function loadRankings() {
     .from("evaluation_scores")
     .select("subject_id, scores")
     .eq("semester_id", semester.id);
+
+  // Bulk fetch all report release stages for this semester
+  const { data: allReleases } = await supabase
+    .from("report_releases")
+    .select("teacher_id, stage")
+    .eq("semester_id", semester.id);
+
+  const releaseStageByTeacher = {};
+  (allReleases || []).forEach(r => {
+    releaseStageByTeacher[r.teacher_id] = r.stage;
+  });
 
   // Index by subject_id
   const evalsBySubject = {};
@@ -268,6 +291,7 @@ async function loadRankings() {
       overallSET,
       respondents: totalRespondents,
       program,
+      stage:       releaseStageByTeacher[teacher.id] || "pending",
     });
   }
 
@@ -316,7 +340,7 @@ function renderRankingsPage() {
   renderBarChart(filtered);
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5">No evaluation data ${progFilter ? "for this program" : "yet"}.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6">No evaluation data ${progFilter ? "for this program" : "yet"}.</td></tr>`;
     document.getElementById("rank-page-info").textContent = "";
     document.getElementById("rank-page-buttons").innerHTML = "";
     return;
@@ -343,6 +367,7 @@ function renderRankingsPage() {
             ${getRatingLabel(t.overallSET)}
           </span>
         </td>
+        <td>${getReportStageBadge(t.stage)}</td>
         <td>
           <button onclick="viewReport('${t.id}','${t.name.replace(/'/g,"\\'")}')">
             View Report
@@ -1574,7 +1599,12 @@ document.getElementById("logout-btn").addEventListener("click", (e) => {
 
 document.getElementById("generate-report-btn").addEventListener("click", () => {
   const select = document.getElementById("report-faculty");
+  if (!select || !select.value || !select.value.includes("|")) {
+    fpAlert("Please select a faculty member first.", "warning");
+    return;
+  }
   const [id, ...nameParts] = select.value.split("|");
+  if (!id) return;
   viewReport(id, nameParts.join("|"));
 });
 
@@ -1682,7 +1712,7 @@ const HISTORY_PAGE_SIZE = 10;
 async function loadPrintHistory() {
   const tbody = document.getElementById("history-tbody");
   if (!tbody) return; // panel not yet loaded
-  tbody.innerHTML = `<tr><td colspan="5">Loading...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="6">Loading...</td></tr>`;
 
   const { data, error } = await supabase
     .from("report_releases")
@@ -1939,24 +1969,7 @@ document.getElementById("email-req-filter")?.addEventListener("change", loadEmai
 loadEmailRequests();
 
 // ── Admin Reset Password (fires Supabase reset email for staff) ──
-document.getElementById("reset-password-btn")?.addEventListener("click", async () => {
-  const u = allUsers?.find(x => x.id === editTargetId);
-  if (!u || u.role === "student") {
-    await fpAlert("Password reset is only available for staff accounts (teacher, admin, supervisor).", "error");
-    return;
-  }
-  const confirmed = await fpConfirm(
-    `Send a password reset email to:\n\n${u.email}\n\nThe user will receive a link to set a new password.`
-  );
-  if (!confirmed) return;
 
-  const { error } = await supabase.auth.resetPasswordForEmail(u.email, {
-    redirectTo: window.location.origin + "/index.html",
-  });
-
-  if (error) { await fpAlert("Failed to send reset email: " + error.message, "error"); return; }
-  await fpAlert(`Password reset email sent to ${u.email}.`, "success");
-});
 
 // ── Init ──
 loadSummary();
