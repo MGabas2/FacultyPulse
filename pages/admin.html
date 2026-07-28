@@ -77,210 +77,229 @@
     /* ── MAIN CONTENT ── */
     .main-content {
       flex: 1;
-      overflow-y: auto; /* only this scrolls */
+      min-height: 0;
+      overflow: hidden;
       background: #f4f6f8;
+      display: flex;
+      flex-direction: column;
     }
 
     .panel { display: none; }
-    .panel.active { display: block; }
+    .panel.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+    .panel.active:not(#panel-dashboard) { overflow-y: auto; }
+    #panel-dashboard { flex: 1; min-height: 0; overflow: hidden; }
 
-    /* ── DASHBOARD: compact container ── */
+    /* ── DASHBOARD: fills viewport, no scroll ── */
     .dash-wrap {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 16px 20px 24px;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      padding: 10px 14px;
+      box-sizing: border-box;
+      gap: 8px;
+      overflow: hidden;
     }
 
+    /* title bar */
     .dash-title {
       display: flex;
       align-items: center;
-      gap: 10px;
-      margin-bottom: 14px;
-      font-size: 20px;
+      gap: 8px;
+      font-size: 17px;
       font-weight: bold;
+      flex: none;
     }
 
-    /* ── SUMMARY CARDS ROW ── */
-    .cards-row {
-      display: flex;
-      gap: 12px;
-      margin-bottom: 14px;
-    }
-
-    .card.small {
-      flex: 1;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: 12px 16px;
-      text-align: center;
-    }
-
-    .card-label { font-size: 12px; color: #666; margin-bottom: 4px; }
-    .card-value { font-size: 24px; font-weight: bold; color: #1a56db; }
-
-    /* ── ICON STAT ROW (SMART-style) ── */
+    /* ── STAT PILLS ROW ── */
     .icon-stats-row {
       display: flex;
-      justify-content: space-around;
-      align-items: center;
-      background: white;
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      padding: 20px 16px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-      gap: 16px;
+      gap: 8px;
+      flex: none;
     }
 
     .icon-stat {
+      flex: 1;
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 8px 12px;
       display: flex;
-      flex-direction: column;
       align-items: center;
-      gap: 6px;
-      min-width: 110px;
-      text-align: center;
+      gap: 10px;
     }
 
     .icon-stat .icon-circle {
-      width: 52px;
-      height: 52px;
+      width: 36px;
+      height: 36px;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 24px;
+      font-size: 18px;
       background: #eff6ff;
       color: #1a56db;
+      flex-shrink: 0;
     }
 
     .icon-stat .icon-circle.green  { background: #f0fdf4; color: #16a34a; }
     .icon-stat .icon-circle.purple { background: #faf5ff; color: #7c3aed; }
 
-    .icon-stat .icon-label {
-      font-size: 12px;
-      color: #64748b;
-      font-weight: 500;
-    }
+    .icon-stat-text { display: flex; flex-direction: column; }
 
     .icon-stat .icon-value {
-      font-size: 24px;
+      font-size: 20px;
       font-weight: 800;
       color: #1e293b;
       line-height: 1;
     }
 
-    .icon-stat-divider {
-      width: 1px;
-      height: 50px;
-      background: #e2e8f0;
-      flex-shrink: 0;
+    .icon-stat .icon-label {
+      font-size: 10px;
+      color: #64748b;
+      font-weight: 500;
+      margin-top: 2px;
     }
 
-    @media (max-width: 600px) {
-      .icon-stats-row { padding: 16px 10px; gap: 10px; }
-      .icon-stat-divider { display: none; }
-      .icon-stat { min-width: 80px; }
-      .icon-stat .icon-circle { width: 44px; height: 44px; font-size: 20px; }
-      .icon-stat .icon-value { font-size: 19px; }
-    }
+    .icon-stat-divider { display: none; }
 
-    /* ── CHARTS SIDE BY SIDE (wider, equal) ── */
-    .charts-row-wide {
+    /* ── MAIN BODY: left col (charts) + right col (rankings) ── */
+    .dash-body {
+      flex: 1;
+      min-height: 0;
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
-      margin-bottom: 16px;
+      grid-template-columns: 1fr 1.4fr;
+      gap: 8px;
     }
 
-    .charts-row-wide .chart-card { margin: 0; }
-
-    @media (max-width: 750px) {
-      .charts-row-wide { grid-template-columns: 1fr; }
-    }
-
-    /* ── RANKINGS full width below charts ── */
-    .rankings-full {
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: 14px 16px;
-      margin-bottom: 16px;
-    }
-
-    .rankings-full table { font-size: 13px; }
-    .rankings-full th, .rankings-full td { padding: 8px 10px; }
-
-    /* ── DASHBOARD GRID: charts left, rankings right ── */
-    .dash-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      grid-template-rows: auto auto;
-      gap: 14px;
-      margin-bottom: 14px;
-    }
-
-    /* charts span top-left */
-    .charts-col {
+    /* LEFT: filter + two charts stacked */
+    .dash-left {
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 8px;
+      min-height: 0;
+    }
+
+    .dash-filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      flex: none;
+    }
+
+    .dash-filter-bar span {
+      font-size: 11px;
+      color: #64748b;
+      font-weight: 600;
+    }
+
+    .dash-filter-bar select {
+      font-size: 11px;
+      padding: 4px 8px;
+      width: auto;
+      min-width: 130px;
+    }
+
+    .charts-stack {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 1fr 1fr;
+      gap: 8px;
     }
 
     .chart-card {
       background: white;
       border: 1px solid #ddd;
       border-radius: 8px;
-      padding: 14px 16px;
-    }
-
-    .chart-card h3 { margin-bottom: 10px; font-size: 13px; color: #374151; }
-    .chart-wrapper { position: relative; height: 220px; }
-
-    /* rankings span right column, full height */
-    .rankings-col {
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: 14px 16px;
-      overflow: hidden;
-    }
-
-    .rankings-col h3 { font-size: 14px; margin-bottom: 10px; }
-
-    /* ── IFER ROW ── */
-    .ifer-row {
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: 14px 16px;
+      padding: 10px 12px;
       display: flex;
-      align-items: center;
-      gap: 16px;
-      flex-wrap: wrap;
+      flex-direction: column;
+      min-height: 0;
     }
 
-    .ifer-row h3 { font-size: 14px; margin: 0; flex: none; }
-
-    .ifer-row p {
-      font-size: 12px;
-      color: #555;
-      flex: 1;
-      min-width: 200px;
-      margin: 0;
-    }
-
-    .ifer-controls {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      flex-wrap: wrap;
+    .chart-card h3 {
+      margin: 0 0 6px;
+      font-size: 11px;
+      color: #374151;
+      font-weight: 600;
       flex: none;
     }
 
-    /* compact table inside rankings */
-    .rankings-col table { font-size: 13px; }
-    .rankings-col th, .rankings-col td { padding: 7px 10px; }
+    .chart-wrapper {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* RIGHT: rankings + ifer stacked */
+    .dash-right {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+    }
+
+    .rankings-full {
+      flex: 1;
+      min-height: 0;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .rankings-full h3 {
+      font-size: 12px;
+      margin: 0 0 8px;
+      flex: none;
+      font-weight: 600;
+    }
+
+    .rankings-scroll {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    .rankings-full table { font-size: 11px; width: 100%; }
+    .rankings-full th, .rankings-full td { padding: 5px 7px; }
+
+    .rankings-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 6px;
+      flex-wrap: wrap;
+      gap: 4px;
+      flex: none;
+    }
+
+
+
+    /* old classes kept for compat */
+    .rankings-col table { font-size: 11px; }
+    .rankings-col th, .rankings-col td { padding: 5px 7px; }
+    .chart-card h3 { margin-bottom: 6px; }
+    .chart-wrapper { position: relative; }
+
+    /* ── RESPONSIVE: stack on smaller screens ── */
+    @media (max-width: 900px) {
+      .dash-wrap { overflow-y: auto; }
+      .dash-body { grid-template-columns: 1fr; }
+      .charts-stack { grid-template-rows: auto auto; }
+      .chart-wrapper { height: 180px; }
+      .rankings-scroll { max-height: 280px; }
+    }
+
+    @media (max-width: 600px) {
+      .icon-stats-row { flex-direction: column; }
+      .icon-stat { padding: 6px 10px; }
+      .dash-filter-bar select { min-width: 100px; }
+    }
 
     /* ── OTHER PANELS ── */
     .container {
@@ -567,6 +586,7 @@
         <span class="nav-icon">🗓️</span> Semester Management
       </button>
       <hr class="sidebar-divider" />
+
     </aside>
 
     <!-- MAIN CONTENT (scrolls independently) -->
@@ -578,97 +598,119 @@
       <div id="panel-dashboard" class="panel active">
         <div class="dash-wrap">
 
+          <!-- Title + Stats Row -->
           <div class="dash-title">
             Admin Dashboard
-            <button id="refresh-btn" style="font-size:12px; padding:5px 10px;">🔄 Refresh</button>
-            <button id="sync-enrolled-btn" style="font-size:12px; padding:5px 10px; background:#0e7490; color:white; border:none; border-radius:5px; cursor:pointer;" title="Sync enrolled counts from actual students in each section">
+            <button id="refresh-btn" style="font-size:11px; padding:4px 10px;">🔄 Refresh</button>
+            <button id="sync-enrolled-btn" style="font-size:11px; padding:4px 10px; background:#0e7490; color:white; border:none; border-radius:5px; cursor:pointer;" title="Sync enrolled counts from actual students in each section">
               🔢 Sync Enrolled
             </button>
           </div>
 
-          <!-- Icon Stat Row -->
+          <!-- Stat Pills -->
           <div class="icon-stats-row">
             <div class="icon-stat">
               <div class="icon-circle">🏛️</div>
-              <span class="icon-value" id="count-faculty">—</span>
-              <span class="icon-label">Total Faculty</span>
+              <div class="icon-stat-text">
+                <span class="icon-value" id="count-faculty">—</span>
+                <span class="icon-label">Total Faculty</span>
+              </div>
             </div>
-            <div class="icon-stat-divider"></div>
             <div class="icon-stat">
               <div class="icon-circle green">🎓</div>
-              <span class="icon-value" id="count-students">—</span>
-              <span class="icon-label">Total Students</span>
+              <div class="icon-stat-text">
+                <span class="icon-value" id="count-students">—</span>
+                <span class="icon-label">Total Students</span>
+              </div>
             </div>
-            <div class="icon-stat-divider"></div>
             <div class="icon-stat">
               <div class="icon-circle purple">📋</div>
-              <span class="icon-value" id="count-evals">—</span>
-              <span class="icon-label">Evaluations Submitted</span>
-            </div>
-          </div>
-
-          <!-- Shared filter bar for charts + rankings -->
-          <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
-            <span style="font-size:12px; color:#64748b; font-weight:600;">Filter by:</span>
-            <select id="dash-program-filter" style="font-size:12px; padding:6px 10px; width:auto; min-width:160px;">
-              <option value="">All Programs</option>
-            </select>
-            <select id="dash-faculty-filter" style="font-size:12px; padding:6px 10px; width:auto; min-width:160px;">
-              <option value="">All Faculty</option>
-            </select>
-          </div>
-
-          <!-- Charts side by side, full width -->
-          <div class="charts-row-wide">
-            <div class="chart-card">
-              <h3>📊 Faculty SET Rating Comparison (out of 100)</h3>
-              <div class="chart-wrapper">
-                <canvas id="bar-chart"></canvas>
-              </div>
-            </div>
-            <div class="chart-card">
-              <h3>🍩 Rating Distribution</h3>
-              <div class="chart-wrapper">
-                <canvas id="donut-chart"></canvas>
+              <div class="icon-stat-text">
+                <span class="icon-value" id="count-evals">—</span>
+                <span class="icon-label">Evaluations Submitted</span>
               </div>
             </div>
           </div>
 
-          <!-- Rankings full width -->
-          <div class="rankings-full">
-            <h3 style="font-size:14px; margin:0 0 10px;">Faculty Rankings — Active Semester</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Rank</th>
-                  <th>Faculty Name</th>
-                  <th>SET Rating</th>
-                  <th>Description</th>
-                  <th>Report Status</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="rankings-tbody">
-                <tr><td colspan="6">Loading...</td></tr>
-              </tbody>
-            </table>
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-top:10px; flex-wrap:wrap; gap:6px;">
-              <span id="rank-page-info" style="font-size:11px; color:#64748b;"></span>
-              <div id="rank-page-buttons" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
-            </div>
-          </div>
+          <!-- Main Body: Left (charts) + Right (rankings) -->
+          <div class="dash-body">
 
-          <!-- IFER row -->
-          <div class="ifer-row" id="ifer-section">
-            <h3>📄 Generate IFER Report</h3>
-            <p>Individual Faculty Evaluation Report per CMO No. 19, s. 2025 (Annex C). <b>Student identities encrypted after generation.</b></p>
-            <div class="ifer-controls">
-              <select id="report-faculty" style="min-width:180px;">
-                <option>— select faculty —</option>
-              </select>
-              <button id="generate-report-btn">Generate IFER</button>
-            </div>
-          </div>
+            <!-- LEFT COLUMN -->
+            <div class="dash-left">
+
+              <!-- Filter bar -->
+              <div class="dash-filter-bar">
+                <span>Filter by:</span>
+                <select id="dash-program-filter">
+                  <option value="">All Programs</option>
+                </select>
+                <select id="dash-faculty-filter">
+                  <option value="">All Faculty</option>
+                </select>
+              </div>
+
+              <!-- Charts stacked -->
+              <div class="charts-stack">
+                <div class="chart-card">
+                  <h3>📊 Faculty SET Rating Comparison (out of 100)</h3>
+                  <div class="chart-wrapper">
+                    <canvas id="bar-chart"></canvas>
+                  </div>
+                </div>
+                <div class="chart-card">
+                  <h3>🍩 Rating Distribution</h3>
+                  <div class="chart-wrapper">
+                    <canvas id="donut-chart"></canvas>
+                  </div>
+                </div>
+              </div>
+
+            </div><!-- /dash-left -->
+
+            <!-- RIGHT COLUMN -->
+            <div class="dash-right">
+
+              <!-- Rankings -->
+              <div class="rankings-full">
+                <h3>Faculty Rankings — Active Semester</h3>
+                <div class="rankings-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Rank</th>
+                        <th>Faculty Name</th>
+                        <th>SET Rating</th>
+                        <th>Description</th>
+                        <th>Report Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="rankings-tbody">
+                      <tr><td colspan="6">Loading...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="rankings-footer">
+                  <span id="rank-page-info" style="font-size:10px; color:#64748b;"></span>
+                  <div id="rank-page-buttons" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
+                </div>
+              </div>
+
+              <!-- IFER Generator -->
+              <div class="ifer-row" id="ifer-section">
+                <h3>📄 Generate IFER</h3>
+                <p>Individual Faculty Evaluation Report per CMO No. 19, s. 2025 (Annex C). <b>Student identities encrypted.</b></p>
+                <div class="ifer-controls">
+                  <select id="report-faculty" style="min-width:160px;">
+                    <option value="">— select faculty —</option>
+                  </select>
+                  <button id="generate-report-btn">Generate IFER</button>
+                </div>
+              </div>
+
+            </div><!-- /dash-right -->
+
+          </div><!-- /dash-body -->
 
         </div>
       </div><!-- /panel-dashboard -->
@@ -1203,6 +1245,7 @@
     document.getElementById("nav-history").addEventListener("click", () => switchPanel("panel-history"));
     document.getElementById("nav-email-requests").addEventListener("click", () => switchPanel("panel-email-requests"));
     document.getElementById("nav-semesters").addEventListener("click", () => switchPanel("panel-semesters"));
+
 
   </script>
 
