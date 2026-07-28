@@ -1662,9 +1662,37 @@ function refreshDashboard() {
     }
   });
 }
-const refreshBtnEl = document.getElementById("refresh-btn");
-if (refreshBtnEl) refreshBtnEl.addEventListener("click", refreshDashboard);
+// ── Sync enrolled_count from actual students in each section ──
+const syncEnrolledBtn = document.getElementById("sync-enrolled-btn");
+if (syncEnrolledBtn) {
+  syncEnrolledBtn.addEventListener("click", async () => {
+    const confirmed = await fpConfirm(
+      "Sync enrolled counts?\n\nThis will update the enrolled student count for all subjects based on the actual number of active students in each section.\n\nRun this before generating IFERs to ensure accurate numbers."
+    );
+    if (!confirmed) return;
 
+    syncEnrolledBtn.textContent = "⏳ Syncing...";
+    syncEnrolledBtn.disabled = true;
+
+    const { data, error } = await supabase.rpc("sync_enrolled_counts");
+
+    syncEnrolledBtn.textContent = "🔢 Sync Enrolled";
+    syncEnrolledBtn.disabled = false;
+
+    if (error) {
+      await fpAlert("Sync failed: " + error.message, "error");
+      return;
+    }
+
+    await fpAlert(
+      `✅ Enrolled counts synced.\n${data.updated} subject(s) updated.\n\nYou can now generate IFERs with accurate student counts.`,
+      "success"
+    );
+
+    // Reload rankings so the updated counts reflect immediately
+    loadRankings();
+  });
+}
 const dashProgramFilterEl = document.getElementById("dash-program-filter");
 if (dashProgramFilterEl) {
   dashProgramFilterEl.addEventListener("change", () => {
