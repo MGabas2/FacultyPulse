@@ -2009,28 +2009,24 @@ const YEAR_FORMAT = /^\d{4}-\d{4}$/;
 async function loadSemesters() {
   const tbody = document.getElementById("semesters-tbody");
   if (!tbody) return;
-  tbody.innerHTML = `<tr><td colspan="4">Loading...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="3">Loading...</td></tr>`;
 
   const { data, error } = await supabase
     .from("semesters")
-    .select("id, label, is_active, is_locked, created_at")
-    .order("created_at", { ascending: false });
+    .select("id, label, is_active, is_locked")
+    .order("label", { ascending: false });
 
   if (error) {
-    tbody.innerHTML = `<tr><td colspan="4">Error: ${error.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="3">Error: ${error.message}</td></tr>`;
     return;
   }
 
   if (!data || data.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4">No semesters found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="3">No semesters found.</td></tr>`;
     return;
   }
 
   tbody.innerHTML = data.map(s => {
-    const created = s.created_at
-      ? new Date(s.created_at).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" })
-      : "—";
-
     const statusBadge = s.is_active
       ? `<span style="background:#d1fae5; color:#065f46; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">✅ Active</span>`
       : s.is_locked
@@ -2040,16 +2036,27 @@ async function loadSemesters() {
     const action = s.is_active
       ? `<span style="font-size:11px; color:#94a3b8;">Currently active</span>`
       : s.is_locked
-        ? `<span style="font-size:11px; color:#94a3b8;">🔒 Data locked</span>`
-        : `<button onclick="activateSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
-            style="font-size:11px; padding:4px 10px; background:#1a56db; color:white; border:none; border-radius:4px; cursor:pointer;">
-            Set as Active
-          </button>`;
+        ? `<div style="display:flex; gap:6px; align-items:center;">
+            <span style="font-size:11px; color:#94a3b8;">🔒 Data locked</span>
+            <button onclick="deleteSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
+              style="font-size:11px; padding:3px 8px; background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; border-radius:4px; cursor:pointer;">
+              🗑️ Delete
+            </button>
+          </div>`
+        : `<div style="display:flex; gap:6px; align-items:center;">
+            <button onclick="activateSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
+              style="font-size:11px; padding:4px 10px; background:#1a56db; color:white; border:none; border-radius:4px; cursor:pointer;">
+              Set as Active
+            </button>
+            <button onclick="deleteSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
+              style="font-size:11px; padding:3px 8px; background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; border-radius:4px; cursor:pointer;">
+              🗑️ Delete
+            </button>
+          </div>`;
 
     return `<tr>
       <td><b>${s.label}</b></td>
       <td>${statusBadge}</td>
-      <td style="font-size:12px; color:#64748b;">${created}</td>
       <td>${action}</td>
     </tr>`;
   }).join("");
@@ -2099,6 +2106,35 @@ async function activateSemester(semesterId, semesterLabel) {
   loadRankings();
 }
 
+async function deleteSemester(semesterId, semesterLabel) {
+  const confirmed = await fpConfirm(
+    `Delete "${semesterLabel}"?\n\n` +
+    `⚠️ This permanently removes the semester record.\n` +
+    `Only delete semesters with no evaluation data attached.\n\n` +
+    `If evaluations exist for this semester, deletion will fail to protect data integrity.`
+    , { confirmLabel: "Delete", confirmStyle: "fp-btn-danger" }
+  );
+  if (!confirmed) return;
+
+  const { error } = await supabase
+    .from("semesters")
+    .delete()
+    .eq("id", semesterId);
+
+  if (error) {
+    await fpAlert(
+      error.code === "23503"
+        ? `Cannot delete "${semesterLabel}" — it has evaluation data attached. Archive it instead or contact your database admin.`
+        : "Delete failed: " + error.message,
+      "error"
+    );
+    return;
+  }
+
+  await fpAlert(`"${semesterLabel}" deleted.`, "success");
+  loadSemesters();
+}
+
 async function createSemester() {
   const term      = document.getElementById("new-sem-term").value;
   const year      = document.getElementById("new-sem-year").value.trim();
@@ -2145,6 +2181,7 @@ async function createSemester() {
 }
 
 window.activateSemester = activateSemester;
+window.deleteSemester   = deleteSemester;
 
 document.getElementById("new-sem-term")?.addEventListener("change", updateSemPreview);
 document.getElementById("new-sem-year")?.addEventListener("input", updateSemPreview);

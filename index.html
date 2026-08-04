@@ -203,13 +203,25 @@
 
         <!-- ── Password field ── -->
         <label class="field-label">Password</label>
-        <input
-          class="field-input"
-          type="password"
-          id="password"
-          placeholder="Enter password"
-          autocomplete="off"
-        />
+        <div style="position:relative;">
+          <input
+            class="field-input"
+            type="password"
+            id="password"
+            placeholder="Enter password"
+            autocomplete="off"
+            style="padding-right:40px;"
+          />
+          <button
+            type="button"
+            id="toggle-password"
+            onclick="const p=document.getElementById('password'); const isHidden=p.type==='password'; p.type=isHidden?'text':'password'; this.textContent=isHidden?'Hide':'Show';"
+            style="position:absolute; right:10px; top:50%; transform:translateY(-50%);
+              background:none; border:none; cursor:pointer; font-size:12px; padding:0;
+              color:#64748b; font-weight:600;"
+            title="Show/hide password"
+          >Show</button>
+        </div>
 
         <!-- ── Submit ── -->
         <button class="login-submit" id="login-btn">Login</button>
