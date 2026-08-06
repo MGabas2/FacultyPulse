@@ -5,7 +5,16 @@
 
 import { supabase } from "./supabase.js";
 import { fpAlert, fpConfirm } from "./modal.js";
-const GROQ_KEY = "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";
+
+// Groq key: loaded from gitignored config on localhost,
+// not needed on Vercel (serverless function holds the key).
+let GROQ_KEY = "";
+try {
+  const config = await import("./supabase.config.js");
+  GROQ_KEY = config.GROQ_KEY || "";
+} catch (_) {
+  console.info("supabase.config.js not found — using /api/summarize (Vercel mode).");
+}
 
 function escHtml(str) {
   return String(str || "")
@@ -1507,7 +1516,7 @@ async function finalRelease() {
 // ── Expose to HTML (rankings table uses onclick) ──
 window.viewReport = viewReport;
 
-// ── Summarize student comments via Groq API → populate numbered rows ──
+// ── Summarize student comments → /api/summarize (Vercel) or direct Groq (localhost) ──
 async function summarizeComments() {
   const comments = window._studentComments || [];
   if (comments.length === 0) return;
@@ -1519,37 +1528,77 @@ async function summarizeComments() {
     "Summarize the following student evaluation comments into 5-8 numbered key points. Each point should be one concise sentence capturing a recurring theme — both strengths and areas for improvement. Do not copy comments verbatim. Write in third person. Be professional and neutral. Format: one point per line, numbered (1. 2. 3. etc.).";
 
   try {
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${GROQ_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "llama-3.1-8b-instant",
-        max_tokens: 1000,
-        messages: [
-          {
-            role: "system",
-            content: "You are helping a Quality Assurance Office of a Philippine Higher Education Institution summarize student faculty evaluation comments. Respond ONLY with numbered points (1. 2. 3. ...), one per line. No preamble, no closing, no extra text."
-          },
-          {
-            role: "user",
-            content: `${customInstruction}\n\nStudent Comments:\n${comments.map((c, i) => `${i + 1}. ${c}`).join("\n")}`
-          }
-        ]
-      })
-    });
+    let summary = "";
 
-    const data = await response.json();
+    // Strategy: try serverless endpoint first (Vercel), fall back to direct Groq (localhost)
+    const serverlessOk = await (async () => {
+      try {
+        const res = await fetch("/api/summarize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ comments, instruction: customInstruction }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          // 404 = no serverless route (localhost) → fall through to direct
+          if (res.status === 404) return false;
+          throw new Error(err.error || `API Error ${res.status}`);
+        }
+        const data = await res.json();
+        summary = data.summary || "";
+        return true;
+      } catch (e) {
+        // Network error or 404 → try direct
+        if (e.message?.includes("Failed to fetch") || e.message?.includes("404")) return false;
+        throw e; // real API error → surface it
+      }
+    })();
 
-    if (!response.ok) {
-      console.error("API error details:", data);
-      await fpAlert(`API Error ${response.status}: ${data?.error?.message || "Unknown error"}`, "error");
-      return;
+    if (!serverlessOk) {
+      // Fallback: direct Groq call using local config key
+      if (!GROQ_KEY) {
+        await fpAlert(
+          "AI summarization is not available.\n\n" +
+          "On Vercel: set GROQ_KEY in Environment Variables and redeploy.\n" +
+          "On localhost: ensure js/supabase.config.js exists with your Groq key.\n\n" +
+          "You can still type the summary directly into the rows.",
+          "error"
+        );
+        return;
+      }
+
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${GROQ_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "llama-3.1-8b-instant",
+          max_tokens: 1000,
+          messages: [
+            {
+              role: "system",
+              content: "You are helping a Quality Assurance Office of a Philippine Higher Education Institution summarize student faculty evaluation comments. Respond ONLY with numbered points (1. 2. 3. ...), one per line. No preamble, no closing, no extra text."
+            },
+            {
+              role: "user",
+              content: `${customInstruction}\n\nStudent Comments:\n${comments.map((c, i) => `${i + 1}. ${c}`).join("\n")}`
+            }
+          ]
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error("Groq API error:", data);
+        await fpAlert(`API Error ${response.status}: ${data?.error?.message || "Unknown error"}`, "error");
+        return;
+      }
+
+      summary = data.choices?.[0]?.message?.content || "";
     }
-
-    const summary = data.choices?.[0]?.message?.content || "";
 
     // Parse numbered points: "1. text", "2. text", etc.
     const points = summary
@@ -1567,7 +1616,7 @@ async function summarizeComments() {
 
   } catch (err) {
     console.error("Summary error:", err);
-    await fpAlert("Failed to generate summary. Check your connection and try again.", "error");
+    await fpAlert("Failed to generate summary: " + err.message, "error");
   } finally {
     if (btn) { btn.textContent = "Generate Summary"; btn.disabled = false; }
   }
