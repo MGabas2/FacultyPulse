@@ -5,7 +5,7 @@
 
 import { supabase } from "./supabase.js";
 import { fpAlert, fpConfirm } from "./modal.js";
-import { GROQ_KEY } from "./supabase.config.js";
+const GROQ_KEY = "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";
 
 function escHtml(str) {
   return String(str || "")
