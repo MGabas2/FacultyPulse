@@ -21,19 +21,20 @@ let donutChart = null;
 // ══════════════════════════════════════════════════════════════
 //  HELPERS
 // ══════════════════════════════════════════════════════════════
+// CMO No. 19 Annex A/B rating scale breakpoints
 function getRatingLabel(score) {
-  if (score >= 90) return "Outstanding";
-  if (score >= 75) return "Very Satisfactory";
-  if (score >= 60) return "Satisfactory";
-  if (score >= 45) return "Needs Improvement";
+  if (score >= 91) return "Outstanding";
+  if (score >= 61) return "Very Satisfactory";
+  if (score >= 31) return "Satisfactory";
+  if (score >= 11) return "Needs Improvement";
   return "Poor";
 }
 
 function getRatingColor(score) {
-  if (score >= 90) return "#10b981";
-  if (score >= 75) return "#3b82f6";
-  if (score >= 60) return "#f59e0b";
-  if (score >= 45) return "#f97316";
+  if (score >= 91) return "#10b981";
+  if (score >= 61) return "#3b82f6";
+  if (score >= 31) return "#f59e0b";
+  if (score >= 11) return "#f97316";
   return "#ef4444";
 }
 

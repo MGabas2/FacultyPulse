@@ -5,6 +5,7 @@
 
 import { supabase } from "./supabase.js";
 import { fpAlert, fpConfirm } from "./modal.js";
+import { GROQ_KEY } from "./supabase.config.js";
 
 function escHtml(str) {
   return String(str || "")
@@ -26,31 +27,35 @@ let donutChart = null;
 // ══════════════════════════════════════════════════════════════
 //  RATING HELPERS (out of 100)
 // ══════════════════════════════════════════════════════════════
+// CMO No. 19 Annex A/B rating scale breakpoints:
+// 5 = Always manifested (91-100%) | 4 = Often manifested (61-90%)
+// 3 = Sometimes manifested (31-60%) | 2 = Seldom manifested (11-30%)
+// 1 = Never/Rarely manifested (0-10%)
 function getRatingLabel(score) {
-  if (score >= 90) return "Outstanding";
-  if (score >= 75) return "Very Satisfactory";
-  if (score >= 60) return "Satisfactory";
-  if (score >= 45) return "Needs Improvement";
+  if (score >= 91) return "Outstanding";
+  if (score >= 61) return "Very Satisfactory";
+  if (score >= 31) return "Satisfactory";
+  if (score >= 11) return "Needs Improvement";
   return "Poor";
 }
 
 // ── Report pipeline stage badge ──
 function getReportStageBadge(stage) {
   const map = {
-    pending:                 { label: "📝 Pending Review",      bg: "#fef3c7", color: "#92400e" },
-    forwarded_to_supervisor: { label: "📤 Awaiting Supervisor", bg: "#dbeafe", color: "#1e40af" },
-    supervisor_done:         { label: "✅ Supervisor Done",     bg: "#d1fae5", color: "#065f46" },
-    released:                { label: "🎓 Released",            bg: "#ede9fe", color: "#5b21b6" },
+    pending:                 { label: "Pending Review",      bg: "#fef3c7", color: "#92400e" },
+    forwarded_to_supervisor: { label: "Awaiting Supervisor", bg: "#dbeafe", color: "#1e40af" },
+    supervisor_done:         { label: "Supervisor Done",     bg: "#d1fae5", color: "#065f46" },
+    released:                { label: "Released",            bg: "#ede9fe", color: "#5b21b6" },
   };
   const s = map[stage] || map.pending;
   return `<span style="background:${s.bg}; color:${s.color}; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; white-space:nowrap;">${s.label}</span>`;
 }
 
 function getRatingColor(score) {
-  if (score >= 90) return "#10b981";
-  if (score >= 75) return "#3b82f6";
-  if (score >= 60) return "#f59e0b";
-  if (score >= 45) return "#f97316";
+  if (score >= 91) return "#10b981";
+  if (score >= 61) return "#3b82f6";
+  if (score >= 31) return "#f59e0b";
+  if (score >= 11) return "#f97316";
   return "#ef4444";
 }
 
@@ -777,78 +782,87 @@ async function viewReport(teacherId, teacherName) {
       <!-- D. Summary of Qualitative Comments and Suggestions -->
       <p style="font-weight:bold; font-size:12px; margin-bottom:8px;">D. Summary of Qualitative Comments and Suggestions</p>
 
-      <!-- Students comment table -->
+      <!-- Raw comments list — screen only, hidden when printing -->
+      ${studentComments.length > 0 ? `
+        <div class="no-print" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px 14px; margin-bottom:12px;">
+          <p style="font-size:11px; font-weight:600; color:#475569; margin:0 0 8px;">
+            Student Comments — for reference only, not printed
+          </p>
+          <ol style="margin:0; padding-left:18px; font-size:11px; color:#334155; line-height:1.8;">
+            ${studentComments.map(c => `<li>${escHtml(c)}</li>`).join("")}
+          </ol>
+        </div>
+      ` : ""}
+
+      <!-- Student comments table — CMO Annex C Section D format (numbered rows) -->
       <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:6px;">
         <thead>
           <tr>
-            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; width:40px; font-weight:bold;">Seq</th>
-            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold;">Comments and Suggestions from the Students</th>
-            <th class="no-print" style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; width:36px; font-weight:bold;">✕</th>
+            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold; width:40px;">Seq</th>
+            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold;">
+              Comments and Suggestions from the Students
+            </th>
           </tr>
         </thead>
         <tbody id="student-comments-tbody">
           ${(() => {
-            // Show at least 5 rows; auto-expand if more comments
-            const rows = studentComments.length > 0
-              ? studentComments
-              : [];
-            const count = Math.max(rows.length, 5);
-            const extra = rows.length - 5;
-            let html = "";
-            for (let i = 0; i < count; i++) {
-              const text = rows[i] || "";
-              html += `
+            const rows = [];
+            for (let i = 0; i < 5; i++) {
+              rows.push(`
                 <tr>
                   <td style="padding:14px 8px; border:1px solid #000; text-align:center; color:#000;">${i+1}</td>
-                  <td style="padding:14px 8px; border:1px solid #000; color:#000;" contenteditable="true">${escHtml(text)}</td>
-                  <td class="no-print" style="padding:4px; border:1px solid #e2e8f0; text-align:center;">
-                    <button onclick="removeSpecificCommentRow(this, 'student-comments-tbody')"
-                      style="font-size:11px; padding:2px 8px; background:#fee2e2; color:#dc2626;
-                        border:1px solid #fca5a5; border-radius:4px; cursor:pointer;">✕</button>
-                  </td>
-                </tr>`;
+                  <td style="padding:14px 8px; border:1px solid #000; color:#000;" contenteditable="true">&nbsp;</td>
+                </tr>`);
             }
-            html += `
-              <tr data-hint="1">
-                <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#555;">…</td>
-                <td style="padding:6px 8px; border:1px solid #000; color:#555; font-style:italic;">(add additional rows if necessary)</td>
-                <td class="no-print" style="border:1px solid #e2e8f0;"></td>
-              </tr>`;
-            return html;
+            return rows.join("");
           })()}
+          <tr data-hint="1">
+            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#555;">…</td>
+            <td style="padding:6px 8px; border:1px solid #000; color:#555; font-style:italic;">(add additional rows if necessary)</td>
+          </tr>
         </tbody>
       </table>
-
-      ${studentComments.length > 0 ? `
-        <div class="no-print" style="background:#eff6ff; border:1px solid #93c5fd; border-radius:6px;
-          padding:8px 14px; margin-bottom:8px; font-size:12px; color:#1e40af;
-          display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-          <span>💬 <b>${studentComments.length} student comment${studentComments.length !== 1 ? "s" : ""} loaded.</b>
-          Use ✕ to remove any that are invalid, irrelevant, or inappropriate before printing.</span>
-          <button onclick="restoreStudentComments()"
-            style="font-size:11px; padding:3px 10px; background:white; color:#1e40af;
-              border:1px solid #93c5fd; border-radius:4px; cursor:pointer; white-space:nowrap; flex-shrink:0;">
-            ↩ Restore All
-          </button>
-        </div>
-      ` : `
-        <div class="no-print" style="background:#fef3c7; border:1px solid #fcd34d; border-radius:6px;
-          padding:8px 14px; margin-bottom:8px; font-size:12px; color:#92400e;">
-          📭 No student comments submitted for this faculty this semester.
-          Rows are blank — fill by hand during the feedback meeting if needed.
-        </div>
-      `}
-
-      <div class="no-print" style="display:flex; gap:8px; margin-bottom:16px;">
+      <div class="no-print" style="display:flex; gap:8px; margin-bottom:10px;">
         <button onclick="addCommentRow('student-comments-tbody')"
           style="font-size:12px; padding:5px 12px; background:white; color:#1a56db; border:1px solid #1a56db; border-radius:5px; cursor:pointer;">
           + Add Row
         </button>
         <button onclick="removeCommentRow('student-comments-tbody')"
           style="font-size:12px; padding:5px 12px; background:white; color:#dc2626; border:1px solid #dc2626; border-radius:5px; cursor:pointer;">
-          − Remove Last Row
+          − Remove Row
         </button>
       </div>
+
+      ${studentComments.length > 0 ? `
+        <div class="no-print" style="background:#eff6ff; border:1px solid #93c5fd; border-radius:6px;
+          padding:10px 14px; margin-bottom:8px; font-size:12px; color:#1e40af;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
+            <span><b>${studentComments.length} student comment${studentComments.length !== 1 ? "s" : ""} loaded.</b>
+            AI will fill the numbered rows above. Customize the instruction then click Generate, or type directly into the rows.</span>
+            <div style="display:flex; gap:6px; flex-shrink:0;">
+              <button onclick="summarizeComments()"
+                style="font-size:11px; padding:4px 12px; background:#1a56db; color:white;
+                  border:none; border-radius:4px; cursor:pointer; white-space:nowrap;">
+                Generate Summary
+              </button>
+              <button onclick="clearStudentCommentRows()"
+                style="font-size:11px; padding:4px 12px; background:white; color:#dc2626;
+                  border:1px solid #dc2626; border-radius:4px; cursor:pointer; white-space:nowrap;">
+                Clear Rows
+              </button>
+            </div>
+          </div>
+          <textarea id="summary-instruction"
+            style="width:100%; font-size:11px; padding:8px; border:1px solid #93c5fd;
+              border-radius:4px; resize:vertical; font-family:Arial, sans-serif;
+              box-sizing:border-box; color:#1e40af; background:#eff6ff; line-height:1.5; min-height:60px;">Summarize the following student evaluation comments into 5-8 numbered key points. Each point should be one concise sentence capturing a recurring theme — both strengths and areas for improvement. Do not copy comments verbatim. Write in third person. Be professional and neutral. Format: one point per line, numbered (1. 2. 3. etc.).</textarea>
+        </div>
+      ` : `
+        <div class="no-print" style="background:#fef3c7; border:1px solid #fcd34d; border-radius:6px;
+          padding:8px 14px; margin-bottom:8px; font-size:12px; color:#92400e;">
+          No student comments submitted for this faculty this semester. Type directly into the rows if needed.
+        </div>
+      `}
 
       <!-- Supervisor comment table -->
       <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:16px;">
@@ -1215,12 +1229,13 @@ function renderDonutChart(ranked) {
   let scoped = progFilter ? ranked.filter(t => t.program === progFilter) : ranked;
   if (facFilter) scoped = scoped.filter(t => t.id === facFilter);
 
+  // Bucket labels must match getRatingLabel() output exactly
   const buckets = {
-    "Outstanding":       { count: 0, color: "#10b981" },
-    "Very Satisfactory": { count: 0, color: "#3b82f6" },
-    "Satisfactory":      { count: 0, color: "#f59e0b" },
-    "Needs Improvement": { count: 0, color: "#f97316" },
-    "Poor":              { count: 0, color: "#ef4444" },
+    "Outstanding":       { count: 0, color: "#10b981" },  // ≥91
+    "Very Satisfactory": { count: 0, color: "#3b82f6" },  // 61–90
+    "Satisfactory":      { count: 0, color: "#f59e0b" },  // 31–60
+    "Needs Improvement": { count: 0, color: "#f97316" },  // 11–30
+    "Poor":              { count: 0, color: "#ef4444" },  // <11
   };
 
   scoped.forEach(t => {
@@ -1492,42 +1507,118 @@ async function finalRelease() {
 // ── Expose to HTML (rankings table uses onclick) ──
 window.viewReport = viewReport;
 
-// ── Restore student comments to original loaded state ──
-function restoreStudentComments() {
-  const tbody   = document.getElementById("student-comments-tbody");
+// ── Summarize student comments via Groq API → populate numbered rows ──
+async function summarizeComments() {
   const comments = window._studentComments || [];
-  if (!tbody) return;
+  if (comments.length === 0) return;
 
-  tbody.innerHTML = "";
-  const count = Math.max(comments.length, 5);
+  const btn = document.querySelector("[onclick='summarizeComments()']");
+  if (btn) { btn.textContent = "Generating..."; btn.disabled = true; }
 
-  for (let i = 0; i < count; i++) {
-    const text = comments[i] || "";
-    const tr   = document.createElement("tr");
-    tr.innerHTML = `
-      <td style="padding:14px 8px; border:1px solid #000; text-align:center; color:#000;">${i+1}</td>
-      <td style="padding:14px 8px; border:1px solid #000; color:#000;" contenteditable="true">${escHtml(text)}</td>
-      <td class="no-print" style="padding:4px; border:1px solid #e2e8f0; text-align:center;">
-        <button onclick="removeSpecificCommentRow(this, 'student-comments-tbody')"
-          style="font-size:11px; padding:2px 8px; background:#fee2e2; color:#dc2626;
-            border:1px solid #fca5a5; border-radius:4px; cursor:pointer;">✕</button>
-      </td>
-    `;
-    tbody.appendChild(tr);
+  const customInstruction = document.getElementById("summary-instruction")?.value?.trim() ||
+    "Summarize the following student evaluation comments into 5-8 numbered key points. Each point should be one concise sentence capturing a recurring theme — both strengths and areas for improvement. Do not copy comments verbatim. Write in third person. Be professional and neutral. Format: one point per line, numbered (1. 2. 3. etc.).";
+
+  try {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${GROQ_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "llama-3.1-8b-instant",
+        max_tokens: 1000,
+        messages: [
+          {
+            role: "system",
+            content: "You are helping a Quality Assurance Office of a Philippine Higher Education Institution summarize student faculty evaluation comments. Respond ONLY with numbered points (1. 2. 3. ...), one per line. No preamble, no closing, no extra text."
+          },
+          {
+            role: "user",
+            content: `${customInstruction}\n\nStudent Comments:\n${comments.map((c, i) => `${i + 1}. ${c}`).join("\n")}`
+          }
+        ]
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("API error details:", data);
+      await fpAlert(`API Error ${response.status}: ${data?.error?.message || "Unknown error"}`, "error");
+      return;
+    }
+
+    const summary = data.choices?.[0]?.message?.content || "";
+
+    // Parse numbered points: "1. text", "2. text", etc.
+    const points = summary
+      .split(/\n/)
+      .map(line => line.replace(/^\d+[\.\)]\s*/, "").trim())
+      .filter(Boolean);
+
+    if (points.length === 0) {
+      await fpAlert("AI returned no usable points. Try adjusting the instruction.", "error");
+      return;
+    }
+
+    // Populate the student-comments-tbody rows
+    populateStudentCommentRows(points);
+
+  } catch (err) {
+    console.error("Summary error:", err);
+    await fpAlert("Failed to generate summary. Check your connection and try again.", "error");
+  } finally {
+    if (btn) { btn.textContent = "Generate Summary"; btn.disabled = false; }
   }
-
-  // Re-add hint row
-  const hintRow = document.createElement("tr");
-  hintRow.dataset.hint = "1";
-  hintRow.innerHTML = `
-    <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#555;">…</td>
-    <td style="padding:6px 8px; border:1px solid #000; color:#555; font-style:italic;">(add additional rows if necessary)</td>
-    <td class="no-print" style="border:1px solid #e2e8f0;"></td>
-  `;
-  tbody.appendChild(hintRow);
 }
 
-window.restoreStudentComments = restoreStudentComments;
+// ── Fill student comment rows with an array of strings ──
+function populateStudentCommentRows(points) {
+  const tbody = document.getElementById("student-comments-tbody");
+  if (!tbody) return;
+
+  // Remove all existing data rows (keep hint row)
+  Array.from(tbody.querySelectorAll("tr"))
+    .filter(r => !r.dataset.hint)
+    .forEach(r => r.remove());
+
+  const hintRow = tbody.querySelector("tr[data-hint]");
+
+  points.forEach((text, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td style="padding:14px 8px; border:1px solid #000; text-align:center; color:#000;">${i + 1}</td>
+      <td style="padding:14px 8px; border:1px solid #000; color:#000;" contenteditable="true">${escHtml(text)}</td>
+    `;
+    if (hintRow) tbody.insertBefore(tr, hintRow);
+    else tbody.appendChild(tr);
+  });
+}
+
+// ── Clear all student comment rows back to 5 blank ones ──
+function clearStudentCommentRows() {
+  const tbody = document.getElementById("student-comments-tbody");
+  if (!tbody) return;
+
+  Array.from(tbody.querySelectorAll("tr"))
+    .filter(r => !r.dataset.hint)
+    .forEach(r => r.remove());
+
+  const hintRow = tbody.querySelector("tr[data-hint]");
+  for (let i = 0; i < 5; i++) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td style="padding:14px 8px; border:1px solid #000; text-align:center; color:#000;">${i + 1}</td>
+      <td style="padding:14px 8px; border:1px solid #000; color:#000;" contenteditable="true">&nbsp;</td>
+    `;
+    if (hintRow) tbody.insertBefore(tr, hintRow);
+    else tbody.appendChild(tr);
+  }
+}
+
+window.summarizeComments        = summarizeComments;
+window.clearStudentCommentRows  = clearStudentCommentRows;
 
 // ── Add a blank row to a comment table ──
 function addCommentRow(tbodyId) {
@@ -1535,24 +1626,18 @@ function addCommentRow(tbodyId) {
   if (!tbody) return;
   const dataRows = Array.from(tbody.querySelectorAll("tr")).filter(r => !r.dataset.hint);
   const newSeq   = dataRows.length + 1;
-  const isStudent = tbodyId === "student-comments-tbody";
   const hintRow  = tbody.querySelector("tr[data-hint]");
   const tr       = document.createElement("tr");
   tr.innerHTML   = `
     <td style="padding:14px 8px; border:1px solid #000; text-align:center; color:#000;">${newSeq}</td>
     <td style="padding:14px 8px; border:1px solid #000; color:#000;" contenteditable="true">&nbsp;</td>
-    ${isStudent ? `<td class="no-print" style="padding:4px; border:1px solid #e2e8f0; text-align:center;">
-      <button onclick="removeSpecificCommentRow(this, '${tbodyId}')"
-        style="font-size:11px; padding:2px 8px; background:#fee2e2; color:#dc2626;
-          border:1px solid #fca5a5; border-radius:4px; cursor:pointer;">✕</button>
-    </td>` : ""}
   `;
   if (hintRow) tbody.insertBefore(tr, hintRow);
   else tbody.appendChild(tr);
   renumberCommentRows(tbodyId);
 }
 
-// ── Remove the last data row ──
+// ── Remove the last data row from a comment table ──
 function removeCommentRow(tbodyId) {
   const tbody = document.getElementById(tbodyId);
   if (!tbody) return;
@@ -1562,7 +1647,7 @@ function removeCommentRow(tbodyId) {
   renumberCommentRows(tbodyId);
 }
 
-// ── Remove a specific row via its ✕ button ──
+// ── Remove a specific row ──
 function removeSpecificCommentRow(btn, tbodyId) {
   const row = btn.closest("tr");
   if (!row) return;
@@ -1608,10 +1693,38 @@ document.getElementById("generate-report-btn").addEventListener("click", () => {
   viewReport(id, nameParts.join("|"));
 });
 
-// ── Print IFER only (Annex C) — hide Annex D before printing ──
-// ── Print (full document — IFER + FEDAF on page 2) ──
-document.getElementById("print-btn").addEventListener("click", () => {
+// ── Print Both Annex C + D ──
+document.getElementById("print-both-btn")?.addEventListener("click", () => {
+  document.getElementById("annex-d-section").style.display = "block";
   window.print();
+});
+
+// ── Print Annex C only ──
+document.getElementById("print-annexc-btn")?.addEventListener("click", () => {
+  const annexD = document.getElementById("annex-d-section");
+  annexD.style.display = "none";
+  window.print();
+  annexD.style.display = "block";
+});
+
+// ── Print Annex D only ──
+document.getElementById("print-annexd-btn")?.addEventListener("click", () => {
+  const content = document.getElementById("report-content");
+  // Temporarily hide everything except annex-d-section
+  Array.from(content.children).forEach(el => {
+    if (el.id !== "annex-d-section") el.setAttribute("data-hidden-print", el.style.display);
+    if (el.id !== "annex-d-section") el.style.display = "none";
+  });
+  document.getElementById("annex-d-section").style.removeProperty("page-break-before");
+  window.print();
+  // Restore
+  Array.from(content.children).forEach(el => {
+    if (el.hasAttribute("data-hidden-print")) {
+      el.style.display = el.getAttribute("data-hidden-print") || "";
+      el.removeAttribute("data-hidden-print");
+    }
+  });
+  document.getElementById("annex-d-section").style.pageBreakBefore = "always";
 });
 
 // ── Save as PDF (full document — IFER + FEDAF) ──
@@ -1968,7 +2081,6 @@ document.getElementById("email-req-filter")?.addEventListener("change", loadEmai
 // Load pending badge count on init
 loadEmailRequests();
 
-
 // ══════════════════════════════════════════════════════════════
 //  SYNC ENROLLED COUNTS
 // ══════════════════════════════════════════════════════════════
@@ -1980,12 +2092,12 @@ if (syncEnrolledBtn) {
     );
     if (!confirmed) return;
 
-    syncEnrolledBtn.textContent = "⏳ Syncing...";
+    syncEnrolledBtn.textContent = "Syncing...";
     syncEnrolledBtn.disabled = true;
 
     const { data, error } = await supabase.rpc("sync_enrolled_counts");
 
-    syncEnrolledBtn.textContent = "🔢 Sync Enrolled";
+    syncEnrolledBtn.textContent = "Sync Enrolled";
     syncEnrolledBtn.disabled = false;
 
     if (error) {
@@ -1994,7 +2106,7 @@ if (syncEnrolledBtn) {
     }
 
     await fpAlert(
-      `✅ Enrolled counts synced.\n${data.updated} subject(s) updated.\n\nYou can now generate IFERs with accurate student counts.`,
+      `Enrolled counts synced.\n${data.updated} subject(s) updated.\n\nYou can now generate IFERs with accurate student counts.`,
       "success"
     );
     loadRankings();
@@ -2028,29 +2140,29 @@ async function loadSemesters() {
 
   tbody.innerHTML = data.map(s => {
     const statusBadge = s.is_active
-      ? `<span style="background:#d1fae5; color:#065f46; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">✅ Active</span>`
+      ? `<span style="background:#d1fae5; color:#065f46; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">Active</span>`
       : s.is_locked
-        ? `<span style="background:#fee2e2; color:#991b1b; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">🔒 Locked</span>`
-        : `<span style="background:#f1f5f9; color:#475569; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">⏸ Inactive</span>`;
+        ? `<span style="background:#fee2e2; color:#991b1b; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">Locked</span>`
+        : `<span style="background:#f1f5f9; color:#475569; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">Inactive</span>`;
 
     const action = s.is_active
       ? `<span style="font-size:11px; color:#94a3b8;">Currently active</span>`
       : s.is_locked
-        ? `<div style="display:flex; gap:6px; align-items:center;">
-            <span style="font-size:11px; color:#94a3b8;">🔒 Data locked</span>
+        ? `<div style="display:flex; gap:6px;">
+            <span style="font-size:11px; color:#94a3b8;">Data locked</span>
             <button onclick="deleteSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
               style="font-size:11px; padding:3px 8px; background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; border-radius:4px; cursor:pointer;">
-              🗑️ Delete
+              Delete
             </button>
           </div>`
-        : `<div style="display:flex; gap:6px; align-items:center;">
+        : `<div style="display:flex; gap:6px;">
             <button onclick="activateSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
               style="font-size:11px; padding:4px 10px; background:#1a56db; color:white; border:none; border-radius:4px; cursor:pointer;">
               Set as Active
             </button>
             <button onclick="deleteSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
               style="font-size:11px; padding:3px 8px; background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; border-radius:4px; cursor:pointer;">
-              🗑️ Delete
+              Delete
             </button>
           </div>`;
 
@@ -2074,10 +2186,7 @@ async function activateSemester(semesterId, semesterLabel) {
   if (!confirmed) return;
 
   const { data: current } = await supabase
-    .from("semesters")
-    .select("id")
-    .eq("is_active", true)
-    .maybeSingle();
+    .from("semesters").select("id").eq("is_active", true).maybeSingle();
 
   if (current) {
     const { error: lockError } = await supabase
@@ -2109,22 +2218,20 @@ async function activateSemester(semesterId, semesterLabel) {
 async function deleteSemester(semesterId, semesterLabel) {
   const confirmed = await fpConfirm(
     `Delete "${semesterLabel}"?\n\n` +
-    `⚠️ This permanently removes the semester record.\n` +
+    `This permanently removes the semester record.\n` +
     `Only delete semesters with no evaluation data attached.\n\n` +
-    `If evaluations exist for this semester, deletion will fail to protect data integrity.`
-    , { confirmLabel: "Delete", confirmStyle: "fp-btn-danger" }
+    `If evaluations exist for this semester, deletion will fail to protect data integrity.`,
+    { confirmLabel: "Delete", confirmStyle: "fp-btn-danger" }
   );
   if (!confirmed) return;
 
   const { error } = await supabase
-    .from("semesters")
-    .delete()
-    .eq("id", semesterId);
+    .from("semesters").delete().eq("id", semesterId);
 
   if (error) {
     await fpAlert(
       error.code === "23503"
-        ? `Cannot delete "${semesterLabel}" — it has evaluation data attached. Archive it instead or contact your database admin.`
+        ? `Cannot delete "${semesterLabel}" — it has evaluation data attached.`
         : "Delete failed: " + error.message,
       "error"
     );
@@ -2155,10 +2262,7 @@ async function createSemester() {
   const label = `${term} ${year}`;
 
   const { data: existing } = await supabase
-    .from("semesters")
-    .select("id")
-    .eq("label", label)
-    .maybeSingle();
+    .from("semesters").select("id").eq("label", label).maybeSingle();
 
   if (existing) { errorEl.textContent = `"${label}" already exists.`; return; }
 
@@ -2166,8 +2270,7 @@ async function createSemester() {
   createBtn.disabled = true;
 
   const { error } = await supabase
-    .from("semesters")
-    .insert({ label, is_active: false, is_locked: false });
+    .from("semesters").insert({ label, is_active: false, is_locked: false });
 
   createBtn.textContent = "Create Semester";
   createBtn.disabled = false;
