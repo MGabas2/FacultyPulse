@@ -1539,9 +1539,11 @@ async function summarizeComments() {
           body: JSON.stringify({ comments, instruction: customInstruction }),
         });
         if (!res.ok) {
+          // 404 = file doesn't exist (localhost static server)
+          // 405 = server doesn't support POST (Live Server)
+          // Both mean "no serverless route" → fall through to direct Groq
+          if (res.status === 404 || res.status === 405) return false;
           const err = await res.json().catch(() => ({}));
-          // 404 = no serverless route (localhost) → fall through to direct
-          if (res.status === 404) return false;
           throw new Error(err.error || `API Error ${res.status}`);
         }
         const data = await res.json();
