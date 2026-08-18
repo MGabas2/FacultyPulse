@@ -380,7 +380,15 @@
       }
 
       .rating-legend { font-size: 10px; gap: 6px; }
-      #next-btn, #submit-all-btn {
+      #next-btn {
+        flex: 1; padding: 14px;
+        font-size: 16px; min-height: 50px;
+      }
+      #cancel-btn {
+        flex: 1; padding: 14px;
+        font-size: 16px; min-height: 50px;
+      }
+      #submit-all-btn {
         width: 100%; padding: 14px;
         font-size: 16px; min-height: 50px;
       }
@@ -522,9 +530,9 @@
       </div>
 
       <!-- Actions -->
-      <div style="margin-top:20px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-        <button id="next-btn">Next →</button>
-        <button class="btn-secondary" id="cancel-btn">Save & Close</button>
+      <div style="margin-top:16px; display:flex; gap:10px; align-items:center; flex-wrap:nowrap;">
+        <button id="next-btn" style="flex:1;">Next →</button>
+        <button class="btn-secondary" id="cancel-btn" style="flex:1;">Save & Close</button>
       </div>
 
     </div>

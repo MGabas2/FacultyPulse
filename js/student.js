@@ -386,7 +386,7 @@ function onNext() {
     return; // block close
   }
 
-  // All answered — clear highlights and close
+  // All answered — clear highlights
   QUESTIONS.forEach(q => {
     const row  = document.getElementById("row-"  + q.id);
     const card = document.getElementById("mrow-" + q.id);
@@ -398,6 +398,15 @@ function onNext() {
 
   closeEvalModal();
   renderProgress();
+
+  // Auto-advance: find the next unevaluated subject after current
+  const nextIdx = subjects.findIndex(
+    (s, i) => i > currentIdx && !isDraftComplete(s.id)
+  );
+  if (nextIdx !== -1) {
+    // Small delay so the modal close animation finishes first
+    setTimeout(() => openEval(nextIdx), 200);
+  }
 }
 
 function closeEvalModal() {
