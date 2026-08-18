@@ -344,14 +344,39 @@
 
       #eval-modal .modal-box {
         width: 100vw; max-width: 100vw;
-        height: 100vh; max-height: 100vh;
-        border-radius: 0; padding: 16px 14px; overflow-y: auto;
+        height: 100dvh; max-height: 100dvh;
+        border-radius: 0;
+        padding: 16px 14px;
+        padding-bottom: max(20px, env(safe-area-inset-bottom, 20px));
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* Let the questions area scroll, pin the buttons at bottom */
+      #eval-modal .modal-box .mobile-questions,
+      #eval-modal .modal-box .desktop-questions {
+        flex: 1;
+        overflow-y: auto;
+        min-height: 0;
+      }
+
+      /* Pin Next/Save button row to always be visible */
+      #eval-modal .modal-box > div:last-of-type {
+        flex-shrink: 0;
+        padding-top: 12px;
+        background: white;
+        border-top: 1px solid #e2e8f0;
+        margin-top: 0;
       }
 
       #review-modal .modal-box {
         width: 100vw; max-width: 100vw;
-        height: 100vh; max-height: 100vh;
-        border-radius: 0; padding: 16px 14px; overflow-y: auto;
+        height: 100dvh; max-height: 100dvh;
+        border-radius: 0;
+        padding: 16px 14px;
+        padding-bottom: max(20px, env(safe-area-inset-bottom, 20px));
+        overflow-y: auto;
       }
 
       .rating-legend { font-size: 10px; gap: 6px; }

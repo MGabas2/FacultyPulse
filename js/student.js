@@ -325,10 +325,77 @@ function saveDraftFromModal() {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  NEXT BUTTON — save draft + close modal + refresh steps
+//  NEXT BUTTON — validate all 15 answered, then save + close
 // ══════════════════════════════════════════════════════════════
 function onNext() {
   saveDraftFromModal();
+
+  // Find unanswered questions
+  const sub   = subjects[currentIdx];
+  const draft = drafts[sub?.id] || { scores: {} };
+  const missed = QUESTIONS.filter(q => draft.scores[q.id] === undefined);
+
+  if (missed.length > 0) {
+    // Highlight missed rows — desktop
+    missed.forEach(q => {
+      const row = document.getElementById("row-" + q.id);
+      if (row) {
+        row.style.background  = "#fef2f2";
+        row.style.borderLeft  = "3px solid #ef4444";
+        row.style.transition  = "background 0.3s";
+      }
+      // Mobile cards
+      const card = document.getElementById("mrow-" + q.id);
+      if (card) {
+        card.style.border       = "2px solid #ef4444";
+        card.style.background   = "#fef2f2";
+        card.style.borderRadius = "8px";
+      }
+    });
+
+    // Scroll to first missed question
+    const firstMissed = document.getElementById("row-" + missed[0].id)
+      || document.getElementById("mrow-" + missed[0].id);
+    if (firstMissed) firstMissed.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    // Show inline banner
+    let banner = document.getElementById("eval-incomplete-banner");
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.id = "eval-incomplete-banner";
+      banner.style.cssText = [
+        "position:sticky", "top:0", "z-index:10",
+        "background:#fef2f2", "border:1px solid #fca5a5",
+        "border-radius:8px", "padding:10px 14px",
+        "font-size:13px", "color:#b91c1c",
+        "display:flex", "align-items:center", "gap:8px",
+        "margin-bottom:12px", "font-weight:500"
+      ].join(";");
+      const anchor = document.getElementById("questions-tbody")?.closest("table")?.parentElement
+        || document.getElementById("mobile-questions-container")?.parentElement;
+      if (anchor) anchor.prepend(banner);
+    }
+    const missedText = missed.length + " question" + (missed.length > 1 ? "s" : "") +
+      " not yet answered. Please rate all 15 items before proceeding.";
+    banner.innerHTML = `
+      <span>&#9888; ${missedText}</span>
+      <button onclick="document.getElementById('eval-incomplete-banner').style.display='none'"
+        style="margin-left:auto;background:none;border:none;color:#b91c1c;font-size:16px;cursor:pointer;padding:0;">&#x2715;</button>
+    `;
+    banner.style.display = "flex";
+    return; // block close
+  }
+
+  // All answered — clear highlights and close
+  QUESTIONS.forEach(q => {
+    const row  = document.getElementById("row-"  + q.id);
+    const card = document.getElementById("mrow-" + q.id);
+    if (row)  { row.style.background = ""; row.style.borderLeft = ""; }
+    if (card) { card.style.border = ""; card.style.background = ""; }
+  });
+  const banner = document.getElementById("eval-incomplete-banner");
+  if (banner) banner.style.display = "none";
+
   closeEvalModal();
   renderProgress();
 }

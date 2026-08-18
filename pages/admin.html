@@ -286,19 +286,110 @@
     .chart-card h3 { margin-bottom: 6px; }
     .chart-wrapper { position: relative; }
 
+    /* IFER section */
+    .ifer-row {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 10px 12px;
+      flex: none;
+    }
+    .ifer-row h3 { font-size: 12px; margin: 0 0 4px; }
+    .ifer-row p  { font-size: 11px; color: #64748b; margin: 0 0 8px; }
+    .ifer-controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .ifer-controls select { flex: 1; min-width: 140px; font-size: 12px; }
+
     /* ── RESPONSIVE: stack on smaller screens ── */
-    @media (max-width: 900px) {
-      .dash-wrap { overflow-y: auto; }
-      .dash-body { grid-template-columns: 1fr; }
-      .charts-stack { grid-template-rows: auto auto; }
-      .chart-wrapper { height: 180px; }
-      .rankings-scroll { max-height: 280px; }
+    /* ── Prevent right column clipping at mid widths ── */
+    .admin-shell { min-width: 0; overflow: hidden; }
+    .main-content { min-width: 0; overflow: hidden; }
+    .dash-body { min-width: 0; overflow: hidden; }
+    .dash-left { min-width: 0; overflow: hidden; }
+    .dash-right { min-width: 0; overflow: hidden; }
+    .rankings-full { min-width: 0; overflow: hidden; }
+    .chart-card { min-width: 0; overflow: hidden; }
+
+    @media (max-width: 760px) {
+      /* Switch from fixed-height viewport mode to scrollable */
+      html, body { height: auto; overflow: auto; }
+      body { overflow: auto; }
+
+      .admin-shell { flex-direction: column; height: auto; overflow: visible; }
+
+      /* Sidebar becomes horizontal scrollable tab row */
+      .sidebar {
+        width: 100%;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: visible;
+        padding: 4px 8px;
+        gap: 2px;
+        min-width: 0;
+      }
+      .sidebar-nav-item {
+        flex: none;
+        padding: 8px 12px;
+        font-size: 12px;
+        border-left: none;
+        border-bottom: 3px solid transparent;
+        white-space: nowrap;
+      }
+      .sidebar-nav-item.active { border-left: none; border-bottom-color: #1a56db; }
+      .sidebar-divider { display: none; }
+
+      .main-content { overflow: visible; height: auto; }
+
+      /* Dashboard panels: allow scroll */
+      .panel.active { overflow-y: visible; height: auto; }
+      #panel-dashboard { overflow: visible; height: auto; }
+
+      .dash-wrap {
+        height: auto;
+        overflow: visible;
+        padding: 12px;
+        gap: 12px;
+      }
+
+      /* Stack charts above rankings */
+      .dash-body {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+
+      .dash-left, .dash-right { min-height: 0; height: auto; }
+
+      .charts-stack { grid-template-rows: auto auto; height: auto; }
+      .chart-card { height: auto; }
+      .chart-wrapper { height: 200px; }
+
+      .rankings-full { height: auto; max-height: none; }
+      .rankings-scroll { max-height: 300px; overflow-y: auto; }
+    }
+
+    /* 761px–900px: shrink sidebar, tighten grid */
+    @media (min-width: 761px) and (max-width: 900px) {
+      .sidebar { width: 160px; }
+      .sidebar-nav-item { font-size: 11px; padding: 9px 10px; gap: 6px; }
+      .dash-body { grid-template-columns: 1fr 1.3fr; gap: 6px; }
+      .dash-wrap { padding: 8px 10px; gap: 6px; }
+      .icon-stat { padding: 6px 8px; gap: 6px; }
+      .icon-stat .icon-value { font-size: 17px; }
+    }
+
+    /* 901px–1050px: slightly narrower sidebar */
+    @media (min-width: 901px) and (max-width: 1050px) {
+      .sidebar { width: 190px; }
+      .sidebar-nav-item { font-size: 12px; padding: 10px 14px; }
+      .dash-body { grid-template-columns: 1fr 1.3fr; }
     }
 
     @media (max-width: 600px) {
       .icon-stats-row { flex-direction: column; }
-      .icon-stat { padding: 6px 10px; }
-      .dash-filter-bar select { min-width: 100px; }
+      .icon-stat { padding: 8px 12px; }
+      .dash-filter-bar { flex-direction: column; align-items: flex-start; }
+      .dash-filter-bar select { min-width: 100%; width: 100%; }
+      .chart-wrapper { height: 180px; }
     }
 
     /* ── OTHER PANELS ── */
@@ -548,6 +639,30 @@
     }
 
     #report-content, #report-content td, #report-content p, #report-content tr { color: #1e293b; }
+
+    /* ── Report modal mobile fixes ── */
+    @media (max-width: 600px) {
+      #report-modal .modal-box {
+        width: 100vw !important;
+        max-width: 100vw !important;
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+        border-radius: 0 !important;
+        margin: 0 !important;
+      }
+      #report-modal .modal-box > div:last-child {
+        /* button bar */
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 10px 12px;
+      }
+      #report-modal .modal-box > div:last-child button {
+        font-size: 11px;
+        padding: 6px 10px;
+        flex: 1;
+        min-width: 80px;
+      }
+    }
   </style>
 </head>
 <body>
