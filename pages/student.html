@@ -2,8 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>FacultyPulse – Student Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />  <title>FacultyPulse – Student Dashboard</title>
   <link rel="stylesheet" href="../css/style.css" />
   <style>
 
@@ -168,6 +167,34 @@
     .all-done-section h2 { color: #166534; margin-bottom: 8px; }
     .all-done-section p  { font-size: 14px; color: #64748b; max-width: 400px; margin: 0 auto; line-height: 1.7; }
 
+
+    /* Update or add to your modal container CSS */
+#eval-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100dvh; /* Uses dynamic viewport height to adjust for address bar */
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start; /* Ensures top content doesn't push off-screen */
+  overflow-y: auto;
+  
+  /* Adds spacing at top for mobile browser bars & notches */
+  padding-top: max(24px, env(safe-area-inset-top)); 
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+#eval-modal .modal-box {
+  max-width: 720px;
+  width: 95vw;
+  padding: 20px;
+  margin: 0 auto;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto; /* Enables inner scrolling if modal exceeds screen */
+}
     /* ── EVAL MODAL ── */
     #eval-modal .modal-box {
       max-width: 720px;
