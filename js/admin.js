@@ -177,16 +177,49 @@ async function computeWeightedSET(teacherId, semesterId) {
 //  LOAD SUMMARY COUNTS
 // ══════════════════════════════════════════════════════════════
 async function loadSummary() {
-  const { count: facultyCount } = await supabase
-    .from("users").select("*", { count: "exact", head: true }).eq("role", "teacher");
-  const { count: studentCount } = await supabase
-    .from("users").select("*", { count: "exact", head: true }).eq("role", "student");
-  const { count: evalCount } = await supabase
-    .from("evaluation_scores").select("*", { count: "exact", head: true });
+  // Scope all counts to the ACTIVE semester only.
+  // Previously this counted every teacher/student/eval ever created,
+  // across ALL past semesters — showing stale cumulative totals instead
+  // of what's actually happening in the current evaluation period.
+  const { data: semester } = await supabase
+    .from("semesters").select("id").eq("is_active", true).maybeSingle();
 
-  document.getElementById("count-faculty").textContent  = facultyCount  ?? "—";
-  document.getElementById("count-students").textContent = studentCount  ?? "—";
-  document.getElementById("count-evals").textContent    = evalCount     ?? "—";
+  if (!semester) {
+    document.getElementById("count-faculty").textContent  = "—";
+    document.getElementById("count-students").textContent = "—";
+    document.getElementById("count-evals").textContent    = "—";
+    return;
+  }
+
+  // Faculty count: distinct teachers who have at least one subject THIS semester
+  const { data: semSubjects } = await supabase
+    .from("subjects")
+    .select("teacher_id, section_id")
+    .eq("semester_id", semester.id);
+
+  const teacherIds = new Set((semSubjects || []).map(s => s.teacher_id).filter(Boolean));
+  const sectionIds = new Set((semSubjects || []).map(s => s.section_id).filter(Boolean));
+
+  // Student count: students whose section_id matches a section used THIS semester
+  let studentCount = 0;
+  if (sectionIds.size > 0) {
+    const { count } = await supabase
+      .from("users")
+      .select("*", { count: "exact", head: true })
+      .eq("role", "student")
+      .in("section_id", [...sectionIds]);
+    studentCount = count || 0;
+  }
+
+  // Evaluations submitted: scoped to active semester only
+  const { count: evalCount } = await supabase
+    .from("evaluation_scores")
+    .select("*", { count: "exact", head: true })
+    .eq("semester_id", semester.id);
+
+  document.getElementById("count-faculty").textContent  = teacherIds.size;
+  document.getElementById("count-students").textContent = studentCount;
+  document.getElementById("count-evals").textContent    = evalCount ?? 0;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -300,9 +333,19 @@ async function loadRankings() {
   allRanked = ranked;
 
   const progFilter = document.getElementById("dash-program-filter");
-  if (progFilter && progFilter.options.length <= 1) {
+  if (progFilter) {
+    // Rebuild every time (not just once) so newly-added programs show up
+    // without needing a page refresh. Preserve the current selection.
+    const currentSelection = progFilter.value;
     const programs = [...new Set(ranked.map(t => t.program).filter(p => p && p !== "—"))].sort();
-    programs.forEach(p => { progFilter.innerHTML += `<option value="${p}">${p}</option>`; });
+
+    progFilter.innerHTML = `<option value="">All Programs</option>` +
+      programs.map(p => `<option value="${p}">${p}</option>`).join("");
+
+    // Restore selection if that program still exists, otherwise reset to "All"
+    if (programs.includes(currentSelection)) {
+      progFilter.value = currentSelection;
+    }
   }
 
   rankPage = 1;
@@ -2249,7 +2292,7 @@ async function loadSemesters() {
 
   const { data, error } = await supabase
     .from("semesters")
-    .select("id, label, is_active, is_locked")
+    .select("id, label, is_active, is_locked, is_paused")
     .order("label", { ascending: false });
 
   if (error) {
@@ -2263,32 +2306,55 @@ async function loadSemesters() {
   }
 
   tbody.innerHTML = data.map(s => {
-    const statusBadge = s.is_active
-      ? `<span style="background:#d1fae5; color:#065f46; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">Active</span>`
-      : s.is_locked
-        ? `<span style="background:#fee2e2; color:#991b1b; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">Locked</span>`
-        : `<span style="background:#f1f5f9; color:#475569; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">Inactive</span>`;
+    let statusBadge;
+    if (s.is_active && s.is_paused) {
+      statusBadge = `<span style="background:#fef3c7; color:#92400e; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">⏸ Paused</span>`;
+    } else if (s.is_active) {
+      statusBadge = `<span style="background:#d1fae5; color:#065f46; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">Active</span>`;
+    } else if (s.is_locked) {
+      statusBadge = `<span style="background:#fee2e2; color:#991b1b; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">Locked</span>`;
+    } else {
+      statusBadge = `<span style="background:#f1f5f9; color:#475569; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">Inactive</span>`;
+    }
 
-    const action = s.is_active
-      ? `<span style="font-size:11px; color:#94a3b8;">Currently active</span>`
-      : s.is_locked
-        ? `<div style="display:flex; gap:6px;">
-            <span style="font-size:11px; color:#94a3b8;">Data locked</span>
-            <button onclick="deleteSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
-              style="font-size:11px; padding:3px 8px; background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; border-radius:4px; cursor:pointer;">
-              Delete
-            </button>
-          </div>`
-        : `<div style="display:flex; gap:6px;">
-            <button onclick="activateSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
-              style="font-size:11px; padding:4px 10px; background:#1a56db; color:white; border:none; border-radius:4px; cursor:pointer;">
-              Set as Active
-            </button>
-            <button onclick="deleteSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
-              style="font-size:11px; padding:3px 8px; background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; border-radius:4px; cursor:pointer;">
-              Delete
-            </button>
-          </div>`;
+    let action;
+    if (s.is_active && s.is_paused) {
+      action = `<div style="display:flex; gap:6px;">
+          <button onclick="resumeSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
+            style="font-size:11px; padding:4px 10px; background:#16a34a; color:white; border:none; border-radius:4px; cursor:pointer;">
+            ▶ Resume Submissions
+          </button>
+        </div>`;
+    } else if (s.is_active) {
+      action = `<div style="display:flex; gap:6px;">
+          <button onclick="pauseSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
+            style="font-size:11px; padding:4px 10px; background:#d97706; color:white; border:none; border-radius:4px; cursor:pointer;">
+            ⏸ Pause Submissions
+          </button>
+        </div>`;
+    } else if (s.is_locked) {
+      action = `<div style="display:flex; gap:6px;">
+          <button onclick="unlockSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
+            style="font-size:11px; padding:4px 10px; background:#1a56db; color:white; border:none; border-radius:4px; cursor:pointer;">
+            🔓 Unlock
+          </button>
+          <button onclick="deleteSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
+            style="font-size:11px; padding:3px 8px; background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; border-radius:4px; cursor:pointer;">
+            Delete
+          </button>
+        </div>`;
+    } else {
+      action = `<div style="display:flex; gap:6px;">
+          <button onclick="activateSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
+            style="font-size:11px; padding:4px 10px; background:#1a56db; color:white; border:none; border-radius:4px; cursor:pointer;">
+            Set as Active
+          </button>
+          <button onclick="deleteSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
+            style="font-size:11px; padding:3px 8px; background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; border-radius:4px; cursor:pointer;">
+            Delete
+          </button>
+        </div>`;
+    }
 
     return `<tr>
       <td><b>${s.label}</b></td>
@@ -2302,9 +2368,9 @@ async function activateSemester(semesterId, semesterLabel) {
   const confirmed = await fpConfirm(
     `Activate "${semesterLabel}"?\n\n` +
     `• This will become the active evaluation semester\n` +
-    `• The current active semester will be locked — its data cannot be changed\n` +
+    `• The current active semester will be set to inactive (not locked — you can reactivate it later)\n` +
     `• Students will only be able to submit evaluations for subjects in this semester\n\n` +
-    `This action affects the entire system. Proceed?`,
+    `Proceed?`,
     { confirmLabel: "Activate", confirmStyle: "fp-btn-primary" }
   );
   if (!confirmed) return;
@@ -2313,19 +2379,21 @@ async function activateSemester(semesterId, semesterLabel) {
     .from("semesters").select("id").eq("is_active", true).maybeSingle();
 
   if (current) {
-    const { error: lockError } = await supabase
+    // Just deactivate — no auto-lock. Makes it easy to switch back and forth
+    // during testing/demo without needing a fresh semester each time.
+    const { error: deactivateError } = await supabase
       .from("semesters")
-      .update({ is_active: false, is_locked: true })
+      .update({ is_active: false, is_paused: false })
       .eq("id", current.id);
-    if (lockError) {
-      await fpAlert("Failed to lock current semester: " + lockError.message, "error");
+    if (deactivateError) {
+      await fpAlert("Failed to deactivate current semester: " + deactivateError.message, "error");
       return;
     }
   }
 
   const { error: activateError } = await supabase
     .from("semesters")
-    .update({ is_active: true, is_locked: false })
+    .update({ is_active: true, is_locked: false, is_paused: false })
     .eq("id", semesterId);
 
   if (activateError) {
@@ -2333,10 +2401,81 @@ async function activateSemester(semesterId, semesterLabel) {
     return;
   }
 
-  await fpAlert(`"${semesterLabel}" is now the active semester.\nThe previous semester has been locked.`, "success");
+  await fpAlert(`"${semesterLabel}" is now the active semester.`, "success");
   loadSemesters();
   loadSummary();
   loadRankings();
+}
+
+// ── Reactivate a previously-locked semester (manual unlock) ──
+async function unlockSemester(semesterId, semesterLabel) {
+  const confirmed = await fpConfirm(
+    `Unlock "${semesterLabel}"?\n\nThis allows it to be set as active again. Its data was never deleted — locking only blocked reactivation.`,
+    { confirmLabel: "Unlock", confirmStyle: "fp-btn-primary" }
+  );
+  if (!confirmed) return;
+
+  const { error } = await supabase
+    .from("semesters")
+    .update({ is_locked: false })
+    .eq("id", semesterId);
+
+  if (error) {
+    await fpAlert("Failed to unlock: " + error.message, "error");
+    return;
+  }
+
+  await fpAlert(`"${semesterLabel}" unlocked.`, "success");
+  loadSemesters();
+}
+
+// ── Pause: blocks new student submissions without locking data ──
+async function pauseSemester(semesterId, semesterLabel) {
+  const confirmed = await fpConfirm(
+    `Pause submissions for "${semesterLabel}"?\n\n` +
+    `• Students will NOT be able to submit new evaluations while paused\n` +
+    `• Already-submitted evaluations are unaffected\n` +
+    `• The semester stays active — you can Resume at any time\n` +
+    `• Use this for maintenance, corrections, or halting submissions before generating IFERs\n\n` +
+    `Proceed?`,
+    { confirmLabel: "Pause", confirmStyle: "fp-btn-primary" }
+  );
+  if (!confirmed) return;
+
+  const { error } = await supabase
+    .from("semesters")
+    .update({ is_paused: true })
+    .eq("id", semesterId);
+
+  if (error) {
+    await fpAlert("Failed to pause: " + error.message, "error");
+    return;
+  }
+
+  await fpAlert(`"${semesterLabel}" submissions paused.\nStudents will see a "temporarily unavailable" message until you resume.`, "success");
+  loadSemesters();
+}
+
+// ── Resume: re-allow student submissions ──
+async function resumeSemester(semesterId, semesterLabel) {
+  const confirmed = await fpConfirm(
+    `Resume submissions for "${semesterLabel}"?\n\nStudents will be able to submit evaluations again immediately.`,
+    { confirmLabel: "Resume", confirmStyle: "fp-btn-success" }
+  );
+  if (!confirmed) return;
+
+  const { error } = await supabase
+    .from("semesters")
+    .update({ is_paused: false })
+    .eq("id", semesterId);
+
+  if (error) {
+    await fpAlert("Failed to resume: " + error.message, "error");
+    return;
+  }
+
+  await fpAlert(`"${semesterLabel}" submissions resumed.`, "success");
+  loadSemesters();
 }
 
 async function deleteSemester(semesterId, semesterLabel) {
@@ -2394,7 +2533,7 @@ async function createSemester() {
   createBtn.disabled = true;
 
   const { error } = await supabase
-    .from("semesters").insert({ label, is_active: false, is_locked: false });
+    .from("semesters").insert({ label, is_active: false, is_locked: false, is_paused: false });
 
   createBtn.textContent = "Create Semester";
   createBtn.disabled = false;
@@ -2408,6 +2547,9 @@ async function createSemester() {
 }
 
 window.activateSemester = activateSemester;
+window.unlockSemester   = unlockSemester;
+window.pauseSemester    = pauseSemester;
+window.resumeSemester   = resumeSemester;
 window.deleteSemester   = deleteSemester;
 
 document.getElementById("new-sem-term")?.addEventListener("change", updateSemPreview);

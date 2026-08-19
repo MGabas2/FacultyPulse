@@ -66,13 +66,48 @@ function loadDraftsFromStorage() {
 }
 
 // ══════════════════════════════════════════════════════════════
+//  PAUSED NOTICE — shown when the active semester has evaluation
+//  submissions paused by the QA Office (Semester Management panel)
+// ══════════════════════════════════════════════════════════════
+function showPausedNotice(semesterLabel) {
+  document.getElementById("progress-section").style.display   = "none";
+  document.getElementById("submit-all-section").classList.remove("visible");
+  document.getElementById("all-done-section").classList.remove("visible");
+
+  let notice = document.getElementById("paused-notice");
+  if (!notice) {
+    notice = document.createElement("div");
+    notice.id = "paused-notice";
+    notice.style.cssText = `
+      background: #fef3c7; border: 2px solid #fcd34d; border-radius: 12px;
+      padding: 32px 24px; text-align: center; margin-top: 20px;
+    `;
+    document.querySelector(".container").appendChild(notice);
+  }
+  notice.innerHTML = `
+    <div style="font-size: 48px; margin-bottom: 12px;">⏸</div>
+    <h2 style="color: #92400e; margin-bottom: 8px;">Evaluations Temporarily Paused</h2>
+    <p style="color: #78350f; font-size: 14px; max-width: 400px; margin: 0 auto; line-height: 1.6;">
+      The evaluation period for <b>${escapeHtml(semesterLabel)}</b> is temporarily paused by the QA Office.
+      Please check back later.
+    </p>
+  `;
+  notice.style.display = "block";
+}
+
+function hidePausedNotice() {
+  const notice = document.getElementById("paused-notice");
+  if (notice) notice.style.display = "none";
+}
+
+// ══════════════════════════════════════════════════════════════
 //  INIT — load semester + subjects
 // ══════════════════════════════════════════════════════════════
 async function init() {
   loadDraftsFromStorage();
 
   const { data: semester } = await supabase
-    .from("semesters").select("id, label").eq("is_active", true).single();
+    .from("semesters").select("id, label, is_paused").eq("is_active", true).single();
 
   if (!semester) {
     document.getElementById("semester-label").textContent = "No active semester. Contact admin.";
@@ -81,6 +116,13 @@ async function init() {
 
   document.getElementById("semester-label").textContent = semester.label;
   activeSemId = semester.id;
+
+  // ── Pause check: block the eval flow entirely while paused ──
+  if (semester.is_paused) {
+    showPausedNotice(semester.label);
+    return;
+  }
+  hidePausedNotice();
 
   const { data: subs, error } = await supabase
     .from("subjects")
@@ -474,6 +516,21 @@ document.getElementById("review-close-btn").addEventListener("click", closeRevie
 //  SUBMIT ALL — write all completed drafts to Supabase
 // ══════════════════════════════════════════════════════════════
 async function submitAll() {
+  // Re-check pause state right before writing — blocks a race where
+  // the page was loaded before QA paused the semester.
+  const { data: semCheck } = await supabase
+    .from("semesters").select("is_paused, label").eq("id", activeSemId).maybeSingle();
+
+  if (semCheck?.is_paused) {
+    await fpAlert(
+      `Evaluations for ${semCheck.label} were just paused by the QA Office.\n` +
+      `Your answers are saved as a draft. Please try again once submissions resume.`,
+      "warning"
+    );
+    showPausedNotice(semCheck.label);
+    return;
+  }
+
   const toSubmit = subjects.filter(s => !submittedIds.has(s.id) && isDraftComplete(s.id));
 
   if (toSubmit.length === 0) {
