@@ -210,7 +210,7 @@ async function loadRankings() {
   tbody.innerHTML = `<tr><td colspan="4">Loading...</td></tr>`;
 
   const { data: semester } = await supabase
-    .from("semesters").select("id").eq("is_active", true).single();
+    .from("semesters").select("id").eq("is_active", true).maybeSingle();
 
   if (!semester) {
     tbody.innerHTML = `<tr><td colspan="4">No active semester.</td></tr>`;
@@ -585,7 +585,7 @@ async function viewReport(teacherId, teacherName) {
   window._reportTeacherName = teacherName;
 
   const { data: semester } = await supabase
-    .from("semesters").select("id, label").eq("is_active", true).single();
+    .from("semesters").select("id, label").eq("is_active", true).maybeSingle();
 
   if (!semester) {
     reportContent.innerHTML = `<p>No active semester found.</p>`;
@@ -618,7 +618,7 @@ async function viewReport(teacherId, teacherName) {
     .select("sections(department)")
     .eq("teacher_id", teacherId)
     .limit(1)
-    .single();
+    .maybeSingle();
 
   const department = deptSubject?.sections?.department || "—";
 
