@@ -245,7 +245,7 @@ function renderTable() {
             ✏️ Edit
           </button>
           <button class="btn-secondary" style="font-size:11px; padding:4px 9px; ${!isActive ? "display:none;" : ""}"
-            onclick="confirmArchive('${u.id}', \'${displayName.replace(/\'/g, "\\'")}\')">
+            onclick="confirmArchive('${u.id}', '${escHtml(displayName).replace(/'/g, "\\'")}')">
             📦 Archive
           </button>
           <button class="btn-secondary" style="font-size:11px; padding:4px 9px; ${isActive ? "display:none;" : ""}"
@@ -303,18 +303,43 @@ function getRoleBadgeClass(role) {
        : "pending";
 }
 
-// ── Sort — A-Z / Z-A toggle (name only) ──
-let sortAsc = true;
+// ── Sort — click a column button to sort by it; click again to flip direction ──
+let sortField = "name";
+let sortAsc   = true;
 
 function getSort() {
-  return { field: "name", asc: sortAsc };
+  return { field: sortField, asc: sortAsc };
 }
 
-function toggleSortDir() {
-  sortAsc = !sortAsc;
-  const btn = document.getElementById("sort-az-btn");
-  if (btn) btn.textContent = sortAsc ? "A–Z ↑" : "Z–A ↓";
+function setSort(field) {
+  if (sortField === field) {
+    sortAsc = !sortAsc;
+  } else {
+    sortField = field;
+    sortAsc   = true;
+  }
+  updateSortButtons();
   renderTable();
+}
+
+function updateSortButtons() {
+  ["name", "role", "section"].forEach(f => {
+    const btn   = document.getElementById(`sort-${f}`);
+    const arrow = document.getElementById(`arrow-${f}`);
+    if (btn)   btn.classList.toggle("active", f === sortField);
+    if (arrow) arrow.textContent = f === sortField ? (sortAsc ? "↑" : "↓") : "";
+  });
+
+  // Compat: admin.html's Users tab uses a single "A–Z / Z–A" toggle button
+  // (id="sort-az-btn") instead of per-column buttons. Keep its label in sync
+  // whenever sort state changes, regardless of which UI triggered the change.
+  const azBtn = document.getElementById("sort-az-btn");
+  if (azBtn) azBtn.textContent = sortField === "name" ? (sortAsc ? "A–Z ↑" : "Z–A ↓") : "Sort: " + sortField;
+}
+
+// Compat shim for admin.html's single-button sort UI (always sorts by name, A-Z/Z-A only)
+function toggleSortDir() {
+  setSort("name");
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -585,8 +610,486 @@ async function restoreUser(userId) {
 }
 
 // ══════════════════════════════════════════════════════════════
+//  XLSX IMPORT — "Student Profile" template (redesigned)
+//
+//  The registrar switched templates AND confirmed they cannot supply
+//  teacher-assignment data going forward — not "haven't sent it yet",
+//  genuinely can't provide it. That retires the old "Sheet 2" plan
+//  (subjects linked to a teacher by email) outright; there's no data
+//  source for it anymore, full stop.
+//
+//  This template is one row per student (no more duplicate-per-semester
+//  rows) and has NO Academic_Year or Semester columns at all — the admin
+//  picks an existing semester record at import time instead, and the
+//  academic year is parsed out of that semester's label.
+//
+//  Each row also lists enrolled courses in wide columns (Course1/Units1
+//  .. CourseN/UnitsN). Those are used to create subject placeholders
+//  (course name + section + semester) with teacher_id left NULL — a
+//  person still has to claim/assign each one afterward, but at least
+//  the enrollment link now exists instead of not existing at all.
+// ══════════════════════════════════════════════════════════════
+
+const IMPORT_COLUMNS = {
+  studentId:  ["ID No.", "Student_ID"],
+  lastName:   ["Last Name", "Last_Name"],
+  firstName:  ["First Name", "First_Name"],
+  middleName: ["Middle Name", "Middle_Name"],
+  program:    ["Degree Program", "Degree_Program"],
+  yearLevel:  ["Year Level", "Year_Level"],
+  email:      ["Email"],
+};
+
+function findHeaderKey(headerRow, aliases) {
+  const lower = headerRow.map(h => String(h || "").trim().toLowerCase());
+  for (const alias of aliases) {
+    const idx = lower.indexOf(alias.toLowerCase());
+    if (idx !== -1) return headerRow[idx];
+  }
+  return null;
+}
+
+// Any header matching "Course1", "Course2", ... "CourseN" — the template
+// doesn't fix a column count, so detect however many are actually there.
+function findCourseColumns(headerRow) {
+  return headerRow.filter(h => /^course\d+$/i.test(String(h || "").trim()));
+}
+
+// Sections already in the database use Roman numerals for year level
+// (e.g. "BSInfoTech-III-2025-2026", from the previous template). This
+// template gives plain digits (1-4) instead. Normalize so this year's
+// import lands in the SAME sections rather than creating a parallel,
+// disconnected "BSInfoTech-3-..." section nothing else points to.
+const ROMAN_YEAR_LEVELS = { "1": "I", "2": "II", "3": "III", "4": "IV", "5": "V", "6": "VI" };
+function normalizeYearLevel(value) {
+  const str = String(value ?? "").trim();
+  return ROMAN_YEAR_LEVELS[str] || str; // already Roman, or unrecognized — leave as-is
+}
+
+// Run up to `limit` async tasks concurrently over `items`
+async function runWithConcurrency(items, limit, worker) {
+  const results = [];
+  let i = 0;
+  async function next() {
+    while (i < items.length) {
+      const idx = i++;
+      results[idx] = await worker(items[idx], idx);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next));
+  return results;
+}
+
+function chunkArray(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+// Some registrar exports (typically Python/pandas-generated) write literal
+// text like "None", "N/A", "nan", or "-" into blank cells instead of leaving
+// them actually empty. Treat those as blank too, or they end up baked into
+// names/emails as real data (e.g. "Balles, John Wayne None").
+const BLANK_PLACEHOLDERS = new Set(["none", "n/a", "na", "nan", "null", "-", "—"]);
+function cleanOptionalText(value) {
+  const str = String(value ?? "").trim();
+  return BLANK_PLACEHOLDERS.has(str.toLowerCase()) ? "" : str;
+}
+
+function extractAcademicYear(label) {
+  const match = String(label || "").match(/(\d{4}-\d{4})/);
+  return match ? match[1] : "";
+}
+
+function openImportPicker() {
+  showImportModal();
+  populateImportSemesterOptions();
+}
+
+// Semester is now picked from real semester records (Semester Management),
+// not typed/guessed — fixes the earlier disconnect where the import's
+// semester dropdown had nothing to do with the actual `semesters` table.
+async function populateImportSemesterOptions() {
+  const sel = document.getElementById("import-semester");
+  if (!sel) return;
+  sel.innerHTML = `<option value="">Loading semesters…</option>`;
+
+  const { data, error } = await supabase
+    .from("semesters").select("id, label, is_active")
+    .order("label", { ascending: false });
+
+  if (error || !data || data.length === 0) {
+    sel.innerHTML = `<option value="">No semesters found — create one in Semester Management first</option>`;
+    return;
+  }
+
+  sel.innerHTML = data.map(s =>
+    `<option value="${s.id}"${s.is_active ? " selected" : ""}>${escHtml(s.label)}${s.is_active ? " (active)" : ""}</option>`
+  ).join("");
+}
+
+async function handleImportFile(e) {
+  const file = e.target.files?.[0];
+  e.target.value = ""; // allow re-selecting the same file later
+  if (!file) return;
+
+  if (typeof XLSX === "undefined") {
+    await fpAlert("The spreadsheet library failed to load. Check your connection and try again.", "error");
+    return;
+  }
+
+  const semesterSelect = document.getElementById("import-semester");
+  const semesterId     = semesterSelect?.value || "";
+  const semesterLabel  = semesterSelect?.selectedOptions?.[0]?.textContent || "";
+  const academicYear   = extractAcademicYear(semesterLabel);
+
+  if (!semesterId) {
+    setImportStatus("Pick a semester first.", true);
+    return;
+  }
+  if (!academicYear) {
+    setImportStatus(`Couldn't find a YYYY-YYYY academic year inside "${semesterLabel}". Section names need this — check how the semester was labeled.`, true);
+    return;
+  }
+
+  hideImportPicker();
+  setImportStatus("Reading file…");
+
+  let workbook;
+  try {
+    const buf = await file.arrayBuffer();
+    workbook = XLSX.read(buf, { type: "array" });
+  } catch (err) {
+    setImportStatus("Failed to read the file: " + err.message, true);
+    return;
+  }
+
+  if (workbook.SheetNames.length > 1) {
+    setImportStatus(
+      `Note: this workbook has ${workbook.SheetNames.length} sheets. ` +
+      `Only the first sheet ("${workbook.SheetNames[0]}") is imported.`,
+      false, true
+    );
+  }
+
+  const ws = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false });
+
+  if (rows.length === 0) {
+    setImportStatus("That sheet has no data rows.", true);
+    return;
+  }
+
+  const headerRow = Object.keys(rows[0]);
+  const colMap = {};
+  let missing = [];
+  for (const [key, aliases] of Object.entries(IMPORT_COLUMNS)) {
+    const found = findHeaderKey(headerRow, aliases);
+    if (found) colMap[key] = found;
+    else if (key !== "middleName" && key !== "email") missing.push(aliases[0]);
+  }
+  if (missing.length > 0) {
+    setImportStatus(`Missing required column(s): ${missing.join(", ")}. Check the file matches the current template.`, true);
+    return;
+  }
+
+  const courseColumns = findCourseColumns(headerRow);
+
+  await runImport(rows, colMap, courseColumns, semesterId, academicYear);
+}
+
+async function runImport(rows, colMap, courseColumns, semesterId, academicYear) {
+  const errors = [];
+  const parsed = [];
+
+  rows.forEach((row, i) => {
+    const rowNum = i + 2; // account for header row
+    const studentId  = cleanOptionalText(row[colMap.studentId]);
+    const lastName    = cleanOptionalText(row[colMap.lastName]);
+    const firstName   = cleanOptionalText(row[colMap.firstName]);
+    const middleName  = colMap.middleName ? cleanOptionalText(row[colMap.middleName]) : "";
+    const program     = cleanOptionalText(row[colMap.program]);
+    const yearLevel   = normalizeYearLevel(cleanOptionalText(row[colMap.yearLevel]));
+    const email       = colMap.email ? cleanOptionalText(row[colMap.email]) : "";
+
+    const rowErrors = [];
+    if (!STUDENT_ID_FORMAT.test(studentId)) rowErrors.push("invalid/missing ID No.");
+    if (!lastName)  rowErrors.push("missing Last Name");
+    if (!firstName) rowErrors.push("missing First Name");
+    if (!program)   rowErrors.push("missing Degree Program");
+    if (!yearLevel) rowErrors.push("missing Year Level");
+
+    if (rowErrors.length > 0) {
+      errors.push({ row: rowNum, studentId: studentId || "(blank)", issues: rowErrors.join(", ") });
+      return;
+    }
+
+    const sectionName = `${program}-${yearLevel}-${academicYear}`;
+    const name = middleName ? `${lastName}, ${firstName} ${middleName}` : `${lastName}, ${firstName}`;
+    const courses = courseColumns.map(col => cleanOptionalText(row[col])).filter(Boolean);
+
+    parsed.push({ studentId, name, email: email || null, sectionName, program, courses });
+  });
+
+  if (parsed.length === 0) {
+    renderImportSummary({ sectionsCreated: 0, studentsAdded: 0, studentsPromoted: 0, duplicateRows: 0, subjectsCreated: 0, errors, totalRows: rows.length });
+    return;
+  }
+
+  // De-dup by Student_ID as a safety net. This template is one row per
+  // student, but a single duplicate slipping through (a manual edit, a
+  // re-export glitch) would fail the WHOLE insert batch it lands in, not
+  // just that one row — see the per-row fallback further down too.
+  const seenIds = new Set();
+  const dedupedParsed = [];
+  let duplicateRows = 0;
+  for (const p of parsed) {
+    if (seenIds.has(p.studentId)) { duplicateRows++; continue; }
+    seenIds.add(p.studentId);
+    dedupedParsed.push(p);
+  }
+
+  try {
+    // ── 1. Resolve sections (create any that don't exist) ──
+    // Uses upsert with onConflict:'name' instead of select-then-insert.
+    // The old select-then-insert pattern isn't atomic — it created a
+    // duplicate section row every time the import ran, because nothing
+    // stopped two "this section doesn't exist yet" checks from both being
+    // true at once. This requires a UNIQUE constraint on sections.name:
+    //   ALTER TABLE sections ADD CONSTRAINT sections_name_unique UNIQUE (name);
+    // Without it, upsert's onConflict has nothing to match against and
+    // Postgres will error loudly — which is the correct failure mode here,
+    // not a silent fourth duplicate.
+    setImportStatus(`Resolving sections for ${dedupedParsed.length} student row(s)…`);
+    const uniqueSectionNames = [...new Set(dedupedParsed.map(p => p.sectionName))];
+    const sectionMap = {}; // name -> id
+
+    for (const batch of chunkArray(uniqueSectionNames, 200)) {
+      const { data, error } = await supabase.from("sections").select("id, name").in("name", batch);
+      if (error) throw new Error("Section lookup failed: " + error.message);
+      (data || []).forEach(s => { sectionMap[s.name] = s.id; });
+    }
+
+    const missingSections = uniqueSectionNames
+      .filter(n => !sectionMap[n])
+      .map(n => {
+        const owner = dedupedParsed.find(p => p.sectionName === n);
+        return { name: n, department: owner.program };
+      });
+
+    let sectionsCreated = 0;
+    if (missingSections.length > 0) {
+      for (const batch of chunkArray(missingSections, 200)) {
+        const { error } = await supabase
+          .from("sections")
+          .upsert(batch, { onConflict: "name", ignoreDuplicates: true });
+        if (error) {
+          throw new Error(
+            "Section creation failed: " + error.message +
+            (error.message?.includes("no unique or exclusion constraint")
+              ? ' — run: ALTER TABLE sections ADD CONSTRAINT sections_name_unique UNIQUE (name);'
+              : "")
+          );
+        }
+      }
+      sectionsCreated = missingSections.length;
+
+      // Re-fetch to get the real ids — upsert with ignoreDuplicates:true
+      // doesn't reliably return rows it skipped, so its own response can't
+      // be trusted to build sectionMap from.
+      for (const batch of chunkArray(missingSections.map(s => s.name), 200)) {
+        const { data, error } = await supabase.from("sections").select("id, name").in("name", batch);
+        if (error) throw new Error("Section lookup failed: " + error.message);
+        (data || []).forEach(s => { sectionMap[s.name] = s.id; });
+      }
+    }
+
+    // ── 2. Fetch ALL existing student_ids (paginated — default query cap is 1000 rows) ──
+    setImportStatus("Checking for existing students…");
+    const existingIds = new Set();
+    let from = 0;
+    const PAGE = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from("users").select("student_id")
+        .eq("role", "student")
+        .range(from, from + PAGE - 1);
+      if (error) throw new Error("Existing-student lookup failed: " + error.message);
+      (data || []).forEach(r => { if (r.student_id) existingIds.add(r.student_id); });
+      if (!data || data.length < PAGE) break;
+      from += PAGE;
+    }
+
+    // ── 3. Split into new inserts vs. promotions (section_id update only) ──
+    const toInsert = [];
+    const toPromote = [];
+    for (const p of dedupedParsed) {
+      const sectionId = sectionMap[p.sectionName];
+      if (!sectionId) {
+        errors.push({ row: "-", studentId: p.studentId, issues: `section "${p.sectionName}" could not be resolved` });
+        continue;
+      }
+      if (existingIds.has(p.studentId)) {
+        toPromote.push({ studentId: p.studentId, sectionId });
+      } else {
+        toInsert.push({
+          student_id: p.studentId, name: p.name, email: p.email,
+          role: "student", section_id: sectionId,
+        });
+      }
+    }
+
+    // ── 4. Insert new students ──
+    let studentsAdded = 0;
+    setImportStatus(`Adding ${toInsert.length} new student(s)…`);
+    for (const batch of chunkArray(toInsert, 500)) {
+      if (batch.length === 0) continue;
+      const { error } = await supabase.from("users").insert(batch);
+      if (!error) {
+        studentsAdded += batch.length;
+        continue;
+      }
+      // Batch failed — a single bad row (e.g. an unexpected duplicate) fails
+      // the whole INSERT statement. Fall back to one-at-a-time for this
+      // batch so the other 499 good rows aren't lost with it.
+      for (const row of batch) {
+        const { error: rowError } = await supabase.from("users").insert(row);
+        if (rowError) {
+          errors.push({ row: "-", studentId: row.student_id, issues: "insert failed: " + rowError.message });
+        } else {
+          studentsAdded++;
+        }
+      }
+    }
+
+    // ── 5. Promote existing students (section_id only — never touch name/email,
+    //        which could silently undo an approved email-change request) ──
+    setImportStatus(`Updating section for ${toPromote.length} returning student(s)…`);
+    let studentsPromoted = 0;
+    await runWithConcurrency(toPromote, 15, async (p) => {
+      const { error } = await supabase
+        .from("users").update({ section_id: p.sectionId })
+        .eq("student_id", p.studentId).eq("role", "student");
+      if (error) {
+        errors.push({ row: "-", studentId: p.studentId, issues: "promotion failed: " + error.message });
+      } else {
+        studentsPromoted++;
+      }
+    });
+
+    // ── 6. Create subject placeholders from the course columns ──
+    // teacher_id is deliberately left NULL — the registrar cannot supply
+    // teacher-assignment data, so there's nothing reliable to set it from.
+    // A person still has to claim/assign each subject to a teacher.
+    // Requires a UNIQUE constraint on (name, section_id, semester_id):
+    //   ALTER TABLE subjects ADD CONSTRAINT subjects_name_section_semester_unique
+    //     UNIQUE (name, section_id, semester_id);
+    // Upsert omits teacher_id from the payload, so re-running this import
+    // later (e.g. next week with more students) refreshes enrolled_count
+    // without wiping out a teacher assignment someone made in the meantime.
+    setImportStatus("Resolving course subjects…");
+    const subjectMap = new Map(); // "course|sectionId" -> row
+    for (const p of dedupedParsed) {
+      const sectionId = sectionMap[p.sectionName];
+      if (!sectionId) continue; // already recorded as an error above
+      for (const courseName of p.courses) {
+        const key = `${courseName}|${sectionId}`;
+        if (!subjectMap.has(key)) {
+          subjectMap.set(key, { name: courseName, section_id: sectionId, semester_id: semesterId, enrolled_count: 0 });
+        }
+        subjectMap.get(key).enrolled_count++;
+      }
+    }
+
+    let subjectsCreated = 0;
+    const subjectRows = [...subjectMap.values()];
+    if (subjectRows.length > 0) {
+      for (const batch of chunkArray(subjectRows, 200)) {
+        const { error } = await supabase
+          .from("subjects")
+          .upsert(batch, { onConflict: "name,section_id,semester_id" });
+        if (error) {
+          throw new Error(
+            "Subject creation failed: " + error.message +
+            (error.message?.includes("no unique or exclusion constraint")
+              ? ' — run: ALTER TABLE subjects ADD CONSTRAINT subjects_name_section_semester_unique UNIQUE (name, section_id, semester_id);'
+              : "")
+          );
+        }
+      }
+      subjectsCreated = subjectRows.length;
+    }
+
+    renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted, duplicateRows, subjectsCreated, errors, totalRows: rows.length });
+
+    await loadSections();
+    await loadUsers();
+  } catch (err) {
+    setImportStatus("Import stopped: " + err.message, true);
+  }
+}
+
+function showImportModal() {
+  document.getElementById("import-modal")?.classList.remove("hidden");
+  document.getElementById("import-summary").innerHTML = "";
+  document.getElementById("import-status").textContent = "";
+  document.getElementById("import-status").style.color = "";
+  const picker = document.getElementById("import-picker");
+  if (picker) picker.style.display = "block";
+}
+
+// Hide the semester/choose-file step once processing has started
+function hideImportPicker() {
+  const picker = document.getElementById("import-picker");
+  if (picker) picker.style.display = "none";
+}
+
+function setImportStatus(text, isError = false, isNote = false) {
+  const el = document.getElementById("import-status");
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isError ? "#dc2626" : isNote ? "#d97706" : "#475569";
+}
+
+function renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted, duplicateRows = 0, subjectsCreated = 0, errors, totalRows }) {
+  setImportStatus(`Done — processed ${totalRows} row(s).`);
+  const box = document.getElementById("import-summary");
+  if (!box) return;
+
+  let html = `
+    <ul style="margin:8px 0 0; padding-left:18px; font-size:13px; line-height:1.8;">
+      <li>${sectionsCreated} section(s) created</li>
+      <li>${studentsAdded} new student(s) added</li>
+      <li>${studentsPromoted} returning student(s) moved to their new section</li>
+      ${duplicateRows > 0 ? `<li>${duplicateRows} duplicate row(s) for the same student collapsed to one</li>` : ""}
+      <li>${subjectsCreated} course subject(s) resolved — <b>no teacher assigned yet</b>, that still needs to be done manually</li>
+      <li style="${errors.length ? "color:#dc2626;" : ""}">${errors.length} row(s) skipped due to issues</li>
+    </ul>
+  `;
+
+  if (errors.length > 0) {
+    const shown = errors.slice(0, 50);
+    html += `
+      <p style="font-size:12px; font-weight:600; margin:14px 0 6px; color:#dc2626;">
+        Skipped rows${errors.length > shown.length ? ` (showing first ${shown.length} of ${errors.length})` : ""}:
+      </p>
+      <div style="max-height:180px; overflow-y:auto; border:1px solid #fecaca; border-radius:6px; padding:8px 10px; background:#fef2f2;">
+        ${shown.map(e => `
+          <div style="font-size:11px; color:#991b1b; margin-bottom:4px;">
+            Row ${e.row} — <code>${escHtml(e.studentId)}</code>: ${escHtml(e.issues)}
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  box.innerHTML = html;
+}
+
+// ══════════════════════════════════════════════════════════════
 //  EXPOSE + EVENTS
 // ══════════════════════════════════════════════════════════════
+window.setSort          = setSort;
 window.toggleSortDir    = toggleSortDir;
 window.onNewRoleChange  = onNewRoleChange;
 window.autoUppercase    = autoUppercase;
@@ -614,7 +1117,15 @@ document.getElementById("search-input").addEventListener("input", renderTable);
 document.getElementById("filter-role").addEventListener("change", renderTable);
 document.getElementById("filter-section").addEventListener("change", renderTable);
 document.getElementById("filter-status-users")?.addEventListener("change", renderTable);
-// sort-az-btn uses onclick in HTML — no addEventListener needed
+
+document.getElementById("import-users-btn")?.addEventListener("click", openImportPicker);
+document.getElementById("import-choose-file-btn")?.addEventListener("click", () => {
+  document.getElementById("import-file-input")?.click();
+});
+document.getElementById("import-file-input")?.addEventListener("change", handleImportFile);
+document.getElementById("close-import-btn")?.addEventListener("click", () => {
+  document.getElementById("import-modal").classList.add("hidden");
+});
 
 loadSections();
 loadUsers();

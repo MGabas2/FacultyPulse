@@ -261,7 +261,7 @@
 
     .rankings-scroll {
       flex: 1;
-      overflow-y: auto;
+      overflow: hidden;
       min-height: 0;
     }
 
@@ -286,110 +286,19 @@
     .chart-card h3 { margin-bottom: 6px; }
     .chart-wrapper { position: relative; }
 
-    /* IFER section */
-    .ifer-row {
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: 10px 12px;
-      flex: none;
-    }
-    .ifer-row h3 { font-size: 12px; margin: 0 0 4px; }
-    .ifer-row p  { font-size: 11px; color: #64748b; margin: 0 0 8px; }
-    .ifer-controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .ifer-controls select { flex: 1; min-width: 140px; font-size: 12px; }
-
     /* ── RESPONSIVE: stack on smaller screens ── */
-    /* ── Prevent right column clipping at mid widths ── */
-    .admin-shell { min-width: 0; overflow: hidden; }
-    .main-content { min-width: 0; overflow: hidden; }
-    .dash-body { min-width: 0; overflow: hidden; }
-    .dash-left { min-width: 0; overflow: hidden; }
-    .dash-right { min-width: 0; overflow: hidden; }
-    .rankings-full { min-width: 0; overflow: hidden; }
-    .chart-card { min-width: 0; overflow: hidden; }
-
-    @media (max-width: 760px) {
-      /* Switch from fixed-height viewport mode to scrollable */
-      html, body { height: auto; overflow: auto; }
-      body { overflow: auto; }
-
-      .admin-shell { flex-direction: column; height: auto; overflow: visible; }
-
-      /* Sidebar becomes horizontal scrollable tab row */
-      .sidebar {
-        width: 100%;
-        flex-direction: row;
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        overflow-y: visible;
-        padding: 4px 8px;
-        gap: 2px;
-        min-width: 0;
-      }
-      .sidebar-nav-item {
-        flex: none;
-        padding: 8px 12px;
-        font-size: 12px;
-        border-left: none;
-        border-bottom: 3px solid transparent;
-        white-space: nowrap;
-      }
-      .sidebar-nav-item.active { border-left: none; border-bottom-color: #1a56db; }
-      .sidebar-divider { display: none; }
-
-      .main-content { overflow: visible; height: auto; }
-
-      /* Dashboard panels: allow scroll */
-      .panel.active { overflow-y: visible; height: auto; }
-      #panel-dashboard { overflow: visible; height: auto; }
-
-      .dash-wrap {
-        height: auto;
-        overflow: visible;
-        padding: 12px;
-        gap: 12px;
-      }
-
-      /* Stack charts above rankings */
-      .dash-body {
-        grid-template-columns: 1fr;
-        height: auto;
-      }
-
-      .dash-left, .dash-right { min-height: 0; height: auto; }
-
-      .charts-stack { grid-template-rows: auto auto; height: auto; }
-      .chart-card { height: auto; }
-      .chart-wrapper { height: 200px; }
-
-      .rankings-full { height: auto; max-height: none; }
-      .rankings-scroll { max-height: 300px; overflow-y: auto; }
-    }
-
-    /* 761px–900px: shrink sidebar, tighten grid */
-    @media (min-width: 761px) and (max-width: 900px) {
-      .sidebar { width: 160px; }
-      .sidebar-nav-item { font-size: 11px; padding: 9px 10px; gap: 6px; }
-      .dash-body { grid-template-columns: 1fr 1.3fr; gap: 6px; }
-      .dash-wrap { padding: 8px 10px; gap: 6px; }
-      .icon-stat { padding: 6px 8px; gap: 6px; }
-      .icon-stat .icon-value { font-size: 17px; }
-    }
-
-    /* 901px–1050px: slightly narrower sidebar */
-    @media (min-width: 901px) and (max-width: 1050px) {
-      .sidebar { width: 190px; }
-      .sidebar-nav-item { font-size: 12px; padding: 10px 14px; }
-      .dash-body { grid-template-columns: 1fr 1.3fr; }
+    @media (max-width: 900px) {
+      .dash-wrap { overflow-y: auto; }
+      .dash-body { grid-template-columns: 1fr; }
+      .charts-stack { grid-template-rows: auto auto; }
+      .chart-wrapper { height: 180px; }
+      .rankings-scroll { overflow: hidden; }
     }
 
     @media (max-width: 600px) {
       .icon-stats-row { flex-direction: column; }
-      .icon-stat { padding: 8px 12px; }
-      .dash-filter-bar { flex-direction: column; align-items: flex-start; }
-      .dash-filter-bar select { min-width: 100%; width: 100%; }
-      .chart-wrapper { height: 180px; }
+      .icon-stat { padding: 6px 10px; }
+      .dash-filter-bar select { min-width: 100px; }
     }
 
     /* ── OTHER PANELS ── */
@@ -639,31 +548,8 @@
     }
 
     #report-content, #report-content td, #report-content p, #report-content tr { color: #1e293b; }
-
-    /* ── Report modal mobile fixes ── */
-    @media (max-width: 600px) {
-      #report-modal .modal-box {
-        width: 100vw !important;
-        max-width: 100vw !important;
-        height: 100dvh !important;
-        max-height: 100dvh !important;
-        border-radius: 0 !important;
-        margin: 0 !important;
-      }
-      #report-modal .modal-box > div:last-child {
-        /* button bar */
-        flex-wrap: wrap;
-        gap: 6px;
-        padding: 10px 12px;
-      }
-      #report-modal .modal-box > div:last-child button {
-        font-size: 11px;
-        padding: 6px 10px;
-        flex: 1;
-        min-width: 80px;
-      }
-    }
   </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -699,6 +585,9 @@
       </button>
       <button class="sidebar-nav-item" data-panel="panel-semesters" id="nav-semesters">
         <span class="nav-icon">🗓️</span> Semester Management
+      </button>
+      <button class="sidebar-nav-item" data-panel="panel-subjects" id="nav-subjects">
+        <span class="nav-icon">🎓</span> Subject Assignment
       </button>
       <hr class="sidebar-divider" />
 
@@ -787,21 +676,25 @@
 
               <!-- Rankings -->
               <div class="rankings-full">
-                <h3>Faculty Rankings — Active Semester</h3>
+                <h3 style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
+                  <span>Faculty Rankings — Active Semester</span>
+                  <label style="display:flex; align-items:center; gap:5px; font-size:10px; font-weight:500; color:#64748b; cursor:pointer;">
+                    <input type="checkbox" id="rank-group-toggle" checked style="cursor:pointer; margin:0;" />
+                    Group by employment type
+                  </label>
+                </h3>
                 <div class="rankings-scroll">
                   <table>
                     <thead>
                       <tr>
                         <th>Rank</th>
                         <th>Faculty Name</th>
-                        <th>SET Rating</th>
-                        <th>Description</th>
                         <th>Report Status</th>
                         <th>Action</th>
                       </tr>
                     </thead>
                     <tbody id="rankings-tbody">
-                      <tr><td colspan="6">Loading...</td></tr>
+                      <tr><td colspan="4">Loading...</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -812,17 +705,23 @@
               </div>
 
               <!-- IFER Generator -->
-              <div class="ifer-row" id="ifer-section">
-                <h3>📄 Generate IFER</h3>
-                <p>Individual Faculty Evaluation Report per CMO No. 19, s. 2025 (Annex C). <b>Student identities encrypted.</b></p>
-                <div class="ifer-controls">
-                  <select id="report-faculty" style="min-width:160px;">
-                    <option value="">— select faculty —</option>
-                  </select>
-                  <button id="generate-report-btn">Generate IFER</button>
-                </div>
-              </div>
-
+<div class="ifer-row" id="ifer-section">
+  <h3>📄 Generate IFER</h3>
+  <p>Individual Faculty Evaluation Report per CMO No. 19, s. 2025 (Annex C). <b>Student identities encrypted.</b></p>
+  <div class="ifer-controls" style="display:flex; flex-wrap:nowrap; gap:6px; align-items:center;">
+    <input type="text" id="report-faculty-filter" placeholder="🔍 Search..."
+      autocomplete="off"
+      style="flex:1 1 0; min-width:0; width:auto; font-size:12px; padding:6px 8px;" />
+    <select id="report-faculty"
+      style="flex:1.3 1 0; min-width:0; width:auto; font-size:12px; padding:6px 8px;">
+      <option value="">— select faculty —</option>
+    </select>
+    <button id="generate-report-btn"
+      style="flex:0 0 auto; white-space:nowrap; font-size:12px; padding:6px 12px;">
+      Generate IFER
+    </button>
+  </div>
+</div>
             </div><!-- /dash-right -->
 
           </div><!-- /dash-body -->
@@ -840,10 +739,15 @@
           <p style="color:#666; margin-bottom:16px;">Add, view, and manage all system users.</p>
 
           <div class="section">
-            <!-- Row 1: Search + Add User -->
+            <!-- Row 1: Search + Import + Add User -->
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
               <input type="text" id="search-input" placeholder="🔍 Search name or ID..."
                 style="flex:1;" />
+              <button id="import-users-btn" class="btn-secondary" style="flex:none; white-space:nowrap;"
+                title="Import students from an XLSX file (Sheet 1 of the registrar template)">
+                📥 Import Students
+              </button>
+              <input type="file" id="import-file-input" accept=".xlsx" style="display:none;" />
               <button id="add-user-btn" style="flex:none; white-space:nowrap;">+ Add User</button>
             </div>
             <!-- Row 2: Sort + Filters -->
@@ -873,16 +777,16 @@
             <table>
               <thead id="users-thead">
                 <tr>
-                  <th>Name / Student ID</th>
+                  <th>Name</th>
+                  <th>ID / Student ID</th>
                   <th>Role</th>
                   <th>Email</th>
-                  <th>Section</th>
                   <th>Status</th>
                   <th>Action</th>
                 </tr>
               </thead>
               <tbody id="users-tbody">
-                <tr><td colspan="7">Loading...</td></tr>
+                <tr><td colspan="6">Loading...</td></tr>
               </tbody>
             </table>
             <div style="display:flex; align-items:center; justify-content:space-between; margin-top:12px; flex-wrap:wrap; gap:8px;">
@@ -892,6 +796,39 @@
           </div>
         </div>
       </div><!-- /panel-users -->
+
+      <!-- Import Results Modal (shared by both User Management surfaces) -->
+      <div id="import-modal" class="modal hidden">
+        <div class="modal-box" style="max-width:520px;">
+          <h3>📥 Import Students</h3>
+          <p style="font-size:12px; color:#64748b; margin-bottom:10px;">
+            Imports students, sections, and course subjects. Subjects are created
+            without a teacher assigned — the registrar can't supply that data, so
+            it has to be set manually afterward.
+          </p>
+
+          <div id="import-picker">
+            <div class="form-group">
+              <label>Semester</label>
+              <select id="import-semester">
+                <option value="">— select semester —</option>
+              </select>
+              <p class="field-hint">
+                Sections and course subjects created by this import are tagged with
+                the semester you pick here. Create one first in Semester Management
+                if none exist yet.
+              </p>
+            </div>
+            <button id="import-choose-file-btn" style="margin-top:8px;">Choose File…</button>
+          </div>
+
+          <p id="import-status" style="font-size:13px; color:#475569; min-height:18px;"></p>
+          <div id="import-summary"></div>
+          <div style="display:flex; gap:10px; margin-top:20px;">
+            <button class="btn-secondary" id="close-import-btn">Close</button>
+          </div>
+        </div>
+      </div>
 
 
       <!-- ══════════════════════════════════════════ -->
@@ -1104,7 +1041,9 @@
           </h2>
           <p style="color:#666; margin-bottom:16px; font-size:13px;">
             Create and manage evaluation semesters. Only one semester can be active at a time.
-            Activating a new semester automatically locks the previous one — its data is preserved and cannot be changed.
+            Activating a new semester deactivates the previous one — its data is preserved, not locked.
+            Use Pause/Resume on the active semester to temporarily block new student submissions
+            (e.g. while correcting data) without deactivating it.
           </p>
 
           <div class="section" style="margin-bottom:20px;">
@@ -1152,6 +1091,68 @@
         </div>
       </div><!-- /panel-semesters -->
 
+      <!-- ══════════════════════════════════════════ -->
+      <!-- PANEL: SUBJECT ASSIGNMENT                 -->
+      <!-- ══════════════════════════════════════════ -->
+      <div id="panel-subjects" class="panel">
+        <div class="container">
+          <h2 style="display:flex; align-items:center; gap:10px; margin-top:24px;">
+            🎓 Subject Assignment
+            <button id="refresh-btn-subjects" style="font-size:12px; padding:5px 10px;">🔄 Refresh</button>
+          </h2>
+          <p style="color:#666; margin-bottom:16px; font-size:13px;">
+            Assign a teacher to each imported course subject. The registrar can't supply
+            teacher data, so every subject created by import starts unassigned — this has
+            to be done here manually. Select multiple rows to assign them all at once.
+          </p>
+
+          <div class="section">
+            <div class="toolbar">
+              <input type="text" id="subject-assign-search" placeholder="🔍 Search course or section..." style="flex:1; min-width:180px;" />
+              <select id="subject-assign-semester-filter" style="min-width:180px;">
+                <option value="">All Semesters</option>
+              </select>
+              <label style="display:flex; align-items:center; gap:6px; font-size:13px; white-space:nowrap;">
+                <input type="checkbox" id="subject-assign-unassigned-only" checked />
+                Unassigned only
+              </label>
+            </div>
+            <p id="subject-assign-count" style="font-size:12px; color:#64748b; margin-bottom:10px;"></p>
+
+            <!-- Bulk assign bar — only visible when rows are selected -->
+            <div id="subject-assign-bulkbar" style="display:none; align-items:center; gap:10px; flex-wrap:wrap;
+              background:#eff6ff; border:1px solid #93c5fd; border-radius:8px; padding:10px 14px; margin-bottom:12px;">
+              <span style="font-size:13px; color:#1e40af;">
+                <b id="subject-assign-selected-count">0</b> selected
+              </span>
+              <select id="subject-assign-teacher" style="min-width:220px;">
+                <option value="">— select teacher —</option>
+              </select>
+              <button id="subject-assign-btn" style="font-size:12px; padding:6px 14px;">Assign to Selected</button>
+              <button id="subject-unassign-btn" class="btn-secondary" style="font-size:12px; padding:6px 14px;">Clear Teacher</button>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:32px;"><input type="checkbox" id="subject-assign-select-all" /></th>
+                  <th>Course</th>
+                  <th>Section</th>
+                  <th>Enrolled</th>
+                  <th>Teacher</th>
+                </tr>
+              </thead>
+              <tbody id="subjects-assign-tbody">
+                <tr><td colspan="5">Loading...</td></tr>
+              </tbody>
+            </table>
+            <div style="display:flex; align-items:center; justify-content:flex-end; margin-top:12px; flex-wrap:wrap; gap:8px;">
+              <div id="subject-assign-page-buttons" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /panel-subjects -->
+
     </div><!-- /main-content -->
   </div><!-- /admin-shell -->
 
@@ -1174,11 +1175,11 @@
         background:white;
         display:flex; gap:10px; flex-wrap:wrap; align-items:center;
         flex-shrink:0;">
-        <button id="release-btn" style="background:#16a34a;">Release to Faculty</button>
-        <button id="print-both-btn" style="background:#1a56db;">Print Annex A & B</button>
+        <button id="release-btn" style="background:#16a34a;">📤 Release to Faculty</button>
+        <button id="print-both-btn" style="background:#1a56db;">🖨 Print Both</button>
         <button id="print-annexc-btn" style="background:#0e7490;">Print Annex C</button>
         <button id="print-annexd-btn" style="background:#7c3aed;">Print Annex D</button>
-        <button id="pdf-btn" style="background:#0f172a;">Save as PDF</button>
+        <button id="pdf-btn" style="background:#0f172a;">💾 Save as PDF</button>
         <button class="btn-secondary" id="close-report-btn">Close</button>
       </div>
     </div>
@@ -1361,6 +1362,7 @@
     document.getElementById("nav-history").addEventListener("click", () => switchPanel("panel-history"));
     document.getElementById("nav-email-requests").addEventListener("click", () => switchPanel("panel-email-requests"));
     document.getElementById("nav-semesters").addEventListener("click", () => switchPanel("panel-semesters"));
+    document.getElementById("nav-subjects").addEventListener("click", () => switchPanel("panel-subjects"));
 
 
   </script>

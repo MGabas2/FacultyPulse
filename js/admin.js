@@ -177,49 +177,16 @@ async function computeWeightedSET(teacherId, semesterId) {
 //  LOAD SUMMARY COUNTS
 // ══════════════════════════════════════════════════════════════
 async function loadSummary() {
-  // Scope all counts to the ACTIVE semester only.
-  // Previously this counted every teacher/student/eval ever created,
-  // across ALL past semesters — showing stale cumulative totals instead
-  // of what's actually happening in the current evaluation period.
-  const { data: semester } = await supabase
-    .from("semesters").select("id").eq("is_active", true).maybeSingle();
-
-  if (!semester) {
-    document.getElementById("count-faculty").textContent  = "—";
-    document.getElementById("count-students").textContent = "—";
-    document.getElementById("count-evals").textContent    = "—";
-    return;
-  }
-
-  // Faculty count: distinct teachers who have at least one subject THIS semester
-  const { data: semSubjects } = await supabase
-    .from("subjects")
-    .select("teacher_id, section_id")
-    .eq("semester_id", semester.id);
-
-  const teacherIds = new Set((semSubjects || []).map(s => s.teacher_id).filter(Boolean));
-  const sectionIds = new Set((semSubjects || []).map(s => s.section_id).filter(Boolean));
-
-  // Student count: students whose section_id matches a section used THIS semester
-  let studentCount = 0;
-  if (sectionIds.size > 0) {
-    const { count } = await supabase
-      .from("users")
-      .select("*", { count: "exact", head: true })
-      .eq("role", "student")
-      .in("section_id", [...sectionIds]);
-    studentCount = count || 0;
-  }
-
-  // Evaluations submitted: scoped to active semester only
+  const { count: facultyCount } = await supabase
+    .from("users").select("*", { count: "exact", head: true }).eq("role", "teacher");
+  const { count: studentCount } = await supabase
+    .from("users").select("*", { count: "exact", head: true }).eq("role", "student");
   const { count: evalCount } = await supabase
-    .from("evaluation_scores")
-    .select("*", { count: "exact", head: true })
-    .eq("semester_id", semester.id);
+    .from("evaluation_scores").select("*", { count: "exact", head: true });
 
-  document.getElementById("count-faculty").textContent  = teacherIds.size;
-  document.getElementById("count-students").textContent = studentCount;
-  document.getElementById("count-evals").textContent    = evalCount ?? 0;
+  document.getElementById("count-faculty").textContent  = facultyCount  ?? "—";
+  document.getElementById("count-students").textContent = studentCount  ?? "—";
+  document.getElementById("count-evals").textContent    = evalCount     ?? "—";
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -230,25 +197,36 @@ async function loadSummary() {
 // ══════════════════════════════════════════════════════════════
 let allRanked    = [];
 let rankPage     = 1;
-const RANK_SIZE  = 10;
+const RANK_SIZE  = 8;
+
+// Employment-type grouping toggle. Default matches the current UI
+// (checkbox starts checked). When false, faculty rank purely by SET
+// score with no Full-time/Part-time split.
+const EMPLOYMENT_GROUP_ORDER = { "Full-time": 0, "Part-time": 1 };
+let rankGroupByEmployment = true;
 
 async function loadRankings() {
   const tbody = document.getElementById("rankings-tbody");
-  tbody.innerHTML = `<tr><td colspan="6">Loading...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="4">Loading...</td></tr>`;
 
   const { data: semester } = await supabase
     .from("semesters").select("id").eq("is_active", true).single();
 
   if (!semester) {
-    tbody.innerHTML = `<tr><td colspan="6">No active semester.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4">No active semester.</td></tr>`;
     return;
   }
 
-  const { data: teachers } = await supabase
-    .from("users").select("id, name, academic_rank").eq("role", "teacher");
+  const { data: allTeachers } = await supabase
+    .from("users").select("id, name, academic_rank, employment_type").eq("role", "teacher");
+
+  // COS (Contract of Service) faculty are excluded from rankings entirely —
+  // per admin's request, they don't appear anywhere in this view (table,
+  // charts, or the Generate IFER dropdown, since all three read from `ranked`).
+  const teachers = (allTeachers || []).filter(t => t.employment_type !== "COS");
 
   if (!teachers || teachers.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6">No faculty found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4">No faculty found.</td></tr>`;
     return;
   }
 
@@ -319,45 +297,34 @@ async function loadRankings() {
     const program    = subjects[0]?.sections?.department || "—";
 
     ranked.push({
-      id:          teacher.id,
-      name:        teacher.name,
-      rank:        teacher.academic_rank || "—",
+      id:             teacher.id,
+      name:           teacher.name,
+      rank:           teacher.academic_rank || "—",
       overallSET,
-      respondents: totalRespondents,
+      respondents:    totalRespondents,
       program,
-      stage:       releaseStageByTeacher[teacher.id] || "pending",
+      employmentType: teacher.employment_type || "—",
+      stage:          releaseStageByTeacher[teacher.id] || "pending",
     });
   }
 
+  // Base order: highest SET first. Employment-type grouping (if enabled) is
+  // applied at render time in renderRankingsPage(), so toggling it doesn't
+  // require refetching data.
   ranked.sort((a, b) => b.overallSET - a.overallSET);
   allRanked = ranked;
 
   const progFilter = document.getElementById("dash-program-filter");
-  if (progFilter) {
-    // Rebuild every time (not just once) so newly-added programs show up
-    // without needing a page refresh. Preserve the current selection.
-    const currentSelection = progFilter.value;
+  if (progFilter && progFilter.options.length <= 1) {
     const programs = [...new Set(ranked.map(t => t.program).filter(p => p && p !== "—"))].sort();
-
-    progFilter.innerHTML = `<option value="">All Programs</option>` +
-      programs.map(p => `<option value="${p}">${p}</option>`).join("");
-
-    // Restore selection if that program still exists, otherwise reset to "All"
-    if (programs.includes(currentSelection)) {
-      progFilter.value = currentSelection;
-    }
+    programs.forEach(p => { progFilter.innerHTML += `<option value="${p}">${p}</option>`; });
   }
 
   rankPage = 1;
   renderRankingsPage();
   populateDashFacultyFilter();
 
-  const select = document.getElementById("report-faculty");
-  if (select) {
-    select.innerHTML = ranked.map(t =>
-      `<option value="${t.id}|${t.name}">${t.name}</option>`
-    ).join("");
-  }
+  populateReportFacultySelect(ranked);
 
   renderBarChart(ranked);
   renderDonutChart(ranked);
@@ -373,10 +340,23 @@ function renderRankingsPage() {
 
   let filtered = progFilter
     ? allRanked.filter(t => t.program === progFilter)
-    : allRanked;
+    : allRanked.slice();
 
   if (facFilter) {
     filtered = filtered.filter(t => t.id === facFilter);
+  }
+
+  // Re-sort per the current grouping toggle. Cheap enough to redo on every
+  // render rather than maintaining two parallel cached arrays.
+  if (rankGroupByEmployment) {
+    filtered.sort((a, b) => {
+      const groupA = EMPLOYMENT_GROUP_ORDER[a.employmentType] ?? 2;
+      const groupB = EMPLOYMENT_GROUP_ORDER[b.employmentType] ?? 2;
+      if (groupA !== groupB) return groupA - groupB;
+      return b.overallSET - a.overallSET;
+    });
+  } else {
+    filtered.sort((a, b) => b.overallSET - a.overallSET);
   }
 
   // Bar chart reflects the current program filter (department averages when
@@ -384,11 +364,23 @@ function renderRankingsPage() {
   renderBarChart(filtered);
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6">No evaluation data ${progFilter ? "for this program" : "yet"}.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4">No evaluation data ${progFilter ? "for this program" : "yet"}.</td></tr>`;
     document.getElementById("rank-page-info").textContent = "";
     document.getElementById("rank-page-buttons").innerHTML = "";
     return;
   }
+
+  // Rank numbers restart at 1 for each employment-type group when grouping
+  // is on (Full-time: 1,2,3… / Part-time: 1,2,3… independently), rather
+  // than counting straight through both groups. When grouping is off,
+  // there's only one implicit group, so this collapses to a normal
+  // continuous 1..N ranking — same as before.
+  const groupRankCounters = {};
+  filtered.forEach(t => {
+    const key = rankGroupByEmployment ? t.employmentType : "__all__";
+    groupRankCounters[key] = (groupRankCounters[key] || 0) + 1;
+    t._displayRank = groupRankCounters[key];
+  });
 
   const totalPages = Math.ceil(filtered.length / RANK_SIZE);
   if (rankPage > totalPages) rankPage = totalPages;
@@ -398,19 +390,42 @@ function renderRankingsPage() {
   const pageRows = filtered.slice(start, end);
 
   tbody.innerHTML = "";
-  pageRows.forEach((t, idx) => {
-    const globalRank = start + idx + 1; // continuous rank across pages
-    const color = getRatingColor(t.overallSET);
+
+  // Track the group of the row immediately before this page (if any) so a
+  // divider still renders correctly even if the Full-time → Part-time
+  // boundary falls exactly on a page break. Skipped entirely when the
+  // "Group by employment type" toggle is off.
+  let prevGroup = rankGroupByEmployment
+    ? (start > 0 ? filtered[start - 1].employmentType : null)
+    : undefined; // undefined = grouping disabled, no dividers ever
+
+  pageRows.forEach((t) => {
+    if (rankGroupByEmployment) {
+      if (prevGroup !== null && t.employmentType !== prevGroup) {
+        tbody.innerHTML += `
+          <tr>
+            <td colspan="4" style="padding:6px 8px; background:#f1f5f9; text-align:center;
+              font-size:10px; font-weight:700; color:#64748b; letter-spacing:.03em;">
+              ${escHtml(t.employmentType)}
+            </td>
+          </tr>
+        `;
+      } else if (prevGroup === null) {
+        tbody.innerHTML += `
+          <tr>
+            <td colspan="4" style="padding:6px 8px; background:#f1f5f9; text-align:center;
+              font-size:10px; font-weight:700; color:#64748b; letter-spacing:.03em;">
+              ${escHtml(t.employmentType)}
+            </td>
+          </tr>
+        `;
+      }
+    }
+
     tbody.innerHTML += `
       <tr>
-        <td>${globalRank}</td>
+        <td>${t._displayRank}</td>
         <td>${t.name}</td>
-        <td style="text-align:center;">${t.overallSET} / 100</td>
-        <td>
-          <span class="badge done" style="background:${color}20; color:${color};">
-            ${getRatingLabel(t.overallSET)}
-          </span>
-        </td>
         <td>${getReportStageBadge(t.stage)}</td>
         <td>
           <button onclick="viewReport('${t.id}','${t.name.replace(/'/g,"\\'")}')">
@@ -419,6 +434,8 @@ function renderRankingsPage() {
         </td>
       </tr>
     `;
+
+    prevGroup = t.employmentType;
   });
 
   document.getElementById("rank-page-info").textContent =
@@ -660,209 +677,6 @@ async function viewReport(teacherId, teacherName) {
   // Store on window so the Restore button can access it without re-fetching
   window._studentComments = studentComments;
 
-  // ── Fetch raw SET scores per subject for the raw data panel ──
-  const rawScoresBySubject = {};
-  for (const c of result.classData) {
-    const { data: rawEvals } = await supabase
-      .from("evaluation_scores")
-      .select("scores, submitted_at")
-      .eq("subject_id", c.subjectId)
-      .eq("semester_id", semester.id)
-      .order("submitted_at", { ascending: true });
-    rawScoresBySubject[c.subjectId] = rawEvals || [];
-  }
-
-  // ── Build raw data panel HTML (screen-only, no-print) ──
-  const SET_QUESTIONS_SHORT = [
-    "Comes to class on time.",
-    "Explains learning outcomes, expectations, grading system, and requirements.",
-    "Maximizes allocated time/learning hours effectively.",
-    "Facilitates critical and creative thinking via appropriate activities.",
-    "Guides independent learning and decision-making.",
-    "Communicates constructive feedback for academic growth.",
-    "Demonstrates extensive knowledge of the subject/course.",
-    "Simplifies complex ideas for ease of understanding.",
-    "Relates subject matter to contemporary issues and daily life.",
-    "Promotes active learning using ICT tools and platforms.",
-    "Uses appropriate assessments aligned with learning outcomes.",
-    "Recognizes and values unique diversity among students.",
-    "Assists students during consultation hours.",
-    "Provides immediate feedback on outputs and performance.",
-    "Provides transparent and clear criteria in rating performance.",
-  ];
-
-  function buildRawDataPanel() {
-    const panelId = "raw-data-panel-" + teacherId;
-
-    let html = `
-      <div class="no-print" style="margin-bottom:20px; border:1px solid #e2e8f0; border-radius:10px; overflow:hidden;">
-        <!-- Header / toggle -->
-        <div onclick="document.getElementById('${panelId}').classList.toggle('hidden')"
-          style="background:#f1f5f9; padding:12px 16px; cursor:pointer; display:flex;
-            align-items:center; justify-content:space-between; user-select:none;">
-          <span style="font-weight:600; font-size:13px; color:#1e293b;">
-            📊 Raw Evaluation Data (QA View Only — Not Printed)
-          </span>
-          <span style="font-size:11px; color:#64748b;">Click to expand/collapse</span>
-        </div>
-
-        <div id="${panelId}" class="hidden" style="padding:16px;">`;
-
-    // ── SET Raw Data ──
-    html += `
-          <p style="font-weight:700; font-size:13px; color:#1e293b; margin:0 0 12px;">
-            Student Evaluation of Teachers (SET) — Individual Submissions
-          </p>`;
-
-    for (const c of result.classData) {
-      const evals = rawScoresBySubject[c.subjectId] || [];
-      html += `
-          <p style="font-weight:600; font-size:12px; color:#334155; margin:0 0 6px;">
-            ${escHtml(c.course)} (${escHtml(c.section)})
-            — ${evals.length} respondent${evals.length !== 1 ? "s" : ""}
-            out of ${c.noStudents} enrolled
-            | Avg SET: <b>${c.avgSETRating}</b>
-            | Weighted: <b>${c.weightedScore}</b>
-          </p>`;
-
-      if (evals.length === 0) {
-        html += `<p style="font-size:11px; color:#94a3b8; margin:0 0 14px; padding-left:8px;">No submissions yet.</p>`;
-        continue;
-      }
-
-      // Table: rows = questions, cols = respondents
-      html += `
-          <div style="overflow-x:auto; margin-bottom:16px;">
-            <table style="border-collapse:collapse; font-size:11px; min-width:100%;">
-              <thead>
-                <tr>
-                  <th style="border:1px solid #cbd5e1; padding:6px 8px; background:#f8fafc;
-                    text-align:left; min-width:260px; color:#334155;">Question</th>`;
-      evals.forEach((_, i) => {
-        html += `<th style="border:1px solid #cbd5e1; padding:6px 8px; background:#f8fafc;
-          text-align:center; color:#334155; min-width:40px;">R${i + 1}</th>`;
-      });
-      html += `
-                  <th style="border:1px solid #cbd5e1; padding:6px 8px; background:#eff6ff;
-                    text-align:center; color:#1e40af; min-width:52px;">Avg</th>
-                </tr>
-              </thead>
-              <tbody>`;
-
-      ["q1","q2","q3","q4","q5","q6","q7","q8","q9","q10","q11","q12","q13","q14","q15"]
-        .forEach((qid, qi) => {
-          // Category divider rows
-          if (qi === 0)
-            html += `<tr><td colspan="${evals.length + 2}"
-              style="background:#f1f5f9; padding:5px 8px; font-size:10px;
-                font-weight:600; color:#475569; border:1px solid #cbd5e1;">
-              A. Management of Teaching and Learning</td></tr>`;
-          if (qi === 6)
-            html += `<tr><td colspan="${evals.length + 2}"
-              style="background:#f1f5f9; padding:5px 8px; font-size:10px;
-                font-weight:600; color:#475569; border:1px solid #cbd5e1;">
-              B. Content Knowledge, Pedagogy and Technology</td></tr>`;
-          if (qi === 11)
-            html += `<tr><td colspan="${evals.length + 2}"
-              style="background:#f1f5f9; padding:5px 8px; font-size:10px;
-                font-weight:600; color:#475569; border:1px solid #cbd5e1;">
-              C. Commitment and Transparency</td></tr>`;
-
-          const vals = evals.map(e => e.scores?.[qid] ?? "—");
-          const numVals = vals.filter(v => typeof v === "number");
-          const avg = numVals.length
-            ? (numVals.reduce((a,b) => a+b, 0) / numVals.length).toFixed(2)
-            : "—";
-
-          html += `<tr>
-            <td style="border:1px solid #cbd5e1; padding:5px 8px; color:#334155;">
-              <b>${qi + 1}.</b> ${escHtml(SET_QUESTIONS_SHORT[qi])}
-            </td>`;
-          vals.forEach(v => {
-            html += `<td style="border:1px solid #cbd5e1; padding:5px 8px;
-              text-align:center; color:#1e293b;">${v}</td>`;
-          });
-          html += `<td style="border:1px solid #cbd5e1; padding:5px 8px;
-            text-align:center; font-weight:600; color:#1e40af; background:#eff6ff;">${avg}</td>
-          </tr>`;
-        });
-
-      // Total row per respondent
-      html += `<tr style="background:#f8fafc;">
-        <td style="border:1px solid #cbd5e1; padding:6px 8px; font-weight:700; color:#1e293b;">
-          Total Score (raw / 75)
-        </td>`;
-      evals.forEach(e => {
-        const total = Object.values(e.scores || {}).reduce((s,v) => s+v, 0);
-        html += `<td style="border:1px solid #cbd5e1; padding:6px 8px;
-          text-align:center; font-weight:700; color:#1e293b;">${total}</td>`;
-      });
-      html += `<td style="border:1px solid #cbd5e1; padding:6px 8px;
-        text-align:center; color:#64748b;">—</td></tr>`;
-
-      // Computed rating row
-      html += `<tr style="background:#eff6ff;">
-        <td style="border:1px solid #cbd5e1; padding:6px 8px; font-weight:700; color:#1e40af;">
-          Computed SET Rating (score/75)×100
-        </td>`;
-      evals.forEach(e => {
-        const total = Object.values(e.scores || {}).reduce((s,v) => s+v, 0);
-        const rating = ((total / 75) * 100).toFixed(2);
-        html += `<td style="border:1px solid #cbd5e1; padding:6px 8px;
-          text-align:center; font-weight:700; color:#1e40af;">${rating}</td>`;
-      });
-      html += `<td style="border:1px solid #cbd5e1; padding:6px 8px;
-        text-align:center; font-weight:700; color:#1e40af;">${c.avgSETRating}</td></tr>`;
-
-      html += `</tbody></table></div>`;
-    }
-
-    // ── SEF Raw Data ──
-    html += `
-          <div style="border-top:2px solid #e2e8f0; margin-top:4px; padding-top:16px;">
-            <p style="font-weight:700; font-size:13px; color:#1e293b; margin:0 0 12px;">
-              Supervisor's Evaluation of Faculty (SEF) — Summary
-            </p>`;
-
-    if (supRemarks) {
-      html += `
-            <table style="border-collapse:collapse; font-size:12px; width:100%; max-width:420px; margin-bottom:12px;">
-              <tr>
-                <td style="border:1px solid #cbd5e1; padding:8px 12px; background:#f8fafc;
-                  font-weight:600; color:#334155;">Overall SEF Rating</td>
-                <td style="border:1px solid #cbd5e1; padding:8px 12px; text-align:center;
-                  font-weight:700; font-size:15px; color:#1e40af;">${supRemarks.sef_score ?? "—"} / 100</td>
-              </tr>
-              <tr>
-                <td style="border:1px solid #cbd5e1; padding:8px 12px; background:#f8fafc;
-                  font-weight:600; color:#334155; vertical-align:top;">Supervisor Comments</td>
-                <td style="border:1px solid #cbd5e1; padding:8px 12px; color:#334155;
-                  font-size:11px; line-height:1.6;">
-                  ${supRemarks.comments ? escHtml(supRemarks.comments) : "<em style='color:#94a3b8;'>No comments submitted.</em>"}
-                </td>
-              </tr>
-              <tr>
-                <td style="border:1px solid #cbd5e1; padding:8px 12px; background:#f8fafc;
-                  font-weight:600; color:#334155; vertical-align:top;">Supervisor Remarks</td>
-                <td style="border:1px solid #cbd5e1; padding:8px 12px; color:#334155;
-                  font-size:11px; line-height:1.6;">
-                  ${supRemarks.remarks ? escHtml(supRemarks.remarks) : "<em style='color:#94a3b8;'>No remarks submitted.</em>"}
-                </td>
-              </tr>
-            </table>
-            <p style="font-size:10px; color:#94a3b8; margin:0;">
-              Note: Per-question SEF scores are not stored individually — only the computed overall SEF rating is recorded.
-            </p>`;
-    } else {
-      html += `<p style="font-size:12px; color:#94a3b8; font-style:italic;">
-        No supervisor evaluation submitted for this faculty this semester.
-      </p>`;
-    }
-
-    html += `</div></div></div>`;
-    return html;
-  }
-
   // ── Build IFER HTML — Annex C Format ──
   const dateGenerated = new Date().toLocaleDateString("en-PH", {
     year: "numeric", month: "long", day: "numeric"
@@ -889,8 +703,6 @@ async function viewReport(teacherId, teacherName) {
           📝 <b>PREVIEW (QA ONLY)</b> — Not yet forwarded. Faculty cannot see this report yet.
         </div>`;
       })()}
-
-      ${buildRawDataPanel()}
 
       <!-- ══ ANNEX C HEADER ══ -->
       <p style="text-align:right; font-size:10px; color:#000; margin-bottom:8px;">
@@ -1849,6 +1661,28 @@ document.getElementById("logout-btn").addEventListener("click", (e) => {
   window.location.href = "../index.html";
 });
 
+// ── Populate the Generate IFER faculty dropdown, optionally filtered ──
+function populateReportFacultySelect(list) {
+  const select = document.getElementById("report-faculty");
+  if (!select) return;
+  const currentValue = select.value; // preserve selection across re-filtering when possible
+  select.innerHTML = `<option value="">— select faculty —</option>` +
+    list.map(t => `<option value="${t.id}|${t.name}">${t.name}</option>`).join("");
+  if ([...select.options].some(o => o.value === currentValue)) {
+    select.value = currentValue;
+  }
+}
+
+// ── Search bar narrows the dropdown as you type ──
+const reportFacultyFilterEl = document.getElementById("report-faculty-filter");
+if (reportFacultyFilterEl) {
+  reportFacultyFilterEl.addEventListener("input", () => {
+    const q = reportFacultyFilterEl.value.trim().toLowerCase();
+    const filtered = q ? allRanked.filter(t => t.name.toLowerCase().includes(q)) : allRanked;
+    populateReportFacultySelect(filtered);
+  });
+}
+
 document.getElementById("generate-report-btn").addEventListener("click", () => {
   const select = document.getElementById("report-faculty");
   if (!select || !select.value || !select.value.includes("|")) {
@@ -1965,6 +1799,17 @@ if (dashFacultyFilterEl) {
     renderRankingsPage();
     renderBarChart(allRanked);
     renderDonutChart(allRanked);
+  });
+}
+
+// ── "Group by employment type" toggle above the rankings table ──
+const rankGroupToggleEl = document.getElementById("rank-group-toggle");
+if (rankGroupToggleEl) {
+  rankGroupByEmployment = rankGroupToggleEl.checked; // sync with HTML default
+  rankGroupToggleEl.addEventListener("change", () => {
+    rankGroupByEmployment = rankGroupToggleEl.checked;
+    rankPage = 1;
+    renderRankingsPage();
   });
 }
 
@@ -2292,7 +2137,7 @@ async function loadSemesters() {
 
   const { data, error } = await supabase
     .from("semesters")
-    .select("id, label, is_active, is_locked, is_paused")
+    .select("id, label, is_active, is_paused")
     .order("label", { ascending: false });
 
   if (error) {
@@ -2306,43 +2151,23 @@ async function loadSemesters() {
   }
 
   tbody.innerHTML = data.map(s => {
-    let statusBadge;
-    if (s.is_active && s.is_paused) {
-      statusBadge = `<span style="background:#fef3c7; color:#92400e; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">⏸ Paused</span>`;
-    } else if (s.is_active) {
-      statusBadge = `<span style="background:#d1fae5; color:#065f46; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">Active</span>`;
-    } else if (s.is_locked) {
-      statusBadge = `<span style="background:#fee2e2; color:#991b1b; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">Locked</span>`;
-    } else {
-      statusBadge = `<span style="background:#f1f5f9; color:#475569; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">Inactive</span>`;
-    }
+    const statusBadge = s.is_active && s.is_paused
+      ? `<span style="background:#fef3c7; color:#92400e; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">⏸ Paused</span>`
+      : s.is_active
+        ? `<span style="background:#d1fae5; color:#065f46; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">Active</span>`
+        : `<span style="background:#f1f5f9; color:#475569; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700;">Inactive</span>`;
 
     let action;
     if (s.is_active && s.is_paused) {
-      action = `<div style="display:flex; gap:6px;">
-          <button onclick="resumeSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
-            style="font-size:11px; padding:4px 10px; background:#16a34a; color:white; border:none; border-radius:4px; cursor:pointer;">
-            ▶ Resume Submissions
-          </button>
-        </div>`;
+      action = `<button onclick="resumeSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
+          style="font-size:11px; padding:4px 10px; background:#16a34a; color:white; border:none; border-radius:4px; cursor:pointer;">
+          ▶ Resume Submissions
+        </button>`;
     } else if (s.is_active) {
-      action = `<div style="display:flex; gap:6px;">
-          <button onclick="pauseSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
-            style="font-size:11px; padding:4px 10px; background:#d97706; color:white; border:none; border-radius:4px; cursor:pointer;">
-            ⏸ Pause Submissions
-          </button>
-        </div>`;
-    } else if (s.is_locked) {
-      action = `<div style="display:flex; gap:6px;">
-          <button onclick="unlockSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
-            style="font-size:11px; padding:4px 10px; background:#1a56db; color:white; border:none; border-radius:4px; cursor:pointer;">
-            🔓 Unlock
-          </button>
-          <button onclick="deleteSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
-            style="font-size:11px; padding:3px 8px; background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; border-radius:4px; cursor:pointer;">
-            Delete
-          </button>
-        </div>`;
+      action = `<button onclick="pauseSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
+          style="font-size:11px; padding:4px 10px; background:#d97706; color:white; border:none; border-radius:4px; cursor:pointer;">
+          ⏸ Pause Submissions
+        </button>`;
     } else {
       action = `<div style="display:flex; gap:6px;">
           <button onclick="activateSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
@@ -2368,7 +2193,7 @@ async function activateSemester(semesterId, semesterLabel) {
   const confirmed = await fpConfirm(
     `Activate "${semesterLabel}"?\n\n` +
     `• This will become the active evaluation semester\n` +
-    `• The current active semester will be set to inactive (not locked — you can reactivate it later)\n` +
+    `• The current active semester will be set to inactive (its data is preserved, not locked — you can still reactivate it later)\n` +
     `• Students will only be able to submit evaluations for subjects in this semester\n\n` +
     `Proceed?`,
     { confirmLabel: "Activate", confirmStyle: "fp-btn-primary" }
@@ -2379,8 +2204,6 @@ async function activateSemester(semesterId, semesterLabel) {
     .from("semesters").select("id").eq("is_active", true).maybeSingle();
 
   if (current) {
-    // Just deactivate — no auto-lock. Makes it easy to switch back and forth
-    // during testing/demo without needing a fresh semester each time.
     const { error: deactivateError } = await supabase
       .from("semesters")
       .update({ is_active: false, is_paused: false })
@@ -2393,7 +2216,7 @@ async function activateSemester(semesterId, semesterLabel) {
 
   const { error: activateError } = await supabase
     .from("semesters")
-    .update({ is_active: true, is_locked: false, is_paused: false })
+    .update({ is_active: true, is_paused: false })
     .eq("id", semesterId);
 
   if (activateError) {
@@ -2407,36 +2230,13 @@ async function activateSemester(semesterId, semesterLabel) {
   loadRankings();
 }
 
-// ── Reactivate a previously-locked semester (manual unlock) ──
-async function unlockSemester(semesterId, semesterLabel) {
-  const confirmed = await fpConfirm(
-    `Unlock "${semesterLabel}"?\n\nThis allows it to be set as active again. Its data was never deleted — locking only blocked reactivation.`,
-    { confirmLabel: "Unlock", confirmStyle: "fp-btn-primary" }
-  );
-  if (!confirmed) return;
-
-  const { error } = await supabase
-    .from("semesters")
-    .update({ is_locked: false })
-    .eq("id", semesterId);
-
-  if (error) {
-    await fpAlert("Failed to unlock: " + error.message, "error");
-    return;
-  }
-
-  await fpAlert(`"${semesterLabel}" unlocked.`, "success");
-  loadSemesters();
-}
-
-// ── Pause: blocks new student submissions without locking data ──
+// ── Pause: blocks new student submissions without deactivating the semester ──
 async function pauseSemester(semesterId, semesterLabel) {
   const confirmed = await fpConfirm(
     `Pause submissions for "${semesterLabel}"?\n\n` +
     `• Students will NOT be able to submit new evaluations while paused\n` +
     `• Already-submitted evaluations are unaffected\n` +
-    `• The semester stays active — you can Resume at any time\n` +
-    `• Use this for maintenance, corrections, or halting submissions before generating IFERs\n\n` +
+    `• The semester stays active — resume it at any time\n\n` +
     `Proceed?`,
     { confirmLabel: "Pause", confirmStyle: "fp-btn-primary" }
   );
@@ -2452,7 +2252,7 @@ async function pauseSemester(semesterId, semesterLabel) {
     return;
   }
 
-  await fpAlert(`"${semesterLabel}" submissions paused.\nStudents will see a "temporarily unavailable" message until you resume.`, "success");
+  await fpAlert(`"${semesterLabel}" submissions paused.`, "success");
   loadSemesters();
 }
 
@@ -2533,7 +2333,7 @@ async function createSemester() {
   createBtn.disabled = true;
 
   const { error } = await supabase
-    .from("semesters").insert({ label, is_active: false, is_locked: false, is_paused: false });
+    .from("semesters").insert({ label, is_active: false, is_paused: false });
 
   createBtn.textContent = "Create Semester";
   createBtn.disabled = false;
@@ -2547,7 +2347,6 @@ async function createSemester() {
 }
 
 window.activateSemester = activateSemester;
-window.unlockSemester   = unlockSemester;
 window.pauseSemester    = pauseSemester;
 window.resumeSemester   = resumeSemester;
 window.deleteSemester   = deleteSemester;
@@ -2566,6 +2365,224 @@ document.getElementById("create-semester-btn")?.addEventListener("click", create
 document.getElementById("refresh-btn-semesters")?.addEventListener("click", loadSemesters);
 
 loadSemesters();
+
+// ══════════════════════════════════════════════════════════════
+//  SUBJECT → TEACHER ASSIGNMENT
+//  Every subject created by the XLSX import starts with teacher_id
+//  NULL — the registrar can't supply teacher-assignment data at all,
+//  so this has to be done here, manually, by whoever knows who
+//  actually teaches what.
+// ══════════════════════════════════════════════════════════════
+let allSubjectsForAssignment = [];
+let subjectAssignPage        = 1;
+const SUBJECT_ASSIGN_PAGE_SIZE = 20;
+let selectedSubjectIds       = new Set();
+let teachersForAssignment    = [];
+
+async function loadTeachersForAssignment() {
+  const { data } = await supabase
+    .from("users")
+    .select("id, name")
+    .eq("role", "teacher")
+    .neq("is_active", false)
+    .order("name");
+  teachersForAssignment = data || [];
+  const sel = document.getElementById("subject-assign-teacher");
+  if (sel) {
+    sel.innerHTML = `<option value="">— select teacher —</option>` +
+      teachersForAssignment.map(t => `<option value="${t.id}">${escHtml(t.name)}</option>`).join("");
+  }
+}
+
+async function loadSubjectsForAssignment() {
+  const tbody = document.getElementById("subjects-assign-tbody");
+  if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="5">Loading...</td></tr>`;
+
+  const semSel = document.getElementById("subject-assign-semester-filter");
+  if (semSel && semSel.options.length <= 1) {
+    const { data: sems } = await supabase
+      .from("semesters").select("id, label, is_active").order("label", { ascending: false });
+    (sems || []).forEach(s => {
+      semSel.innerHTML += `<option value="${s.id}">${escHtml(s.label)}${s.is_active ? " (active)" : ""}</option>`;
+    });
+    const activeSem = (sems || []).find(s => s.is_active);
+    if (activeSem) semSel.value = activeSem.id;
+  }
+
+  let query = supabase
+    .from("subjects")
+    .select("id, name, enrolled_count, teacher_id, section_id, semester_id, sections(name, department), teacher:users(name)");
+
+  const semFilter = semSel?.value || "";
+  if (semFilter) query = query.eq("semester_id", semFilter);
+
+  const { data, error } = await query;
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="5">Error loading subjects: ${escHtml(error.message)}</td></tr>`;
+    return;
+  }
+
+  allSubjectsForAssignment = data || [];
+  subjectAssignPage = 1;
+  selectedSubjectIds.clear();
+  updateSubjectAssignSelectionBar();
+  renderSubjectAssignPage();
+}
+
+function renderSubjectAssignPage() {
+  const tbody = document.getElementById("subjects-assign-tbody");
+  if (!tbody) return;
+
+  const search             = (document.getElementById("subject-assign-search")?.value || "").toLowerCase();
+  const showUnassignedOnly = document.getElementById("subject-assign-unassigned-only")?.checked;
+
+  let filtered = allSubjectsForAssignment.filter(s => {
+    const matchSearch     = !search
+      || s.name.toLowerCase().includes(search)
+      || (s.sections?.name || "").toLowerCase().includes(search);
+    const matchUnassigned = !showUnassignedOnly || !s.teacher_id;
+    return matchSearch && matchUnassigned;
+  });
+
+  filtered.sort((a, b) =>
+    a.name.localeCompare(b.name) || (a.sections?.name || "").localeCompare(b.sections?.name || "")
+  );
+
+  const totalUnassigned = allSubjectsForAssignment.filter(s => !s.teacher_id).length;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5">No subjects match.</td></tr>`;
+    document.getElementById("subject-assign-count").textContent =
+      `No subjects found. (${totalUnassigned} unassigned in total)`;
+    renderPager("subject-assign-page-buttons", 0, 1, () => {});
+    return;
+  }
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / SUBJECT_ASSIGN_PAGE_SIZE));
+  if (subjectAssignPage > totalPages) subjectAssignPage = totalPages;
+  const start      = (subjectAssignPage - 1) * SUBJECT_ASSIGN_PAGE_SIZE;
+  const pageItems  = filtered.slice(start, start + SUBJECT_ASSIGN_PAGE_SIZE);
+
+  document.getElementById("subject-assign-count").textContent =
+    `Showing ${start + 1}–${Math.min(start + SUBJECT_ASSIGN_PAGE_SIZE, filtered.length)} of ${filtered.length} ` +
+    `(${totalUnassigned} unassigned in total)`;
+
+  tbody.innerHTML = pageItems.map(s => `
+    <tr>
+      <td><input type="checkbox" class="subject-assign-checkbox" data-id="${s.id}" ${selectedSubjectIds.has(s.id) ? "checked" : ""} /></td>
+      <td><b>${escHtml(s.name)}</b></td>
+      <td>${escHtml(s.sections?.name || "—")}</td>
+      <td style="text-align:center;">${s.enrolled_count ?? 0}</td>
+      <td>${s.teacher?.name ? escHtml(s.teacher.name) : `<span style="color:#d97706; font-weight:600;">Unassigned</span>`}</td>
+    </tr>
+  `).join("");
+
+  tbody.querySelectorAll(".subject-assign-checkbox").forEach(cb => {
+    cb.addEventListener("change", () => {
+      const id = cb.dataset.id;
+      if (cb.checked) selectedSubjectIds.add(id); else selectedSubjectIds.delete(id);
+      updateSubjectAssignSelectionBar();
+      updateSubjectAssignSelectAllCheckbox(pageItems);
+    });
+  });
+
+  renderPager("subject-assign-page-buttons", totalPages, subjectAssignPage, (p) => {
+    subjectAssignPage = p;
+    renderSubjectAssignPage();
+  });
+
+  updateSubjectAssignSelectAllCheckbox(pageItems);
+}
+
+function updateSubjectAssignSelectionBar() {
+  const bar     = document.getElementById("subject-assign-bulkbar");
+  const countEl = document.getElementById("subject-assign-selected-count");
+  if (!bar) return;
+  if (selectedSubjectIds.size > 0) {
+    bar.style.display = "flex";
+    if (countEl) countEl.textContent = selectedSubjectIds.size;
+  } else {
+    bar.style.display = "none";
+  }
+}
+
+// Only reflects selection state for rows on the CURRENT page — selections
+// on other pages are preserved (tracked in selectedSubjectIds) but this
+// checkbox only speaks for what's visible right now.
+function updateSubjectAssignSelectAllCheckbox(pageItems) {
+  const selectAll = document.getElementById("subject-assign-select-all");
+  if (!selectAll) return;
+  selectAll.checked = pageItems.length > 0 && pageItems.every(s => selectedSubjectIds.has(s.id));
+}
+
+document.getElementById("subject-assign-select-all")?.addEventListener("change", (e) => {
+  const checked = e.target.checked;
+  document.querySelectorAll(".subject-assign-checkbox").forEach(cb => {
+    cb.checked = checked;
+    const id = cb.dataset.id;
+    if (checked) selectedSubjectIds.add(id); else selectedSubjectIds.delete(id);
+  });
+  updateSubjectAssignSelectionBar();
+});
+
+document.getElementById("subject-assign-search")?.addEventListener("input", () => {
+  subjectAssignPage = 1;
+  renderSubjectAssignPage();
+});
+document.getElementById("subject-assign-unassigned-only")?.addEventListener("change", () => {
+  subjectAssignPage = 1;
+  renderSubjectAssignPage();
+});
+document.getElementById("subject-assign-semester-filter")?.addEventListener("change", loadSubjectsForAssignment);
+document.getElementById("refresh-btn-subjects")?.addEventListener("click", loadSubjectsForAssignment);
+
+document.getElementById("subject-assign-btn")?.addEventListener("click", async () => {
+  const teacherId = document.getElementById("subject-assign-teacher")?.value;
+  if (!teacherId) { await fpAlert("Pick a teacher first.", "warning"); return; }
+  if (selectedSubjectIds.size === 0) return;
+
+  const teacherName = teachersForAssignment.find(t => t.id === teacherId)?.name || "this teacher";
+  const ids = [...selectedSubjectIds];
+
+  const confirmed = await fpConfirm(
+    `Assign ${ids.length} subject(s) to ${teacherName}?`,
+    { confirmLabel: "Assign", confirmStyle: "fp-btn-primary" }
+  );
+  if (!confirmed) return;
+
+  const btn = document.getElementById("subject-assign-btn");
+  btn.textContent = "Assigning..."; btn.disabled = true;
+
+  const { error } = await supabase.from("subjects").update({ teacher_id: teacherId }).in("id", ids);
+
+  btn.textContent = "Assign to Selected"; btn.disabled = false;
+
+  if (error) { await fpAlert("Failed to assign: " + error.message, "error"); return; }
+
+  await fpAlert(`Assigned ${ids.length} subject(s) to ${teacherName}.`, "success");
+  await loadSubjectsForAssignment();
+});
+
+document.getElementById("subject-unassign-btn")?.addEventListener("click", async () => {
+  if (selectedSubjectIds.size === 0) return;
+  const ids = [...selectedSubjectIds];
+
+  const confirmed = await fpConfirm(
+    `Clear the teacher assignment from ${ids.length} subject(s)?`,
+    { confirmLabel: "Clear", confirmStyle: "fp-btn-danger" }
+  );
+  if (!confirmed) return;
+
+  const { error } = await supabase.from("subjects").update({ teacher_id: null }).in("id", ids);
+  if (error) { await fpAlert("Failed: " + error.message, "error"); return; }
+
+  await fpAlert(`Cleared ${ids.length} subject(s).`, "success");
+  await loadSubjectsForAssignment();
+});
+
+loadTeachersForAssignment();
+loadSubjectsForAssignment();
 
 // ── Init ──
 loadSummary();
