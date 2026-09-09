@@ -1,3 +1,8 @@
-# Supabase credentials — local only, never commit
-js/supabase.config.js
+# Supabase / API credentials — local only, never commit
+js/supabase_config.js
+supabase_config.js
 .env
+.env.local
+.env.*.local
+.vercel
+node_modules
