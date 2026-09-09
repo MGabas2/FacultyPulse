@@ -432,10 +432,42 @@ async function saveUser() {
         return;
       }
 
-      await fpAlert(
-        `User "${name}" added to the system.\n\nRemember to also create their login account in:\nSupabase → Authentication → Users → Add User\n\nEmail: ${email}\nPassword: ${password}`,
-        "success"
-      );
+      // ── Create their Supabase Auth login automatically ──
+      // Falls back to the old "do it manually" message if the endpoint
+      // isn't reachable at all — e.g. local dev under Live Server, where
+      // this Vercel function doesn't exist. Never falls back to creating
+      // the Auth account directly from the browser: that would require
+      // the service_role key to be present client-side, which must never
+      // happen regardless of environment.
+      let authOutcomeMsg;
+      const isLocalDev = ["127.0.0.1", "localhost"].includes(window.location.hostname);
+
+      if (isLocalDev) {
+        authOutcomeMsg =
+          `\n\n⚠️ Running locally — the login-creation function only exists on Vercel.\n` +
+          `Add their login manually in Supabase → Authentication → Users → Add User.\n\nEmail: ${email}\nPassword: ${password}`;
+      } else {
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const token = sessionData?.session?.access_token;
+          const resp = await fetch("/api/create-teacher-auth", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+            body: JSON.stringify({ email, password, name }),
+          });
+          const result = await resp.json();
+          authOutcomeMsg = resp.ok
+            ? "\n\nTheir login account was created automatically."
+            : `\n\n⚠️ Login account was NOT created automatically: ${result.error || "unknown error"}.\n` +
+              `Add it manually in Supabase → Authentication → Users → Add User.\n\nEmail: ${email}\nPassword: ${password}`;
+        } catch (err) {
+          authOutcomeMsg =
+            `\n\n⚠️ Couldn't reach the login-creation service: ${err.message}.\n` +
+            `Add it manually in Supabase → Authentication → Users → Add User.\n\nEmail: ${email}\nPassword: ${password}`;
+        }
+      }
+
+      await fpAlert(`User "${name}" added to the system.${authOutcomeMsg}`, authOutcomeMsg.includes("⚠️") ? "warning" : "success");
     }
 
     closeAddModal();
