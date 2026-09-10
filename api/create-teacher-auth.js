@@ -30,6 +30,16 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: "Password must be at least 6 characters (Supabase Auth minimum)" });
   }
 
+  // ── Step 0: fail loudly if the server isn't even configured right ──
+  // Without this, a missing env var surfaces as Supabase's own generic
+  // "This endpoint requires a valid Bearer token" error, which looks like
+  // an auth problem on the CALLER's end and sends you chasing the wrong bug.
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return res.status(500).json({
+      error: "SUPABASE_SERVICE_ROLE_KEY is not set on this deployment. Add it in Vercel → Settings → Environment Variables, then redeploy."
+    });
+  }
+
   // ── Step 1: verify the caller is actually logged in ──
   const authHeader  = req.headers.authorization || "";
   const callerToken = authHeader.replace(/^Bearer\s+/i, "");

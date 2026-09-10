@@ -1159,5 +1159,98 @@ document.getElementById("close-import-btn")?.addEventListener("click", () => {
   document.getElementById("import-modal").classList.add("hidden");
 });
 
+// ══════════════════════════════════════════════════════════════
+//  STUDENT LOGIN INVITES
+//  Sends each un-invited student a real Supabase Auth email to set
+//  their own password. Fixes the QA-reported issue: passwords were
+//  previously derived from the student's own Student ID — a formula,
+//  not a secret. This does NOT change how students currently log in
+//  (that's a separate, later change) — it only creates the Auth
+//  account and sends the "set your password" email.
+// ══════════════════════════════════════════════════════════════
+
+async function openInvitePicker() {
+  document.getElementById("invite-modal")?.classList.remove("hidden");
+  document.getElementById("invite-status").textContent = "Checking who still needs an invite…";
+  document.getElementById("invite-summary").innerHTML = "";
+  document.getElementById("invite-confirm-bar").style.display = "none";
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, name, email")
+    .eq("role", "student")
+    .is("auth_invited_at", null)
+    .not("email", "is", null);
+
+  if (error) {
+    document.getElementById("invite-status").textContent = "Error checking students: " + error.message;
+    return;
+  }
+
+  window._pendingInvites = data || [];
+  const missingEmail = allUsers.filter(u => u.role === "student" && !u.email).length;
+
+  document.getElementById("invite-status").innerHTML =
+    `${window._pendingInvites.length} student(s) haven't been invited yet.` +
+    (missingEmail > 0
+      ? `<br/><span style="color:#d97706;">${missingEmail} student(s) have no email on file and can't be invited — fix their record first.</span>`
+      : "");
+
+  if (window._pendingInvites.length > 0) {
+    document.getElementById("invite-confirm-bar").style.display = "flex";
+  }
+}
+
+async function sendInvites() {
+  const students = window._pendingInvites || [];
+  if (students.length === 0) return;
+
+  document.getElementById("invite-confirm-bar").style.display = "none";
+  document.getElementById("invite-status").textContent = `Sending 0 / ${students.length}…`;
+
+  let sent = 0, failed = 0;
+  const errors = [];
+
+  await runWithConcurrency(students, 5, async (student) => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      const resp = await fetch("/api/invite-student", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ id: student.id, email: student.email, name: student.name }),
+      });
+      const result = await resp.json();
+      if (!resp.ok) {
+        failed++;
+        errors.push(`${student.name} (${student.email}): ${result.error || "unknown error"}`);
+      } else {
+        sent++;
+      }
+    } catch (err) {
+      failed++;
+      errors.push(`${student.name} (${student.email}): ${err.message}`);
+    }
+    document.getElementById("invite-status").textContent = `Sending ${sent + failed} / ${students.length}…`;
+  });
+
+  document.getElementById("invite-status").textContent = `Done — ${sent} invited, ${failed} failed.`;
+
+  const box = document.getElementById("invite-summary");
+  box.innerHTML = errors.length > 0
+    ? `<div style="max-height:160px; overflow-y:auto; font-size:11px; color:#dc2626; border:1px solid #fecaca; background:#fef2f2; border-radius:6px; padding:8px 10px; margin-top:8px;">
+        ${errors.slice(0, 50).map(e => `<div>${escHtml(e)}</div>`).join("")}
+      </div>`
+    : "";
+
+  loadUsers();
+}
+
+document.getElementById("invite-students-btn")?.addEventListener("click", openInvitePicker);
+document.getElementById("invite-send-btn")?.addEventListener("click", sendInvites);
+document.getElementById("close-invite-btn")?.addEventListener("click", () => {
+  document.getElementById("invite-modal").classList.add("hidden");
+});
+
 loadSections();
 loadUsers();
