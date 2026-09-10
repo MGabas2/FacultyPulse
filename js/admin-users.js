@@ -1205,6 +1205,22 @@ async function sendInvites() {
   const students = window._pendingInvites || [];
   if (students.length === 0) return;
 
+  // Same issue as the "Add User" auth-creation flow: this endpoint only
+  // exists on Vercel. Under local Live Server, /api/invite-student 404s
+  // with an empty body, and calling .json() on that throws "Unexpected
+  // end of JSON input" — once per student, which is exactly what showed
+  // up here. Check first and refuse to even try, instead of failing 51
+  // times with a confusing error.
+  const isLocalDev = ["127.0.0.1", "localhost"].includes(window.location.hostname);
+  if (isLocalDev) {
+    document.getElementById("invite-confirm-bar").style.display = "none";
+    document.getElementById("invite-status").innerHTML =
+      `⚠️ Can't send invites from local Live Server — the invite function only exists on Vercel.<br/>` +
+      `Deploy and run this from your Vercel URL instead.`;
+    document.getElementById("invite-status").style.color = "#d97706";
+    return;
+  }
+
   document.getElementById("invite-confirm-bar").style.display = "none";
   document.getElementById("invite-status").textContent = `Sending 0 / ${students.length}…`;
 
@@ -1220,7 +1236,16 @@ async function sendInvites() {
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ id: student.id, email: student.email, name: student.name }),
       });
-      const result = await resp.json();
+
+      let result = {};
+      try {
+        result = await resp.json();
+      } catch {
+        // Response wasn't valid JSON at all (empty body, HTML error page,
+        // etc.) — report the HTTP status instead of throwing here.
+        result = { error: `Server returned ${resp.status} ${resp.statusText || ""} with no readable response` };
+      }
+
       if (!resp.ok) {
         failed++;
         errors.push(`${student.name} (${student.email}): ${result.error || "unknown error"}`);
