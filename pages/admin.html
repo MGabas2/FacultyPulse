@@ -739,7 +739,7 @@
           <p style="color:#666; margin-bottom:16px;">Add, view, and manage all system users.</p>
 
           <div class="section">
-            <!-- Row 1: Search + Import + Invite + Add User -->
+            <!-- Row 1: Search + Import + Add User -->
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
               <input type="text" id="search-input" placeholder="🔍 Search name or ID..."
                 style="flex:1;" />
@@ -748,10 +748,6 @@
                 📥 Import Students
               </button>
               <input type="file" id="import-file-input" accept=".xlsx" style="display:none;" />
-              <button id="invite-students-btn" class="btn-secondary" style="flex:none; white-space:nowrap;"
-                title="Send students an email to set their own password">
-                📧 Invite Students
-              </button>
               <button id="add-user-btn" style="flex:none; white-space:nowrap;">+ Add User</button>
             </div>
             <!-- Row 2: Sort + Filters -->
@@ -830,25 +826,6 @@
           <div id="import-summary"></div>
           <div style="display:flex; gap:10px; margin-top:20px;">
             <button class="btn-secondary" id="close-import-btn">Close</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Student Login Invites Modal -->
-      <div id="invite-modal" class="modal hidden">
-        <div class="modal-box" style="max-width:480px;">
-          <h3>📧 Student Login Invites</h3>
-          <p style="font-size:12px; color:#64748b; margin-bottom:10px;">
-            Sends each student a Supabase email to set their own password. Replaces the
-            old predictable Student-ID-derived password — students choose their own now.
-          </p>
-          <p id="invite-status" style="font-size:13px; color:#475569; min-height:18px;"></p>
-          <div id="invite-summary"></div>
-          <div id="invite-confirm-bar" style="display:none; gap:10px; margin-top:14px;">
-            <button id="invite-send-btn">Send Invites</button>
-          </div>
-          <div style="display:flex; gap:10px; margin-top:20px;">
-            <button class="btn-secondary" id="close-invite-btn">Close</button>
           </div>
         </div>
       </div>
@@ -1336,6 +1313,26 @@
       <div style="display:flex; gap:10px; margin-top:20px;">
         <button id="confirm-archive-btn" style="background:#d97706;">📦 Archive</button>
         <button class="btn-secondary" id="cancel-archive-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reject Email Request Modal — requires a stated reason per QA -->
+  <div id="reject-email-modal" class="modal hidden">
+    <div class="modal-box">
+      <h3>❌ Reject Email Request</h3>
+      <p style="color:#475569; font-size:13px; margin-bottom:12px;">
+        The student will see this reason. Be specific enough that they know what to fix
+        if they want to resubmit.
+      </p>
+      <div class="form-group">
+        <label>Reason for rejection</label>
+        <textarea id="reject-email-reason" rows="3" placeholder="e.g. This doesn't look like a real-name email — please use firstname.lastname@gmail.com"></textarea>
+      </div>
+      <p id="reject-email-error" class="error"></p>
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button id="confirm-reject-email-btn" style="background:#dc2626;">Reject</button>
+        <button class="btn-secondary" id="cancel-reject-email-btn">Cancel</button>
       </div>
     </div>
   </div>

@@ -6,3 +6,4 @@ supabase_config.js
 .env.*.local
 .vercel
 node_modules
+.env*

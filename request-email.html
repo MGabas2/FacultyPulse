@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FacultyPulse – Request an Email</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: #f4f6f8;
+      margin: 0;
+    }
+    .request-box {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      padding: 32px 28px;
+      max-width: 400px;
+      width: 90vw;
+    }
+    .request-box h2 {
+      margin: 0 0 6px;
+      font-size: 22px;
+      color: #1a56db;
+    }
+    .request-box .subtitle {
+      font-size: 13px;
+      color: #64748b;
+      margin: 0 0 20px;
+      line-height: 1.6;
+    }
+    #request-status {
+      font-size: 13px;
+      line-height: 1.6;
+      margin-bottom: 12px;
+    }
+    #request-form button {
+      width: 100%;
+      margin-top: 6px;
+    }
+    .back-link {
+      display: block;
+      text-align: center;
+      margin-top: 16px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="request-box">
+    <h2>Request an Email</h2>
+    <p class="subtitle">
+      No email on file, or can't access the one you have? Enter your Student ID,
+      the email you'd like to use, and why. An admin will review and approve it —
+      check back with your admin once it's approved.
+    </p>
+
+    <p id="request-status"></p>
+
+    <form id="request-form">
+      <div class="form-group">
+        <label>Student ID</label>
+        <input type="text" id="student-id" placeholder="e.g. 2023-1154-AB" maxlength="13" autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label>Email to Use</label>
+        <input type="email" id="requested-email" placeholder="your.name@gmail.com" autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label>Why?</label>
+        <textarea id="reason" rows="3" placeholder="e.g. I never had an email on file, or I can no longer access my old one"></textarea>
+      </div>
+      <button id="submit-btn" type="submit">Submit Request</button>
+    </form>
+
+    <a class="back-link" href="index.html">Back to login</a>
+  </div>
+
+  <script type="module" src="js/request-email.js"></script>
+</body>
+</html>

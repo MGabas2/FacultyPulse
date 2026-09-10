@@ -1983,7 +1983,7 @@ async function loadEmailRequests() {
 
   let query = supabase
     .from("email_change_requests")
-    .select("id, student_id, current_email, requested_email, reason, status, created_at, reviewed_at, student:student_id(name, student_id, email)")
+    .select("id, student_id, current_email, requested_email, reason, status, review_note, created_at, reviewed_at, student:student_id(name, student_id, email)")
     .order("created_at", { ascending: false });
 
   if (statusFilter) query = query.eq("status", statusFilter);
@@ -2024,17 +2024,27 @@ async function loadEmailRequests() {
       <div style="display:flex; gap:6px; flex-wrap:wrap;">
         <button onclick="approveEmailRequest('${r.id}', '${r.student_id}')"
           style="font-size:11px; padding:4px 10px; background:#16a34a;">✅ Approve</button>
-        <button onclick="rejectEmailRequest('${r.id}')"
+        <button onclick="openRejectEmailModal('${r.id}')"
           style="font-size:11px; padding:4px 10px; background:#dc2626;">❌ Reject</button>
       </div>` : "—";
 
-    return `<tr>
+    const isOverride = r.reason?.startsWith("[EMAIL OVERRIDE");
+
+    return `<tr${isOverride ? ' style="background:#fffbeb;"' : ""}>
       <td><b>${escHtml(name)}</b><br/><span style="font-size:11px; color:#64748b;">${escHtml(studentNo)}</span></td>
       <td style="font-size:12px;">${escHtml(r.current_email || r.student?.email || "—")}</td>
       <td style="font-size:12px; font-weight:bold;">${escHtml(r.requested_email)}</td>
-      <td style="font-size:12px; max-width:200px;">${escHtml(r.reason)}</td>
+      <td style="font-size:12px; max-width:200px;">
+        ${isOverride ? `<div style="color:#92400e; font-weight:700; font-size:11px; margin-bottom:2px;">⚠️ Claims existing email is inaccessible — verify identity before approving</div>` : ""}
+        ${escHtml(isOverride ? r.reason.replace(/^\[EMAIL OVERRIDE[^\]]*\]\s*/, "") : r.reason)}
+      </td>
       <td style="font-size:12px; white-space:nowrap;">${date}</td>
-      <td>${statusBadge}</td>
+      <td>
+        ${statusBadge}
+        ${r.status === "rejected" && r.review_note
+          ? `<div style="font-size:11px; color:#991b1b; margin-top:4px; max-width:160px;">${escHtml(r.review_note)}</div>`
+          : ""}
+      </td>
       <td>${actions}</td>
     </tr>`;
   }).join("");
@@ -2069,22 +2079,57 @@ async function approveEmailRequest(requestId, studentUuid) {
   loadEmailRequests();
 }
 
-async function rejectEmailRequest(requestId) {
-  const confirmed = await fpConfirm("Reject this email change request?");
-  if (!confirmed) return;
+let rejectEmailTargetId = null;
+
+function openRejectEmailModal(requestId) {
+  rejectEmailTargetId = requestId;
+  document.getElementById("reject-email-reason").value = "";
+  document.getElementById("reject-email-error").textContent = "";
+  document.getElementById("reject-email-modal").classList.remove("hidden");
+}
+
+async function confirmRejectEmailRequest() {
+  const reasonEl = document.getElementById("reject-email-reason");
+  const errorEl  = document.getElementById("reject-email-error");
+  const reason   = reasonEl.value.trim();
+
+  if (!reason || reason.length < 10) {
+    errorEl.textContent = "Please provide a reason (at least 10 characters) — the student will see this.";
+    return;
+  }
+  if (!rejectEmailTargetId) return;
+
+  const btn = document.getElementById("confirm-reject-email-btn");
+  btn.textContent = "Rejecting...";
+  btn.disabled = true;
 
   const { error } = await supabase
     .from("email_change_requests")
-    .update({ status: "rejected", reviewed_at: new Date().toISOString() })
-    .eq("id", requestId);
+    .update({ status: "rejected", review_note: reason, reviewed_at: new Date().toISOString() })
+    .eq("id", rejectEmailTargetId);
 
-  if (error) { await fpAlert("Failed to reject: " + error.message, "error"); return; }
+  btn.textContent = "Reject";
+  btn.disabled = false;
+
+  if (error) {
+    errorEl.textContent = "Failed to reject: " + error.message;
+    return;
+  }
+
+  document.getElementById("reject-email-modal").classList.add("hidden");
+  rejectEmailTargetId = null;
   await fpAlert("Request rejected.", "success");
   loadEmailRequests();
 }
 
+document.getElementById("confirm-reject-email-btn")?.addEventListener("click", confirmRejectEmailRequest);
+document.getElementById("cancel-reject-email-btn")?.addEventListener("click", () => {
+  document.getElementById("reject-email-modal").classList.add("hidden");
+  rejectEmailTargetId = null;
+});
+
 window.approveEmailRequest = approveEmailRequest;
-window.rejectEmailRequest  = rejectEmailRequest;
+window.openRejectEmailModal = openRejectEmailModal;
 
 // Email requests panel events
 document.getElementById("refresh-email-req-btn")?.addEventListener("click", loadEmailRequests);
