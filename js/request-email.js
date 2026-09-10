@@ -31,6 +31,13 @@ form.addEventListener("submit", async (e) => {
   statusEl.textContent = "";
   statusEl.style.color = "";
 
+  const isLocalDev = ["127.0.0.1", "localhost"].includes(window.location.hostname);
+  if (isLocalDev) {
+    statusEl.textContent = "This only works on the deployed site — the request function doesn't run under local Live Server.";
+    statusEl.style.color = "#d97706";
+    return;
+  }
+
   const studentId = idInput.value.trim();
   const email     = emailInput.value.trim();
   const reason    = reasonInput.value.trim();
@@ -78,9 +85,7 @@ form.addEventListener("submit", async (e) => {
 
     form.classList.add("hidden");
     statusEl.style.color = "#166534";
-    statusEl.textContent = result.isOverride
-      ? "Request submitted. Since you already had an email on file, admin will need to verify it's really you before approving — this may take a bit longer."
-      : "Request submitted. An admin will review it — check back with your admin once it's approved.";
+    statusEl.textContent = "Request submitted. An admin will review it — check back with your admin once it's approved.";
   } catch (err) {
     statusEl.textContent = "Couldn't reach the server: " + err.message;
     statusEl.style.color = "#dc2626";

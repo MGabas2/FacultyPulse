@@ -61,15 +61,21 @@ module.exports = async (req, res) => {
     return res.status(404).json({ error: "Student ID not found. Check with your admin." });
   }
 
-  // ── This student already has an email — this is now an OVERRIDE ──
-  // request (e.g. "I can't access it anymore"), not a first-time setup.
-  // We don't block this outright: someone locked out of a dead email has
-  // no other self-service path, and blocking them here just pushes them
-  // to walk into an office instead. Instead, this gets flagged distinctly
-  // in the admin queue so whoever approves it knows to actually verify
-  // identity (in person, with the student's adviser, etc.) rather than
-  // treating it like an ordinary first-time request.
-  const isOverride = !!student.email;
+  // ── Refuse if they already have an email ──
+  // This endpoint ONLY handles "no email at all." An existing email —
+  // changing it, or recovering access to a dead one — must go through
+  // an authenticated path (the in-dashboard change-email request, or
+  // direct admin contact if they can't log in at all). This is a public,
+  // unauthenticated page: anyone who knows a Student ID could otherwise
+  // submit a request to hijack that student's email. Human review on a
+  // pending queue is a decent safeguard when reviewed carefully, but
+  // it's not a safeguard against a busy admin approving a backlog
+  // without double-checking each one — so this boundary stays hard.
+  if (student.email) {
+    return res.status(400).json({
+      error: "This student already has an email on file. If you can't log in to change it yourself, contact your admin directly."
+    });
+  }
 
   // ── Refuse if there's already a pending request for this student ──
   const { data: existingRequest, error: existingError } = await adminClient
@@ -89,15 +95,11 @@ module.exports = async (req, res) => {
   }
 
   // ── Queue it for admin approval ──
-  const finalReason = isOverride
-    ? `[EMAIL OVERRIDE — student claims existing email is inaccessible] ${reason.trim()}`
-    : reason.trim();
-
   const { error: insertError } = await adminClient.from("email_change_requests").insert({
     student_id: student.id,
-    current_email: student.email || null,
+    current_email: null,
     requested_email: requestedEmail,
-    reason: finalReason,
+    reason: reason.trim(),
     status: "pending",
   });
 
@@ -105,5 +107,5 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: "Failed to submit request: " + insertError.message });
   }
 
-  return res.status(200).json({ ok: true, isOverride });
+  return res.status(200).json({ ok: true });
 };

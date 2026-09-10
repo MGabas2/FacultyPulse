@@ -2028,16 +2028,11 @@ async function loadEmailRequests() {
           style="font-size:11px; padding:4px 10px; background:#dc2626;">❌ Reject</button>
       </div>` : "—";
 
-    const isOverride = r.reason?.startsWith("[EMAIL OVERRIDE");
-
-    return `<tr${isOverride ? ' style="background:#fffbeb;"' : ""}>
+    return `<tr>
       <td><b>${escHtml(name)}</b><br/><span style="font-size:11px; color:#64748b;">${escHtml(studentNo)}</span></td>
       <td style="font-size:12px;">${escHtml(r.current_email || r.student?.email || "—")}</td>
       <td style="font-size:12px; font-weight:bold;">${escHtml(r.requested_email)}</td>
-      <td style="font-size:12px; max-width:200px;">
-        ${isOverride ? `<div style="color:#92400e; font-weight:700; font-size:11px; margin-bottom:2px;">⚠️ Claims existing email is inaccessible — verify identity before approving</div>` : ""}
-        ${escHtml(isOverride ? r.reason.replace(/^\[EMAIL OVERRIDE[^\]]*\]\s*/, "") : r.reason)}
-      </td>
+      <td style="font-size:12px; max-width:200px;">${escHtml(r.reason)}</td>
       <td style="font-size:12px; white-space:nowrap;">${date}</td>
       <td>
         ${statusBadge}
