@@ -204,31 +204,55 @@
           ⚠️ Format must be: 4 digits - 4 digits - 2 uppercase letters
         </div>
 
-        <!-- ── Password field ── -->
-        <label class="field-label">Password</label>
-        <div style="position:relative;">
-          <input
-            class="field-input"
-            type="password"
-            id="password"
-            placeholder="Enter password"
-            autocomplete="off"
-            style="padding-right:40px;"
-          />
-          <button
-            type="button"
-            id="toggle-password"
-            onclick="const p=document.getElementById('password'); const isHidden=p.type==='password'; p.type=isHidden?'text':'password'; this.textContent=isHidden?'Hide':'Show';"
-            style="position:absolute; right:10px; top:50%; transform:translateY(-50%);
-              background:none; border:none; cursor:pointer; font-size:12px; padding:0;
-              color:#64748b; font-weight:600;"
-            title="Show/hide password"
-          >Show</button>
+        <!-- ── Password field (staff only — students are passwordless via OTP) ── -->
+        <div id="password-field-wrap">
+          <label class="field-label">Password</label>
+          <div style="position:relative;">
+            <input
+              class="field-input"
+              type="password"
+              id="password"
+              placeholder="Enter password"
+              autocomplete="off"
+              style="padding-right:40px;"
+            />
+            <button
+              type="button"
+              id="toggle-password"
+              onclick="const p=document.getElementById('password'); const isHidden=p.type==='password'; p.type=isHidden?'text':'password'; this.textContent=isHidden?'Hide':'Show';"
+              style="position:absolute; right:10px; top:50%; transform:translateY(-50%);
+                background:none; border:none; cursor:pointer; font-size:12px; padding:0;
+                color:#64748b; font-weight:600;"
+              title="Show/hide password"
+            >Show</button>
+          </div>
         </div>
 
-        <!-- ── Submit ── -->
+        <!-- ── Submit (relabeled "Send Code" for students) ── -->
         <button class="login-submit" id="login-btn">Login</button>
         <div class="login-error" id="error-msg"></div>
+
+        <!-- ── OTP code entry — students, step 2 (after "Send Code") ── -->
+        <div id="otp-code-wrap" class="hidden" style="margin-top:16px;">
+          <p style="font-size:13px; color:#475569; margin-bottom:10px;">
+            Code sent to <b id="otp-masked-email"></b>.
+          </p>
+          <label class="field-label" style="margin-top:0;">6-Digit Code</label>
+          <input
+            class="field-input"
+            type="text"
+            id="otp-code"
+            placeholder="123456"
+            maxlength="6"
+            inputmode="numeric"
+            autocomplete="off"
+          />
+          <button class="login-submit" id="otp-verify-btn" style="margin-top:16px;">Verify</button>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
+            <a href="#" id="otp-back-link" style="font-size:12px; color:#64748b; text-decoration:none;">← Use a different ID</a>
+            <a href="#" id="otp-resend-link" style="font-size:12px; color:#1a56db; text-decoration:none;">Resend code</a>
+          </div>
+        </div>
 
         <!-- Forgot password — staff only, hidden for student tab -->
         <div id="forgot-wrap" style="text-align:center; margin-top:10px; display:none;">
