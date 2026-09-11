@@ -88,17 +88,116 @@ supabase.auth.onAuthStateChange((event, session) => {
 
 const STUDENT_ID_FORMAT = /^\d{4}-\d{4}-[A-Z]{2}$/;
 
-const tabs          = document.querySelectorAll(".role-tab");
-const usernameInput = document.getElementById("username");
-const usernameLabel = document.getElementById("username-label");
-const passwordInput = document.getElementById("password");
-const loginBtn      = document.getElementById("login-btn");
-const errorMsg      = document.getElementById("error-msg");
-const idHint        = document.getElementById("id-hint");
-const formatError   = document.getElementById("format-error");
+const tabs             = document.querySelectorAll(".role-tab");
+const usernameInput    = document.getElementById("username");
+const usernameLabel    = document.getElementById("username-label");
+const passwordFieldWrap = document.getElementById("password-field-wrap");
+const passwordInput    = document.getElementById("password");
+const loginBtn         = document.getElementById("login-btn");
+const errorMsg         = document.getElementById("error-msg");
+const idHint           = document.getElementById("id-hint");
+const formatError      = document.getElementById("format-error");
+
+const otpCodeWrap   = document.getElementById("otp-code-wrap");
+const otpMaskedEmail = document.getElementById("otp-masked-email");
+const otpCodeInput  = document.getElementById("otp-code");
+const otpVerifyBtn  = document.getElementById("otp-verify-btn");
+const otpBackLink   = document.getElementById("otp-back-link");
+const otpResendLink = document.getElementById("otp-resend-link");
 
 // ── Active role state ──
 let activeRole = "student"; // default tab
+let pendingStudentId = null; // set once a code has been sent, for verify + resend
+
+const DEVICE_TOKEN_KEY = "fp_device_token";
+
+// ── Reset the OTP flow back to "enter your Student ID + password" ──
+function resetOtpStep() {
+  pendingStudentId = null;
+  otpCodeWrap.classList.add("hidden");
+  otpCodeInput.value = "";
+  loginBtn.style.display = "block";
+  passwordFieldWrap.style.display = "block";
+  usernameInput.disabled = false;
+  passwordInput.value = "";
+}
+
+function getDeviceToken() {
+  return localStorage.getItem(DEVICE_TOKEN_KEY);
+}
+function storeDeviceToken(token) {
+  if (token) localStorage.setItem(DEVICE_TOKEN_KEY, token);
+}
+
+// ── Student login: password first, OTP only if this device isn't recognized ──
+async function attemptStudentLogin(studentId, password) {
+  errorMsg.textContent = "";
+  loginBtn.textContent = "Logging in...";
+  loginBtn.disabled = true;
+
+  try {
+    const resp = await fetch("/api/student-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ studentId, password, deviceToken: getDeviceToken() }),
+    });
+
+    let result = {};
+    try {
+      result = await resp.json();
+    } catch {
+      result = { error: `Server returned ${resp.status} with no readable response` };
+    }
+
+    if (!resp.ok) {
+      errorMsg.textContent = result.error || "Login failed. Please try again.";
+      if (result.needsEmail) {
+        errorMsg.innerHTML = `${result.error} <a href="request-email.html" style="color:#1a56db;">Request one here</a>.`;
+      }
+      return;
+    }
+
+    if (!result.needsOtp) {
+      // Recognized device — log straight in, no OTP needed at all.
+      await finishStudentLogin(result.session, result.student);
+      return;
+    }
+
+    // Password was correct, but this device isn't recognized yet —
+    // second factor required.
+    pendingStudentId = studentId;
+    otpMaskedEmail.textContent = result.maskedEmail;
+    otpCodeWrap.classList.remove("hidden");
+    loginBtn.style.display = "none";
+    passwordFieldWrap.style.display = "none";
+    usernameInput.disabled = true;
+    otpCodeInput.focus();
+    startResendCooldown();
+  } catch (err) {
+    errorMsg.textContent = "Couldn't reach the server. Please try again.";
+    console.error(err);
+  } finally {
+    loginBtn.textContent = "Login";
+    loginBtn.disabled = false;
+  }
+}
+
+// ── Adopt a session and redirect, shared by both the trusted-device
+//    path (no OTP) and the post-OTP-verification path ──
+async function finishStudentLogin(session, student) {
+  await supabase.auth.setSession({
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+  });
+
+  sessionStorage.setItem("role",      "student");
+  sessionStorage.setItem("studentId", student.student_id);
+  sessionStorage.setItem("userId",    student.id);
+  sessionStorage.setItem("sectionId", student.section_id);
+  sessionStorage.setItem("name",      student.name || student.student_id);
+
+  window.location.href = "pages/student.html";
+}
 
 // ── Tab switching ──
 tabs.forEach(tab => {
@@ -114,6 +213,7 @@ tabs.forEach(tab => {
     passwordInput.value  = "";
     errorMsg.textContent = "";
     formatError.classList.add("hidden");
+    resetOtpStep();
 
     // Update field based on role
     if (activeRole === "student") {
@@ -122,12 +222,16 @@ tabs.forEach(tab => {
       usernameInput.maxLength     = 13;
       usernameInput.type          = "text";
       idHint.classList.remove("hidden");
+      passwordFieldWrap.style.display = "block";
+      loginBtn.textContent = "Login";
     } else {
       usernameLabel.textContent   = "Email";
       usernameInput.placeholder   = "Enter your email";
       usernameInput.maxLength     = 100;
       usernameInput.type          = "email";
       idHint.classList.add("hidden");
+      passwordFieldWrap.style.display = "block";
+      loginBtn.textContent = "Login";
     }
 
     // Show "Forgot password?" only for staff roles
@@ -169,32 +273,134 @@ usernameInput.addEventListener("input", () => {
   }
 });
 
-// ── Extract middle 4 digits as default password ──
-// "2023-1154-AB" → "1154"
-function getStudentDefaultPassword(studentId) {
-  return studentId.split("-")[1];
-}
-
-// ── Login handler ──
-async function login() {
-  const username = usernameInput.value.trim();
-  const password = passwordInput.value.trim();
+// ── Verify the code the student typed in (second factor) ──
+async function verifyStudentCode() {
+  const code = otpCodeInput.value.trim();
   errorMsg.textContent = "";
 
-  // Validation
+  if (!/^\d{6}$/.test(code)) {
+    errorMsg.textContent = "Enter the 6-digit code from your email.";
+    return;
+  }
+  if (!pendingStudentId) {
+    errorMsg.textContent = "Something went wrong — please log in again.";
+    resetOtpStep();
+    return;
+  }
+
+  otpVerifyBtn.textContent = "Verifying...";
+  otpVerifyBtn.disabled = true;
+
+  try {
+    const resp = await fetch("/api/student-verify-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ studentId: pendingStudentId, code }),
+    });
+
+    let result = {};
+    try {
+      result = await resp.json();
+    } catch {
+      result = { error: `Server returned ${resp.status} with no readable response` };
+    }
+
+    if (!resp.ok) {
+      errorMsg.textContent = result.error || "Incorrect or expired code.";
+      return;
+    }
+
+    // This device just earned trust — remember it so future logins on
+    // this same browser skip the OTP step entirely.
+    storeDeviceToken(result.deviceToken);
+
+    await finishStudentLogin(result.session, result.student);
+  } catch (err) {
+    errorMsg.textContent = "Couldn't reach the server. Please try again.";
+    console.error(err);
+  } finally {
+    otpVerifyBtn.textContent = "Verify";
+    otpVerifyBtn.disabled = false;
+  }
+}
+
+// ── Resend cooldown — prevents spamming Supabase's own per-address OTP limit ──
+function startResendCooldown() {
+  let seconds = 30;
+  otpResendLink.style.pointerEvents = "none";
+  otpResendLink.style.color = "#94a3b8";
+  otpResendLink.textContent = `Resend code (${seconds}s)`;
+
+  const interval = setInterval(() => {
+    seconds--;
+    if (seconds <= 0) {
+      clearInterval(interval);
+      otpResendLink.style.pointerEvents = "auto";
+      otpResendLink.style.color = "#1a56db";
+      otpResendLink.textContent = "Resend code";
+    } else {
+      otpResendLink.textContent = `Resend code (${seconds}s)`;
+    }
+  }, 1000);
+}
+
+otpBackLink?.addEventListener("click", (e) => {
+  e.preventDefault();
+  errorMsg.textContent = "";
+  resetOtpStep();
+  usernameInput.focus();
+});
+
+otpResendLink?.addEventListener("click", async (e) => {
+  e.preventDefault();
+  if (!pendingStudentId || otpResendLink.style.pointerEvents === "none") return;
+
+  try {
+    await fetch("/api/student-send-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ studentId: pendingStudentId }),
+    });
+    startResendCooldown();
+  } catch (err) {
+    errorMsg.textContent = "Couldn't resend the code. Please try again.";
+  }
+});
+
+otpVerifyBtn?.addEventListener("click", verifyStudentCode);
+
+// ── Main login handler (step 1 — password. Code verification, when
+//    required, is handled by otpVerifyBtn above) ──
+async function login() {
+  const username = usernameInput.value.trim();
+  errorMsg.textContent = "";
+
   if (!username) {
     errorMsg.textContent = activeRole === "student"
       ? "Please enter your Student ID."
       : "Please enter your email.";
     return;
   }
-  if (!password) {
-    errorMsg.textContent = "Please enter your password.";
+
+  if (activeRole === "student") {
+    if (!STUDENT_ID_FORMAT.test(username)) {
+      errorMsg.textContent = "Student ID format: 2023-1154-AB";
+      formatError.classList.remove("hidden");
+      return;
+    }
+    const studentPassword = passwordInput.value.trim();
+    if (!studentPassword) {
+      errorMsg.textContent = "Please enter your password.";
+      return;
+    }
+    await attemptStudentLogin(username, studentPassword);
     return;
   }
-  if (activeRole === "student" && !STUDENT_ID_FORMAT.test(username)) {
-    errorMsg.textContent = "Student ID format: 2023-1154-AB";
-    formatError.classList.remove("hidden");
+
+  // Teacher / Admin / Supervisor / Dept Head — Supabase Auth, unchanged
+  const password = passwordInput.value.trim();
+  if (!password) {
+    errorMsg.textContent = "Please enter your password.";
     return;
   }
 
@@ -202,84 +408,42 @@ async function login() {
   loginBtn.disabled    = true;
 
   try {
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email:    username,
+      password: password,
+    });
 
-    if (activeRole === "student") {
-
-      // Step 1 — Check student ID exists
-      const { data: userRow, error: lookupError } = await supabase
-        .from("users")
-        .select("id, student_id, role, section_id, name")
-        .eq("student_id", username)
-        .eq("role", "student")
-        .single();
-
-      if (lookupError || !userRow) {
-        errorMsg.textContent = "Student ID not found. Contact your admin.";
-        return;
-      }
-
-      // Step 2 — Validate default password (middle 4 digits)
-      const defaultPassword = getStudentDefaultPassword(username);
-      if (password !== defaultPassword) {
-        errorMsg.textContent = "Incorrect password. Hint: use the middle number of your Student ID.";
-        return;
-      }
-
-      // Step 3 — Record the actual login time (only here, on real login)
-      await supabase
-        .from("users")
-        .update({ last_login: new Date().toISOString() })
-        .eq("id", userRow.id);
-
-      // Step 4 — Save session + redirect
-      sessionStorage.setItem("role",      "student");
-      sessionStorage.setItem("studentId", username);
-      sessionStorage.setItem("userId",    userRow.id);
-      sessionStorage.setItem("sectionId", userRow.section_id);
-      sessionStorage.setItem("name",      userRow.name || username); // real name if available
-
-      window.location.href = "pages/student.html";
-
-    } else {
-
-      // Teacher / Admin / Supervisor / Dept Head — Supabase Auth
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email:    username,
-        password: password,
-      });
-
-      if (authError) {
-        errorMsg.textContent = "Incorrect email or password.";
-        return;
-      }
-
-      const { data: userRow, error: userError } = await supabase
-        .from("users")
-        .select("role, name, id")
-        .eq("email", username)
-        .single();
-
-      if (userError || !userRow) {
-        errorMsg.textContent = "Account not found in system. Contact admin.";
-        await supabase.auth.signOut();
-        return;
-      }
-
-      if (userRow.role !== activeRole) {
-        errorMsg.textContent = `This account is not a ${activeRole}. Switch to the correct tab.`;
-        await supabase.auth.signOut();
-        return;
-      }
-
-      sessionStorage.setItem("role",   userRow.role);
-      sessionStorage.setItem("name",   userRow.name);
-      sessionStorage.setItem("userId", userRow.id);
-
-      if (userRow.role === "teacher")    window.location.href = "pages/teacher.html";
-      if (userRow.role === "admin")      window.location.href = "pages/admin.html";
-      if (userRow.role === "supervisor") window.location.href = "pages/supervisor.html";
-      if (userRow.role === "depthead")   window.location.href = "pages/depthead.html";
+    if (authError) {
+      errorMsg.textContent = "Incorrect email or password.";
+      return;
     }
+
+    const { data: userRow, error: userError } = await supabase
+      .from("users")
+      .select("role, name, id")
+      .eq("email", username)
+      .single();
+
+    if (userError || !userRow) {
+      errorMsg.textContent = "Account not found in system. Contact admin.";
+      await supabase.auth.signOut();
+      return;
+    }
+
+    if (userRow.role !== activeRole) {
+      errorMsg.textContent = `This account is not a ${activeRole}. Switch to the correct tab.`;
+      await supabase.auth.signOut();
+      return;
+    }
+
+    sessionStorage.setItem("role",   userRow.role);
+    sessionStorage.setItem("name",   userRow.name);
+    sessionStorage.setItem("userId", userRow.id);
+
+    if (userRow.role === "teacher")    window.location.href = "pages/teacher.html";
+    if (userRow.role === "admin")      window.location.href = "pages/admin.html";
+    if (userRow.role === "supervisor") window.location.href = "pages/supervisor.html";
+    if (userRow.role === "depthead")   window.location.href = "pages/depthead.html";
 
   } catch (err) {
     errorMsg.textContent = "Something went wrong. Please try again.";
@@ -290,7 +454,7 @@ async function login() {
   }
 }
 
-// ── Forgot password ──
+// ── Forgot password — staff only, unchanged ──
 const forgotLink    = document.getElementById("forgot-link");
 const forgotSuccess = document.getElementById("forgot-success");
 const forgotWrap    = document.getElementById("forgot-wrap");
@@ -319,4 +483,12 @@ if (forgotLink) {
 
 // ── Events ──
 loginBtn.addEventListener("click", login);
-document.addEventListener("keydown", e => { if (e.key === "Enter") login(); });
+document.addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  // Route Enter to whichever action is actually in front of the user.
+  if (!otpCodeWrap.classList.contains("hidden")) {
+    verifyStudentCode();
+  } else {
+    login();
+  }
+});
