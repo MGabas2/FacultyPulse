@@ -864,7 +864,7 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
   });
 
   if (parsed.length === 0) {
-    renderImportSummary({ sectionsCreated: 0, studentsAdded: 0, studentsPromoted: 0, duplicateRows: 0, subjectsCreated: 0, errors, totalRows: rows.length });
+    renderImportSummary({ sectionsCreated: 0, studentsAdded: 0, studentsPromoted: 0, duplicateRows: 0, subjectsCreated: 0, enrollmentsLinked: 0, errors, totalRows: rows.length });
     return;
   }
 
@@ -1037,9 +1037,10 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
     const subjectRows = [...subjectMap.values()];
     if (subjectRows.length > 0) {
       for (const batch of chunkArray(subjectRows, 200)) {
-        const { error } = await supabase
+        const { data: upserted, error } = await supabase
           .from("subjects")
-          .upsert(batch, { onConflict: "name,section_id,semester_id" });
+          .upsert(batch, { onConflict: "name,section_id,semester_id" })
+          .select("id, name, section_id");
         if (error) {
           throw new Error(
             "Subject creation failed: " + error.message +
@@ -1048,11 +1049,57 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
               : "")
           );
         }
+        // Feed the real DB ids back into subjectMap so the enrollment-linking
+        // step below has something real to point at.
+        (upserted || []).forEach(row => {
+          const key = `${row.name}|${row.section_id}`;
+          const existing = subjectMap.get(key);
+          if (existing) existing.id = row.id;
+        });
       }
       subjectsCreated = subjectRows.length;
     }
 
-    renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted, duplicateRows, subjectsCreated, errors, totalRows: rows.length });
+    // ── 7. Link each student to the SPECIFIC subjects they take ──
+    // This is the actual enrollment record. Without it, student.js has no
+    // way to know a student is only in 3 of their section's 6 subjects —
+    // it would otherwise show every subject that exists anywhere in their
+    // section, since sections can contain students with different course
+    // loads (electives, retakes, irregular enrollment).
+    setImportStatus("Linking students to their specific subjects…");
+    const enrollmentRows = [];
+    for (const p of dedupedParsed) {
+      const sectionId = sectionMap[p.sectionName];
+      if (!sectionId) continue;
+      for (const courseName of p.courses) {
+        const subjectRow = subjectMap.get(`${courseName}|${sectionId}`);
+        if (!subjectRow?.id) continue; // shouldn't happen, but don't crash the import if it does
+        enrollmentRows.push({
+          student_id: p.studentId,
+          subject_id: subjectRow.id,
+          semester_id: semesterId,
+        });
+      }
+    }
+
+    let enrollmentsLinked = 0;
+    for (const batch of chunkArray(enrollmentRows, 500)) {
+      if (batch.length === 0) continue;
+      const { error } = await supabase
+        .from("student_subjects")
+        .upsert(batch, { onConflict: "student_id,subject_id,semester_id", ignoreDuplicates: true });
+      if (error) {
+        throw new Error(
+          "Student-subject linking failed: " + error.message +
+          (error.message?.includes("does not exist")
+            ? " — the student_subjects table hasn't been created yet. Run the migration first."
+            : "")
+        );
+      }
+      enrollmentsLinked += batch.length;
+    }
+
+    renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted, duplicateRows, subjectsCreated, enrollmentsLinked, errors, totalRows: rows.length });
 
     await loadSections();
     await loadUsers();
@@ -1083,7 +1130,7 @@ function setImportStatus(text, isError = false, isNote = false) {
   el.style.color = isError ? "#dc2626" : isNote ? "#d97706" : "#475569";
 }
 
-function renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted, duplicateRows = 0, subjectsCreated = 0, errors, totalRows }) {
+function renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted, duplicateRows = 0, subjectsCreated = 0, enrollmentsLinked = 0, errors, totalRows }) {
   setImportStatus(`Done — processed ${totalRows} row(s).`);
   const box = document.getElementById("import-summary");
   if (!box) return;
@@ -1095,6 +1142,7 @@ function renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted,
       <li>${studentsPromoted} returning student(s) moved to their new section</li>
       ${duplicateRows > 0 ? `<li>${duplicateRows} duplicate row(s) for the same student collapsed to one</li>` : ""}
       <li>${subjectsCreated} course subject(s) resolved — <b>no teacher assigned yet</b>, that still needs to be done manually</li>
+      <li>${enrollmentsLinked} student-to-subject enrollment(s) recorded</li>
       <li style="${errors.length ? "color:#dc2626;" : ""}">${errors.length} row(s) skipped due to issues</li>
     </ul>
   `;

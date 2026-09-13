@@ -117,21 +117,9 @@ function finalizeStudentLogin(userRow, studentId) {
   window.location.href = "pages/student.html";
 }
 
-// ── Remember-me auto-login — runs once on page load, before anything else ──
-(async function tryRememberedLogin() {
-  const token = localStorage.getItem(REMEMBER_TOKEN_KEY);
-  if (!token) return;
-
-  const { data, error } = await supabase.rpc("login_with_remember_token", { p_token: token });
-  const row = Array.isArray(data) ? data[0] : data;
-
-  if (error || !row) {
-    localStorage.removeItem(REMEMBER_TOKEN_KEY);
-    return;
-  }
-
-  finalizeStudentLogin(row, row.student_id);
-})();
+// (No page-load auto-login. "Remember me" only lets a trusted device skip
+// the OTP step after password verification — see login() below — it never
+// bypasses entering a Student ID and password.)
 
 // ── Tab switching ──
 tabs.forEach(tab => {
@@ -307,16 +295,37 @@ async function login() {
 
       pendingStudentRow = { ...userRow, student_id: username };
 
-      if (userRow.email) {
-        const otpError = await requestOtp(userRow.email);
-        if (otpError) {
-          errorMsg.textContent = "Couldn't send verification code: " + otpError.message;
+      if (!userRow.email) {
+        // No email on file — OTP was never possible for this student anyway
+        finalizeStudentLogin(userRow, username);
+        return;
+      }
+
+      // Password just succeeded. Now check whether THIS device already
+      // passed OTP recently for THIS student — if so, skip the code step.
+      // Password is still required every time regardless; this only ever
+      // shortcuts the second factor, never the first.
+      const rememberToken = localStorage.getItem(REMEMBER_TOKEN_KEY);
+      if (rememberToken) {
+        const { data: trusted } = await supabase.rpc("check_remember_token", {
+          p_student_id: username,
+          p_token: rememberToken,
+        });
+        if (trusted) {
+          finalizeStudentLogin(userRow, username);
           return;
         }
-        showOtpStep(userRow.email);
-      } else {
-        finalizeStudentLogin(userRow, username);
+        // Token expired/invalid for this student — clean it up and fall
+        // through to a normal OTP challenge below.
+        localStorage.removeItem(REMEMBER_TOKEN_KEY);
       }
+
+      const otpError = await requestOtp(userRow.email);
+      if (otpError) {
+        errorMsg.textContent = "Couldn't send verification code: " + otpError.message;
+        return;
+      }
+      showOtpStep(userRow.email);
 
     } else {
       const { error: authError } = await supabase.auth.signInWithPassword({

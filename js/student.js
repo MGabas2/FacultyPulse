@@ -126,16 +126,23 @@ async function init() {
   }
   hidePausedNotice();
 
-  const { data: subs, error } = await supabase
-    .from("subjects")
-    .select("id, name, users(name)")
-    .eq("section_id", sectionId)
+  // Query the student's ACTUAL enrolled subjects, not every subject that
+  // exists anywhere in their section — sections can contain students with
+  // different individual course loads (electives, retakes, irregular
+  // enrollment), so section membership alone isn't the same as "subjects
+  // this specific student takes."
+  const { data: enrollmentRows, error } = await supabase
+    .from("student_subjects")
+    .select("subjects(id, name, users(name))")
+    .eq("student_id", studentId)
     .eq("semester_id", semester.id);
+
+  const subs = (enrollmentRows || []).map(r => r.subjects).filter(Boolean);
 
   if (error || !subs || subs.length === 0) {
     document.getElementById("progress-section").style.display = "block";
     document.getElementById("subject-steps").innerHTML =
-      `<p style="color:#94a3b8; padding:12px 0;">No subjects found for your section.</p>`;
+      `<p style="color:#94a3b8; padding:12px 0;">No subjects found for you this semester. If this looks wrong, contact your admin.</p>`;
     return;
   }
 
@@ -786,21 +793,11 @@ document.getElementById("cancel-btn").addEventListener("click", () => {
 document.getElementById("submit-all-btn").addEventListener("click", submitAll);
 document.getElementById("logout-btn").addEventListener("click", async (e) => {
   e.preventDefault();
-
-  // Remember-me cleanup — without this, the token left in localStorage
-  // gets picked up by index.html's auto-login check on the very next page
-  // load (i.e. this redirect), logging the student straight back in and
-  // making "Logout" appear to do nothing.
-  const rememberToken = localStorage.getItem("fp_remember_token");
-  if (rememberToken) {
-    localStorage.removeItem("fp_remember_token");
-    // Best-effort server-side revoke too — a token copied out of
-    // localStorage before logout shouldn't still work afterward.
-    if (studentId) {
-      supabase.rpc("revoke_remember_token", { p_student_id: studentId }).then(() => {});
-    }
-  }
-
+  // Note: the "remember me" device-trust token is deliberately left alone
+  // here. It's meant to survive normal logout — "skip the code for a
+  // while" means across multiple day-to-day login sessions, not just
+  // until the next logout. Password is still required every time either
+  // way; this only ever affects whether OTP gets skipped afterward.
   await supabase.auth.signOut();
   sessionStorage.clear();
   window.location.href = "../index.html";
