@@ -262,6 +262,14 @@ document.getElementById("forgot-back-link")?.addEventListener("click", () => {
 //  LOGIN
 // ══════════════════════════════════════════════════════════════
 async function login() {
+  // Guard against double-submit: pressing Enter while the Login button
+  // itself has focus fires our keydown handler AND a browser-synthesized
+  // click on that button almost simultaneously, calling login() twice —
+  // which was silently sending two separate OTP emails (each invalidating
+  // the one before it). loginBtn.disabled only got set partway through the
+  // function before, with nothing checking it at the very start.
+  if (loginBtn.disabled) return;
+
   const username = usernameInput.value.trim();
   const password = passwordInput.value.trim();
   errorMsg.textContent = "";
