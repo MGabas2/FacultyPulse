@@ -2061,7 +2061,19 @@ async function approveEmailRequest(requestId, studentUuid) {
     .update({ email: req.requested_email })
     .eq("id", studentUuid);
 
-  if (updateError) { await fpAlert("Failed to update email: " + updateError.message, "error"); return; }
+  if (updateError) {
+    if (updateError.code === "23505") {
+      await fpAlert(
+        `Can't approve — "${req.requested_email}" is already in use by a different account.\n\n` +
+        `This request is still pending. Either reject it and ask the student to resubmit with ` +
+        `a different email, or first check whether that email belongs to a duplicate/incorrect account.`,
+        "error"
+      );
+    } else {
+      await fpAlert("Failed to update email: " + updateError.message, "error");
+    }
+    return;
+  }
 
   const { error: reqError } = await supabase
     .from("email_change_requests")
