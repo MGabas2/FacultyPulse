@@ -307,17 +307,25 @@ async function login() {
       // shortcuts the second factor, never the first.
       const rememberToken = localStorage.getItem(REMEMBER_TOKEN_KEY);
       if (rememberToken) {
-        const { data: trusted } = await supabase.rpc("check_remember_token", {
+        const { data: trusted, error: trustError } = await supabase.rpc("check_remember_token", {
           p_student_id: username,
           p_token: rememberToken,
         });
-        if (trusted) {
+
+        if (trustError) {
+          // Couldn't even ask the question (missing function, network
+          // issue, etc). Don't punish the user for our own infrastructure
+          // problem — leave the token alone and just fall through to a
+          // normal OTP challenge this one time.
+          console.error("check_remember_token failed:", trustError.message);
+        } else if (trusted) {
           finalizeStudentLogin(userRow, username);
           return;
+        } else {
+          // RPC ran fine and explicitly said this token is invalid/expired
+          // for this student — safe to clean it up.
+          localStorage.removeItem(REMEMBER_TOKEN_KEY);
         }
-        // Token expired/invalid for this student — clean it up and fall
-        // through to a normal OTP challenge below.
-        localStorage.removeItem(REMEMBER_TOKEN_KEY);
       }
 
       const otpError = await requestOtp(userRow.email);
