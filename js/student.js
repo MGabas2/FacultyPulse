@@ -784,9 +784,24 @@ document.getElementById("cancel-btn").addEventListener("click", () => {
   renderProgress();
 });
 document.getElementById("submit-all-btn").addEventListener("click", submitAll);
-document.getElementById("logout-btn").addEventListener("click", (e) => {
+document.getElementById("logout-btn").addEventListener("click", async (e) => {
   e.preventDefault();
-  supabase.auth.signOut();
+
+  // Remember-me cleanup — without this, the token left in localStorage
+  // gets picked up by index.html's auto-login check on the very next page
+  // load (i.e. this redirect), logging the student straight back in and
+  // making "Logout" appear to do nothing.
+  const rememberToken = localStorage.getItem("fp_remember_token");
+  if (rememberToken) {
+    localStorage.removeItem("fp_remember_token");
+    // Best-effort server-side revoke too — a token copied out of
+    // localStorage before logout shouldn't still work afterward.
+    if (studentId) {
+      supabase.rpc("revoke_remember_token", { p_student_id: studentId }).then(() => {});
+    }
+  }
+
+  await supabase.auth.signOut();
   sessionStorage.clear();
   window.location.href = "../index.html";
 });
