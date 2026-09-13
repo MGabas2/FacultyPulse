@@ -413,6 +413,9 @@
     <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex-shrink:1;"><b>FacultyPulse</b> — Student</span>
     <div style="display:flex; align-items:center; gap:8px; flex-wrap:nowrap; flex-shrink:0;">
       <span id="nav-user" style="font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100px;"></span>
+      <button id="change-password-btn" style="font-size:12px; padding:4px 10px;
+        background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3);
+        color:white; border-radius:6px; cursor:pointer; white-space:nowrap;">🔒 Password</button>
       <button id="change-email-btn" style="font-size:12px; padding:4px 10px;
         background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3);
         color:white; border-radius:6px; cursor:pointer; white-space:nowrap;">✉️ Change Email</button>
@@ -453,6 +456,40 @@
       <div style="display:flex; gap:10px;">
         <button id="ce-submit-btn" style="flex:1;">Submit Request</button>
         <button class="btn-secondary" id="ce-cancel-btn">← Go Back</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Change Password Modal -->
+  <div id="change-password-modal" class="modal hidden">
+    <div class="modal-box" style="max-width:420px; width:95vw;">
+      <h3 style="margin-bottom:16px;">🔒 Change Password</h3>
+
+      <div class="form-group" style="margin-bottom:12px;">
+        <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:5px;">Current Password</label>
+        <input type="password" id="cp-old-pw"
+          style="width:100%; padding:9px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px;" />
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:5px;">New Password</label>
+        <input type="password" id="cp-new-pw"
+          style="width:100%; padding:9px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px;" />
+      </div>
+      <div class="form-group" style="margin-bottom:16px;">
+        <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:5px;">Confirm New Password</label>
+        <input type="password" id="cp-confirm-pw"
+          style="width:100%; padding:9px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px;" />
+      </div>
+
+      <p id="cp-error" class="error" style="margin-bottom:10px;"></p>
+      <div id="cp-success" style="display:none; background:#f0fdf4; border:1px solid #86efac;
+        border-radius:6px; padding:10px 12px; font-size:13px; color:#166534; margin-bottom:10px;">
+        ✅ Password changed successfully.
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <button id="cp-submit-btn" style="flex:1;">Change Password</button>
+        <button class="btn-secondary" id="cp-cancel-btn">Cancel</button>
       </div>
     </div>
   </div>

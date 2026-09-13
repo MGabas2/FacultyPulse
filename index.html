@@ -159,6 +159,65 @@
     }
 
     .test-hint b { color: #888; }
+
+    /* ── Remember me ── */
+    .remember-me-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 14px;
+      font-size: 13px;
+      color: #475569;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .remember-me-row input[type="checkbox"] {
+      cursor: pointer;
+      width: 15px;
+      height: 15px;
+      accent-color: #1a56db;
+    }
+
+    /* ── OTP code input ── */
+    .otp-code-input {
+      width: 100%;
+      padding: 12px 14px;
+      font-size: 20px;
+      text-align: center;
+      letter-spacing: 8px;
+      border: 1.5px solid #ddd;
+      border-radius: 8px;
+      font-family: Arial, sans-serif;
+      margin-bottom: 10px;
+      box-sizing: border-box;
+    }
+
+    .otp-code-input:focus {
+      outline: none;
+      border-color: #1a56db;
+      box-shadow: 0 0 0 3px rgba(26,86,219,0.1);
+    }
+
+    .step-btn-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .step-btn-row .login-submit { margin-top: 0; }
+
+    .step-back-link {
+      display: block;
+      text-align: center;
+      margin-top: 14px;
+      font-size: 12px;
+      color: #64748b;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .step-back-link:hover { color: #1a56db; }
   </style>
 </head>
 <body>
@@ -173,7 +232,7 @@
         border-radius:8px; padding:12px 14px; margin-bottom:16px; font-size:13px; color:#991b1b; line-height:1.6;">
       </div>
 
-      <!-- ── Normal login UI (hidden during recovery flow) ── -->
+      <!-- ── Normal login UI (hidden during OTP/reset/recovery steps) ── -->
       <div id="normal-login-ui">
 
         <!-- ── Role Tab Buttons ── -->
@@ -196,65 +255,44 @@
         />
         <div class="id-hint" id="id-hint">
           🔒 Use your <b>Student ID</b> — not your real name.<br/>
-          <a href="request-email.html" style="font-size:12px; color:#1a56db;">
-            Don't have an email on file? Request one here
-          </a>
         </div>
         <div class="field-error hidden" id="format-error">
           ⚠️ Format must be: 4 digits - 4 digits - 2 uppercase letters
         </div>
 
-        <!-- ── Password field (staff only — students are passwordless via OTP) ── -->
-        <div id="password-field-wrap">
-          <label class="field-label">Password</label>
-          <div style="position:relative;">
-            <input
-              class="field-input"
-              type="password"
-              id="password"
-              placeholder="Enter password"
-              autocomplete="off"
-              style="padding-right:40px;"
-            />
-            <button
-              type="button"
-              id="toggle-password"
-              onclick="const p=document.getElementById('password'); const isHidden=p.type==='password'; p.type=isHidden?'text':'password'; this.textContent=isHidden?'Hide':'Show';"
-              style="position:absolute; right:10px; top:50%; transform:translateY(-50%);
-                background:none; border:none; cursor:pointer; font-size:12px; padding:0;
-                color:#64748b; font-weight:600;"
-              title="Show/hide password"
-            >Show</button>
-          </div>
+        <!-- ── Password field ── -->
+        <label class="field-label">Password</label>
+        <div style="position:relative;">
+          <input
+            class="field-input"
+            type="password"
+            id="password"
+            placeholder="Enter password"
+            autocomplete="off"
+            style="padding-right:40px;"
+          />
+          <button
+            type="button"
+            id="toggle-password"
+            onclick="const p=document.getElementById('password'); const isHidden=p.type==='password'; p.type=isHidden?'text':'password'; this.textContent=isHidden?'Hide':'Show';"
+            style="position:absolute; right:10px; top:50%; transform:translateY(-50%);
+              background:none; border:none; cursor:pointer; font-size:12px; padding:0;
+              color:#64748b; font-weight:600;"
+            title="Show/hide password"
+          >Show</button>
         </div>
 
-        <!-- ── Submit (relabeled "Send Code" for students) ── -->
+        <!-- ── Remember me — auto-login on this device next time (students) ── -->
+        <label class="remember-me-row">
+          <input type="checkbox" id="remember-me-checkbox" />
+          Remember me on this device
+        </label>
+
+        <!-- ── Submit ── -->
         <button class="login-submit" id="login-btn">Login</button>
         <div class="login-error" id="error-msg"></div>
 
-        <!-- ── OTP code entry — students, step 2 (after "Send Code") ── -->
-        <div id="otp-code-wrap" class="hidden" style="margin-top:16px;">
-          <p style="font-size:13px; color:#475569; margin-bottom:10px;">
-            Code sent to <b id="otp-masked-email"></b>.
-          </p>
-          <label class="field-label" style="margin-top:0;">6-Digit Code</label>
-          <input
-            class="field-input"
-            type="text"
-            id="otp-code"
-            placeholder="123456"
-            maxlength="6"
-            inputmode="numeric"
-            autocomplete="off"
-          />
-          <button class="login-submit" id="otp-verify-btn" style="margin-top:16px;">Verify</button>
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
-            <a href="#" id="otp-back-link" style="font-size:12px; color:#64748b; text-decoration:none;">← Use a different ID</a>
-            <a href="#" id="otp-resend-link" style="font-size:12px; color:#1a56db; text-decoration:none;">Resend code</a>
-          </div>
-        </div>
-
-        <!-- Forgot password — staff only, hidden for student tab -->
+        <!-- Forgot password — staff: email-link reset. Students: OTP-verified reset. -->
         <div id="forgot-wrap" style="text-align:center; margin-top:10px; display:none;">
           <a href="#" id="forgot-link" style="font-size:12px; color:#1a56db; text-decoration:none;">
             Forgot password?
@@ -267,13 +305,52 @@
         </div>
       </div><!-- /normal-login-ui -->
 
+      <!-- ══════════════════════════════════════════════════════
+           OTP STEP — shown after a student's Student ID + password
+           check succeeds and they have an email on file.
+      ══════════════════════════════════════════════════════ -->
+      <div id="otp-step" class="hidden">
+        <h3 style="font-size:18px; color:#1e293b; margin-bottom:6px;">Enter Verification Code</h3>
+        <p style="font-size:13px; color:#64748b; margin-bottom:18px; line-height:1.6;">
+          We sent a 6-digit code to <b id="otp-target-email"></b>.
+          Enter it below to finish logging in.
+        </p>
+        <input type="text" id="otp-code-input" class="otp-code-input"
+          inputmode="numeric" maxlength="6" placeholder="000000" />
+        <div class="field-error" id="otp-error" style="min-height:16px; margin-bottom:6px;"></div>
+        <div class="step-btn-row">
+          <button class="login-submit" id="otp-verify-btn">Verify</button>
+          <button class="login-submit" id="otp-resend-btn" style="background:#64748b;">Resend</button>
+        </div>
+        <a class="step-back-link" id="otp-back-link">← Back to login</a>
+      </div><!-- /otp-step -->
+
+      <!-- ══════════════════════════════════════════════════════
+           STUDENT FORGOT-PASSWORD RESET STEP — OTP-verified.
+           Staff still use the existing email-link flow (reset-overlay
+           below), unaffected by this.
+      ══════════════════════════════════════════════════════ -->
+      <div id="forgot-reset-step" class="hidden">
+        <h3 style="font-size:18px; color:#1e293b; margin-bottom:6px;">Reset Password</h3>
+        <p style="font-size:13px; color:#64748b; margin-bottom:18px; line-height:1.6;">
+          We sent a code to <b id="forgot-target-email"></b>. Enter it along with your new password.
+        </p>
+        <input type="text" id="forgot-code-input" class="otp-code-input"
+          inputmode="numeric" maxlength="6" placeholder="000000" />
+        <label class="field-label" style="margin-top:0;">New Password</label>
+        <input type="password" class="field-input" id="forgot-new-pw" placeholder="New password" />
+        <label class="field-label">Confirm New Password</label>
+        <input type="password" class="field-input" id="forgot-confirm-pw" placeholder="Confirm new password" />
+        <div class="field-error" id="forgot-reset-error" style="min-height:16px; margin:10px 0 6px;"></div>
+        <button class="login-submit" id="forgot-reset-btn">Reset Password</button>
+        <a class="step-back-link" id="forgot-back-link">← Back to login</a>
+      </div><!-- /forgot-reset-step -->
+
     </div>
   </div>
 
   <!-- ══════════════════════════════════════════════════════
-       PASSWORD RESET OVERLAY
-       Shown via JS when onAuthStateChange fires PASSWORD_RECOVERY.
-       Completely replaces the login view — feels like a dedicated page.
+       PASSWORD RESET OVERLAY — staff only, unchanged.
   ══════════════════════════════════════════════════════ -->
   <div id="reset-overlay" style="display:none; position:fixed; inset:0;
     background:linear-gradient(135deg, #1e3a8a 0%, #1a56db 60%, #3b82f6 100%);
@@ -283,7 +360,6 @@
     <div style="background:white; border-radius:16px; padding:40px 36px;
       width:100%; max-width:420px; box-shadow:0 24px 64px rgba(0,0,0,0.25);">
 
-      <!-- Icon + heading -->
       <div style="text-align:center; margin-bottom:28px;">
         <div style="width:64px; height:64px; background:#eff6ff; border-radius:50%;
           display:flex; align-items:center; justify-content:center;
@@ -298,7 +374,6 @@
         </p>
       </div>
 
-      <!-- Submit -->
       <div id="reset-form-fields">
         <div style="margin-bottom:14px;">
           <label style="font-size:13px; font-weight:600; color:#374151;
@@ -337,7 +412,6 @@
         </button>
       </div>
 
-      <!-- Success state (replaces form fields) -->
       <div id="reset-success" style="display:none; text-align:center; padding-top:8px;">
         <div style="font-size:48px; margin-bottom:12px;">✅</div>
         <h3 style="font-size:18px; color:#16a34a; margin-bottom:8px;">Password Updated!</h3>

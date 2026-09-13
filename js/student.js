@@ -22,6 +22,8 @@ document.getElementById("welcome-name").textContent = studentName !== studentId
   : studentId;
 document.getElementById("nav-user").textContent = "Logged in as: " + studentId;
 
+maybeShowEmailNudge();
+
 // ══════════════════════════════════════════════════════════════
 //  OFFICIAL SET QUESTIONS — CMO No. 19, s. 2025 (Annex A)
 // ══════════════════════════════════════════════════════════════
@@ -700,6 +702,78 @@ document.getElementById("ce-submit-btn")?.addEventListener("click", async () => 
 
   document.getElementById("ce-success").style.display = "block";
   btn.style.display = "none";
+});
+
+// ── Email nudge — shown once per page load if the student has no email
+//    on file. Never blocks anything, just points at the same admin-
+//    approved Change Email flow already on this page. ──
+function maybeShowEmailNudge() {
+  if (sessionStorage.getItem("needsEmailPrompt") !== "true") return;
+
+  const banner = document.createElement("div");
+  banner.id = "email-nudge-banner";
+  banner.style.cssText = `
+    background:#eff6ff; border:1px solid #93c5fd; border-radius:8px;
+    padding:12px 16px; margin-bottom:16px; font-size:13px; color:#1e40af;
+    display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
+  `;
+  banner.innerHTML = `
+    <span>💡 You don't have an email on file — adding one lets us send you a login
+      verification code and a way to reset your password if you forget it.</span>
+    <button id="email-nudge-add-btn" style="font-size:12px; padding:6px 14px; flex-shrink:0;">Add Email</button>
+  `;
+  document.querySelector(".container")?.prepend(banner);
+
+  document.getElementById("email-nudge-add-btn")?.addEventListener("click", () => {
+    document.getElementById("change-email-btn")?.click();
+    banner.remove();
+  });
+}
+
+// ── Change Password — student already knows their current password ──
+document.getElementById("change-password-btn")?.addEventListener("click", () => {
+  document.getElementById("cp-old-pw").value       = "";
+  document.getElementById("cp-new-pw").value       = "";
+  document.getElementById("cp-confirm-pw").value   = "";
+  document.getElementById("cp-error").textContent  = "";
+  document.getElementById("cp-success").style.display = "none";
+  document.getElementById("change-password-modal").classList.remove("hidden");
+});
+
+document.getElementById("cp-cancel-btn")?.addEventListener("click", () => {
+  document.getElementById("change-password-modal").classList.add("hidden");
+});
+
+document.getElementById("cp-submit-btn")?.addEventListener("click", async () => {
+  const oldPw  = document.getElementById("cp-old-pw").value;
+  const newPw  = document.getElementById("cp-new-pw").value;
+  const confPw = document.getElementById("cp-confirm-pw").value;
+  const errEl  = document.getElementById("cp-error");
+  const btn    = document.getElementById("cp-submit-btn");
+  errEl.textContent = "";
+
+  if (!oldPw)                     { errEl.textContent = "Enter your current password."; return; }
+  if (!newPw || newPw.length < 4) { errEl.textContent = "New password must be at least 4 characters."; return; }
+  if (newPw !== confPw)           { errEl.textContent = "New passwords do not match."; return; }
+  if (newPw === oldPw)            { errEl.textContent = "New password must be different from your current one."; return; }
+
+  btn.textContent = "Saving..."; btn.disabled = true;
+
+  const { data: success, error } = await supabase.rpc("change_student_password", {
+    p_student_id: studentId,
+    p_old_password: oldPw,
+    p_new_password: newPw,
+  });
+
+  btn.textContent = "Change Password"; btn.disabled = false;
+
+  if (error || !success) {
+    errEl.textContent = success === false ? "Current password is incorrect." : "Failed: " + (error?.message || "please try again.");
+    return;
+  }
+
+  document.getElementById("cp-success").style.display = "block";
+  setTimeout(() => document.getElementById("change-password-modal").classList.add("hidden"), 1500);
 });
 
 // ── Events ──
