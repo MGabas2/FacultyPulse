@@ -5,7 +5,6 @@
 
 import { supabase } from "./supabase.js";
 import { fpAlert, fpConfirm } from "./modal.js";
-import { GROQ_KEY } from "./supabase.config.js";
 
 function escHtml(str) {
   return String(str || "")
@@ -574,6 +573,13 @@ function renderPager(containerId, totalPages, current, onGo) {
 //  Faculty-facing report shows aggregated scores + verified comments
 //  with NO student identity. Admin/QA identity data stays in the
 //  tracking table and is never included in the report.
+//
+//  STUDENT COMMENTS ARE NEVER DELETABLE FROM THIS REPORT, FULL STOP.
+//  There is no button, function, or code path anywhere below that
+//  removes a student's comment text — the raw list is display-only.
+//  Do not add one. If a comment needs to be excluded from a report for
+//  cause, that decision and its reasoning belongs in a separate,
+//  auditable moderation record — not a silent delete here.
 // ══════════════════════════════════════════════════════════════
 async function viewReport(teacherId, teacherName) {
   const reportContent = document.getElementById("report-content");
@@ -643,8 +649,10 @@ async function viewReport(teacherId, teacherName) {
     .limit(1)
     .maybeSingle();
 
-  const sefRating      = supRemarks?.sef_score
-    ? `${supRemarks.sef_score} / 100`
+  // Scores are always shown to 2 decimal places, never as "X / 100" —
+  // apply .toFixed(2) at display time everywhere in this report.
+  const sefRating      = supRemarks?.sef_score != null
+    ? Number(supRemarks.sef_score).toFixed(2)
     : "—";
   const supComments    = supRemarks?.comments || "";
   const supRemarksTxt  = supRemarks?.remarks  || "";
@@ -660,7 +668,8 @@ async function viewReport(teacherId, teacherName) {
   // Fetch student comments from evaluation_comments for this teacher's subjects.
   // Comments are linked to subject_id only — not to a specific student.
   // This satisfies CMO §6.10 (student anonymity) — QAO sees the comment
-  // but cannot identify the student who wrote it.
+  // but cannot identify the student who wrote it. This list is READ-ONLY —
+  // see the policy note at the top of this function.
   const subjectIds = classData.map(c => c.subjectId).filter(Boolean);
   let studentComments = [];
   if (subjectIds.length > 0) {
@@ -676,6 +685,205 @@ async function viewReport(teacherId, teacherName) {
 
   // Store on window so the Restore button can access it without re-fetching
   window._studentComments = studentComments;
+
+  // ══════════════════════════════════════════════════════════════
+  //  RAW DATA DRILL-DOWN — QA-only, never printed.
+  //  Shows every individual respondent's answer to all 15 questions,
+  //  per subject, with a per-question average column. This is what lets
+  //  QA answer "why did Category B drop from 90 to 87?" by actually
+  //  looking at which question (and which respondent) pulled it down,
+  //  instead of only ever seeing the final averaged number.
+  // ══════════════════════════════════════════════════════════════
+  const rawScoresBySubject = {};
+  for (const c of classData) {
+    const { data: rawEvals } = await supabase
+      .from("evaluation_scores")
+      .select("scores, submitted_at")
+      .eq("subject_id", c.subjectId)
+      .eq("semester_id", semester.id)
+      .order("submitted_at", { ascending: true });
+    rawScoresBySubject[c.subjectId] = rawEvals || [];
+  }
+
+  const SET_QUESTIONS_SHORT = [
+    "Comes to class on time.",
+    "Explains learning outcomes, expectations, grading system, and requirements.",
+    "Maximizes allocated time/learning hours effectively.",
+    "Facilitates critical and creative thinking via appropriate activities.",
+    "Guides independent learning and decision-making.",
+    "Communicates constructive feedback for academic growth.",
+    "Demonstrates extensive knowledge of the subject/course.",
+    "Simplifies complex ideas for ease of understanding.",
+    "Relates subject matter to contemporary issues and daily life.",
+    "Promotes active learning using ICT tools and platforms.",
+    "Uses appropriate assessments aligned with learning outcomes.",
+    "Recognizes and values unique diversity among students.",
+    "Assists students during consultation hours.",
+    "Provides immediate feedback on outputs and performance.",
+    "Provides transparent and clear criteria in rating performance.",
+  ];
+
+  function buildRawDataPanel() {
+    const panelId = "raw-data-panel-" + teacherId;
+
+    let html = `
+      <div class="no-print" style="margin-bottom:20px; border:1px solid #e2e8f0; border-radius:10px; overflow:hidden;">
+        <div onclick="document.getElementById('${panelId}').classList.toggle('hidden')"
+          style="background:#f1f5f9; padding:12px 16px; cursor:pointer; display:flex;
+            align-items:center; justify-content:space-between; user-select:none;">
+          <span style="font-weight:600; font-size:13px; color:#1e293b;">
+            📊 Raw Evaluation Data (QA View Only — Not Printed)
+          </span>
+          <span style="font-size:11px; color:#64748b;">Click to expand/collapse</span>
+        </div>
+        <div id="${panelId}" class="hidden" style="padding:16px;">
+          <p style="font-weight:700; font-size:13px; color:#1e293b; margin:0 0 12px;">
+            Student Evaluation of Teachers (SET) — Individual Submissions
+          </p>`;
+
+    for (const c of classData) {
+      const evals = rawScoresBySubject[c.subjectId] || [];
+      html += `
+          <p style="font-weight:600; font-size:12px; color:#334155; margin:0 0 6px;">
+            ${escHtml(c.course)} (${escHtml(c.section)})
+            — ${evals.length} respondent${evals.length !== 1 ? "s" : ""}
+            out of ${c.noStudents} enrolled
+            | Avg SET: <b>${c.avgSETRating.toFixed(2)}</b>
+            | Weighted: <b>${c.weightedScore.toFixed(2)}</b>
+          </p>`;
+
+      if (evals.length === 0) {
+        html += `<p style="font-size:11px; color:#94a3b8; margin:0 0 14px; padding-left:8px;">No submissions yet.</p>`;
+        continue;
+      }
+
+      html += `
+          <div style="overflow-x:auto; margin-bottom:16px;">
+            <table style="border-collapse:collapse; font-size:11px; min-width:100%;">
+              <thead>
+                <tr>
+                  <th style="border:1px solid #cbd5e1; padding:6px 8px; background:#f8fafc;
+                    text-align:left; min-width:260px; color:#334155;">Question</th>`;
+      evals.forEach((_, i) => {
+        html += `<th style="border:1px solid #cbd5e1; padding:6px 8px; background:#f8fafc;
+          text-align:center; color:#334155; min-width:40px;">R${i + 1}</th>`;
+      });
+      html += `
+                  <th style="border:1px solid #cbd5e1; padding:6px 8px; background:#eff6ff;
+                    text-align:center; color:#1e40af; min-width:52px;">Avg</th>
+                </tr>
+              </thead>
+              <tbody>`;
+
+      ["q1","q2","q3","q4","q5","q6","q7","q8","q9","q10","q11","q12","q13","q14","q15"]
+        .forEach((qid, qi) => {
+          if (qi === 0)
+            html += `<tr><td colspan="${evals.length + 2}"
+              style="background:#f1f5f9; padding:5px 8px; font-size:10px;
+                font-weight:600; color:#475569; border:1px solid #cbd5e1;">
+              A. Management of Teaching and Learning</td></tr>`;
+          if (qi === 6)
+            html += `<tr><td colspan="${evals.length + 2}"
+              style="background:#f1f5f9; padding:5px 8px; font-size:10px;
+                font-weight:600; color:#475569; border:1px solid #cbd5e1;">
+              B. Content Knowledge, Pedagogy and Technology</td></tr>`;
+          if (qi === 11)
+            html += `<tr><td colspan="${evals.length + 2}"
+              style="background:#f1f5f9; padding:5px 8px; font-size:10px;
+                font-weight:600; color:#475569; border:1px solid #cbd5e1;">
+              C. Commitment and Transparency</td></tr>`;
+
+          const vals = evals.map(e => e.scores?.[qid] ?? "—");
+          const numVals = vals.filter(v => typeof v === "number");
+          const avg = numVals.length
+            ? (numVals.reduce((a,b) => a+b, 0) / numVals.length).toFixed(2)
+            : "—";
+
+          html += `<tr>
+            <td style="border:1px solid #cbd5e1; padding:5px 8px; color:#334155;">
+              <b>${qi + 1}.</b> ${escHtml(SET_QUESTIONS_SHORT[qi])}
+            </td>`;
+          vals.forEach(v => {
+            html += `<td style="border:1px solid #cbd5e1; padding:5px 8px;
+              text-align:center; color:#1e293b;">${v}</td>`;
+          });
+          html += `<td style="border:1px solid #cbd5e1; padding:5px 8px;
+            text-align:center; font-weight:600; color:#1e40af; background:#eff6ff;">${avg}</td>
+          </tr>`;
+        });
+
+      html += `<tr style="background:#f8fafc;">
+        <td style="border:1px solid #cbd5e1; padding:6px 8px; font-weight:700; color:#1e293b;">
+          Total Score (raw / 75)
+        </td>`;
+      evals.forEach(e => {
+        const total = Object.values(e.scores || {}).reduce((s,v) => s+v, 0);
+        html += `<td style="border:1px solid #cbd5e1; padding:6px 8px;
+          text-align:center; font-weight:700; color:#1e293b;">${total}</td>`;
+      });
+      html += `<td style="border:1px solid #cbd5e1; padding:6px 8px;
+        text-align:center; color:#64748b;">—</td></tr>`;
+
+      html += `<tr style="background:#eff6ff;">
+        <td style="border:1px solid #cbd5e1; padding:6px 8px; font-weight:700; color:#1e40af;">
+          Computed SET Rating
+        </td>`;
+      evals.forEach(e => {
+        const total = Object.values(e.scores || {}).reduce((s,v) => s+v, 0);
+        const rating = ((total / 75) * 100).toFixed(2);
+        html += `<td style="border:1px solid #cbd5e1; padding:6px 8px;
+          text-align:center; font-weight:700; color:#1e40af;">${rating}</td>`;
+      });
+      html += `<td style="border:1px solid #cbd5e1; padding:6px 8px;
+        text-align:center; font-weight:700; color:#1e40af;">${c.avgSETRating.toFixed(2)}</td></tr>`;
+
+      html += `</tbody></table></div>`;
+    }
+
+    html += `
+          <div style="border-top:2px solid #e2e8f0; margin-top:4px; padding-top:16px;">
+            <p style="font-weight:700; font-size:13px; color:#1e293b; margin:0 0 12px;">
+              Supervisor's Evaluation of Faculty (SEF) — Summary
+            </p>`;
+
+    if (supRemarks) {
+      html += `
+            <table style="border-collapse:collapse; font-size:12px; width:100%; max-width:420px; margin-bottom:12px;">
+              <tr>
+                <td style="border:1px solid #cbd5e1; padding:8px 12px; background:#f8fafc;
+                  font-weight:600; color:#334155;">Overall SEF Rating</td>
+                <td style="border:1px solid #cbd5e1; padding:8px 12px; text-align:center;
+                  font-weight:700; font-size:15px; color:#1e40af;">${sefRating}</td>
+              </tr>
+              <tr>
+                <td style="border:1px solid #cbd5e1; padding:8px 12px; background:#f8fafc;
+                  font-weight:600; color:#334155; vertical-align:top;">Supervisor Comments</td>
+                <td style="border:1px solid #cbd5e1; padding:8px 12px; color:#334155;
+                  font-size:11px; line-height:1.6;">
+                  ${supRemarks.comments ? escHtml(supRemarks.comments) : "<em style='color:#94a3b8;'>No comments submitted.</em>"}
+                </td>
+              </tr>
+              <tr>
+                <td style="border:1px solid #cbd5e1; padding:8px 12px; background:#f8fafc;
+                  font-weight:600; color:#334155; vertical-align:top;">Supervisor Remarks</td>
+                <td style="border:1px solid #cbd5e1; padding:8px 12px; color:#334155;
+                  font-size:11px; line-height:1.6;">
+                  ${supRemarks.remarks ? escHtml(supRemarks.remarks) : "<em style='color:#94a3b8;'>No remarks submitted.</em>"}
+                </td>
+              </tr>
+            </table>
+            <p style="font-size:10px; color:#94a3b8; margin:0;">
+              Note: Per-question SEF scores are not stored individually — only the computed overall SEF rating is recorded.
+            </p>`;
+    } else {
+      html += `<p style="font-size:12px; color:#94a3b8; font-style:italic;">
+        No supervisor evaluation submitted for this faculty this semester.
+      </p>`;
+    }
+
+    html += `</div></div></div>`;
+    return html;
+  }
 
   // ── Build IFER HTML — Annex C Format ──
   const dateGenerated = new Date().toLocaleDateString("en-PH", {
@@ -704,10 +912,7 @@ async function viewReport(teacherId, teacherName) {
         </div>`;
       })()}
 
-      <!-- ══ ANNEX C HEADER ══ -->
-      <p style="text-align:right; font-size:10px; color:#000; margin-bottom:8px;">
-        ANNEX C – Individual Faculty Evaluation Report
-      </p>
+      ${buildRawDataPanel()}
 
       <h3 style="text-align:center; font-size:13px; font-weight:bold; margin-bottom:16px; text-transform:uppercase; letter-spacing:.02em;">
         Individual Faculty Evaluation Report
@@ -765,8 +970,8 @@ async function viewReport(teacherId, teacherName) {
               <td style="padding:7px 8px; border:1px solid #000; color:#000; font-style:italic;">${c.course}</td>
               <td style="padding:7px 8px; border:1px solid #000; text-align:center; color:#000;">${c.section}</td>
               <td style="padding:7px 8px; border:1px solid #000; text-align:center; color:#000;">${c.noStudents}</td>
-              <td style="padding:7px 8px; border:1px solid #000; text-align:center; color:#000;">${c.avgSETRating}</td>
-              <td style="padding:7px 8px; border:1px solid #000; text-align:center; color:#000;">${c.weightedScore}</td>
+              <td style="padding:7px 8px; border:1px solid #000; text-align:center; color:#000;">${c.avgSETRating.toFixed(2)}</td>
+              <td style="padding:7px 8px; border:1px solid #000; text-align:center; color:#000;">${c.weightedScore.toFixed(2)}</td>
             </tr>
           `).join("")}
           <tr>
@@ -783,7 +988,7 @@ async function viewReport(teacherId, teacherName) {
       <p style="font-size:11px; color:#000; margin-bottom:8px;">
         <b>Computation</b>: Calculate the Overall SET Rating by dividing the total Weighted SET Score by the total number of students.
         In the example above, the total weighted value is ${totalWeighted.toFixed(2)} while the total number of students is ${totalEnrolled}.
-        Therefore, ${totalWeighted.toFixed(2)}÷${totalEnrolled} = <b>${overallSET}</b>
+        Therefore, ${totalWeighted.toFixed(2)}÷${totalEnrolled} = <b>${overallSET.toFixed(2)}</b>
       </p>
 
       <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:6px;">
@@ -797,7 +1002,7 @@ async function viewReport(teacherId, teacherName) {
         <tbody>
           <tr>
             <td style="padding:10px; border:1px solid #000; font-weight:bold; color:#000;">OVERALL RATING</td>
-            <td style="padding:10px; border:1px solid #000; text-align:center; font-weight:bold; font-size:15px; color:#000;">${overallSET}</td>
+            <td style="padding:10px; border:1px solid #000; text-align:center; font-weight:bold; font-size:15px; color:#000;">${overallSET.toFixed(2)}</td>
             <td style="padding:10px; border:1px solid #000; text-align:center; color:#000;">${sefRating}</td>
           </tr>
         </tbody>
@@ -812,89 +1017,62 @@ async function viewReport(teacherId, teacherName) {
         <thead>
           <tr>
             <th style="background:#fff; color:#000; padding:6px 8px; border:1px solid #000; text-align:left; font-weight:bold;">Category</th>
-            <th style="background:#fff; color:#000; padding:6px 8px; border:1px solid #000; text-align:center; font-weight:bold;">Score (out of 100)</th>
+            <th style="background:#fff; color:#000; padding:6px 8px; border:1px solid #000; text-align:center; font-weight:bold;">Score</th>
             <th style="background:#fff; color:#000; padding:6px 8px; border:1px solid #000; text-align:center; font-weight:bold;">Description</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td style="padding:6px 8px; border:1px solid #000; color:#000;">A. Management of Teaching and Learning</td>
-            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#000;">${avgA}</td>
-            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#000;">${getRatingLabel(avgA)}</td>
+            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#000;">${avgA.toFixed(2)}</td>
+            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:${getRatingColor(avgA)}; font-weight:600;">${getRatingLabel(avgA)}</td>
           </tr>
           <tr>
             <td style="padding:6px 8px; border:1px solid #000; color:#000;">B. Content Knowledge, Pedagogy and Technology</td>
-            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#000;">${avgB}</td>
-            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#000;">${getRatingLabel(avgB)}</td>
+            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#000;">${avgB.toFixed(2)}</td>
+            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:${getRatingColor(avgB)}; font-weight:600;">${getRatingLabel(avgB)}</td>
           </tr>
           <tr>
             <td style="padding:6px 8px; border:1px solid #000; color:#000;">C. Commitment and Transparency</td>
-            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#000;">${avgC}</td>
-            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#000;">${getRatingLabel(avgC)}</td>
+            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#000;">${avgC.toFixed(2)}</td>
+            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:${getRatingColor(avgC)}; font-weight:600;">${getRatingLabel(avgC)}</td>
           </tr>
         </tbody>
       </table>
 
       <!-- D. Summary of Qualitative Comments and Suggestions -->
-      <p style="font-weight:bold; font-size:12px; margin-bottom:8px;">D. Summary of Qualitative Comments and Suggestions</p>
+      <p style="font-weight:bold; font-size:12px; margin-bottom:4px;">D. Summary of Qualitative Comments and Suggestions</p>
+      <p style="font-size:10px; color:#000; font-style:italic; margin-bottom:8px;">
+        Comments shown exactly as submitted, without student identity, per CMO §6.10.
+      </p>
 
-      <!-- Raw comments list — screen only, hidden when printing -->
-      ${studentComments.length > 0 ? `
-        <div class="no-print" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px 14px; margin-bottom:12px;">
-          <p style="font-size:11px; font-weight:600; color:#475569; margin:0 0 8px;">
-            Student Comments — for reference only, not printed
-          </p>
-          <ol style="margin:0; padding-left:18px; font-size:11px; color:#334155; line-height:1.8;">
-            ${studentComments.map(c => `<li>${escHtml(c)}</li>`).join("")}
-          </ol>
-        </div>
-      ` : ""}
-
-      <!-- Summary textarea — this IS what prints -->
-      <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:6px;">
+      <!-- Same Seq + comment table structure as the Supervisor table below —
+           one row per comment. READ-ONLY, no delete/remove control exists
+           here on purpose (see policy note at top of viewReport()). -->
+      <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:16px;">
         <thead>
           <tr>
-            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold;">
-              Comments and Suggestions from the Students (Summary)
-            </th>
+            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; width:40px; font-weight:bold;">Seq</th>
+            <th style="background:#fff; color:#000; padding:7px 8px; border:1px solid #000; text-align:center; font-weight:bold;">Comments and Suggestions from the Students</th>
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td style="padding:0; border:1px solid #000;">
-              <textarea id="student-comments-summary"
-                style="width:100%; min-height:120px; font-size:11px; padding:10px;
-                  border:none; resize:vertical; font-family:Arial, sans-serif;
-                  box-sizing:border-box; color:#000; line-height:1.6;"
-                placeholder="Type summary here or click Generate Summary..."></textarea>
-            </td>
-          </tr>
+          ${studentComments.length > 0
+            ? studentComments.map((c, i) => `
+              <tr>
+                <td style="padding:14px 8px; border:1px solid #000; text-align:center; color:#000;">${i + 1}</td>
+                <td style="padding:14px 8px; border:1px solid #000; color:#000;">${escHtml(c)}</td>
+              </tr>
+            `).join("")
+            : `
+              <tr>
+                <td colspan="2" style="padding:14px 8px; border:1px solid #000; text-align:center; font-style:italic; color:#000;">
+                  No student comments submitted for this faculty this semester.
+                </td>
+              </tr>
+            `}
         </tbody>
       </table>
-
-      ${studentComments.length > 0 ? `
-        <div class="no-print" style="background:#eff6ff; border:1px solid #93c5fd; border-radius:6px;
-          padding:10px 14px; margin-bottom:8px; font-size:12px; color:#1e40af;">
-          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
-            <span><b>${studentComments.length} student comment${studentComments.length !== 1 ? "s" : ""} loaded.</b>
-            Customize the instruction below then click Generate Summary, or type the summary manually.</span>
-            <button onclick="summarizeComments()"
-              style="font-size:11px; padding:4px 12px; background:#1a56db; color:white;
-                border:none; border-radius:4px; cursor:pointer; white-space:nowrap; flex-shrink:0;">
-              Generate Summary
-            </button>
-          </div>
-          <textarea id="summary-instruction"
-            style="width:100%; font-size:11px; padding:8px; border:1px solid #93c5fd;
-              border-radius:4px; resize:vertical; font-family:Arial, sans-serif;
-              box-sizing:border-box; color:#1e40af; background:#eff6ff; line-height:1.5; min-height:60px;">Summarize the following student evaluation comments into a concise, objective paragraph (3-5 sentences). Focus on recurring themes — both strengths and areas for improvement. Do not copy comments verbatim. Write in third person. Be professional and neutral.</textarea>
-        </div>
-      ` : `
-        <div class="no-print" style="background:#fef3c7; border:1px solid #fcd34d; border-radius:6px;
-          padding:8px 14px; margin-bottom:8px; font-size:12px; color:#92400e;">
-          No student comments submitted for this faculty this semester. Type summary manually if needed.
-        </div>
-      `}
 
       <!-- Supervisor comment table -->
       <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:16px;">
@@ -926,7 +1104,7 @@ async function viewReport(teacherId, teacherName) {
       </table>
       <div class="no-print" style="display:flex; gap:8px; margin-bottom:16px;">
         <button onclick="addCommentRow('supervisor-comments-tbody')"
-          style="font-size:12px; padding:5px 12px; background:white; color:#1a56db; border:1px solid #1a56db; border-radius:5px; cursor:pointer;">
+          style="font-size:12px; padding:5px 12px; background:white; color:#475569; border:1px solid #475569; border-radius:5px; cursor:pointer;">
           + Add Row
         </button>
         <button onclick="removeCommentRow('supervisor-comments-tbody')"
@@ -982,10 +1160,6 @@ async function viewReport(teacherId, teacherName) {
            ══════════════════════════════════════════════════════════ -->
       <div id="annex-d-section" style="page-break-before:always; padding-top:8px;">
 
-        <p style="text-align:right; font-size:10px; color:#000; margin-bottom:4px;">
-          ANNEX D – Faculty Evaluation and Development Acknowledgment Form
-        </p>
-
         <h3 style="text-align:center; font-size:12px; font-weight:bold; margin-bottom:16px; text-transform:uppercase; letter-spacing:.02em;">
           Faculty Evaluation and Development Acknowledgment Form
         </h3>
@@ -1032,10 +1206,10 @@ async function viewReport(teacherId, teacherName) {
           <tbody>
             <tr>
               <td style="padding:14px 10px; border:1px solid #000; text-align:center; font-size:20px; font-weight:bold; color:#000;">
-                ${overallSET}
+                ${overallSET.toFixed(2)}
               </td>
               <td style="padding:14px 10px; border:1px solid #000; text-align:center; font-size:20px; font-weight:bold; color:#000;">
-                ${supRemarks?.sef_score || "—"}
+                ${sefRating}
               </td>
             </tr>
           </tbody>
@@ -1239,7 +1413,7 @@ function renderBarChart(ranked) {
         tooltip: {
           callbacks: {
             label: ctx =>
-              ` ${ctx.parsed.y} / 100 — ${getRatingLabel(ctx.parsed.y)}${tooltipSuffix[ctx.dataIndex] || ""}`
+              ` ${ctx.parsed.y.toFixed(2)} — ${getRatingLabel(ctx.parsed.y)}${tooltipSuffix[ctx.dataIndex] || ""}`
           }
         }
       },
@@ -1349,7 +1523,7 @@ function updateReleaseButton() {
 
   // pending or no row — forward to supervisor
   btn.textContent      = "📤 Forward to Supervisor";
-  btn.style.background = "#1a56db";
+  btn.style.background = "#475569";
   btn.onclick          = forwardToSupervisor;
 }
 
@@ -1538,65 +1712,13 @@ async function finalRelease() {
 // ── Expose to HTML (rankings table uses onclick) ──
 window.viewReport = viewReport;
 
-// ── Summarize student comments via Claude API ──
-async function summarizeComments() {
-  const comments = window._studentComments || [];
-  if (comments.length === 0) return;
-
-  const btn         = document.querySelector("[onclick='summarizeComments()']");
-  const summaryArea = document.getElementById("student-comments-summary");
-
-  if (btn) { btn.textContent = "Generating..."; btn.disabled = true; }
-  if (summaryArea) summaryArea.value = "Generating summary...";
-
-  const customInstruction = document.getElementById("summary-instruction")?.value?.trim() ||
-    "Summarize the following student evaluation comments into a concise, objective paragraph (3-5 sentences). Focus on recurring themes — both strengths and areas for improvement. Do not copy comments verbatim. Write in third person. Be professional and neutral.";
-
-  try {
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${GROQ_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "llama-3.1-8b-instant",
-        max_tokens: 1000,
-        messages: [
-          {
-            role: "system",
-            content: "You are helping a Quality Assurance Office of a Philippine Higher Education Institution summarize student faculty evaluation comments. Provide only the summary paragraph, no preamble or labels."
-          },
-          {
-            role: "user",
-            content: `${customInstruction}\n\nStudent Comments:\n${comments.map((c, i) => `${i + 1}. ${c}`).join("\n")}`
-          }
-        ]
-      })
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error("API error details:", data);
-      if (summaryArea) summaryArea.value = `API Error ${response.status}: ${data?.error?.message || JSON.stringify(data)}`;
-      return;
-    }
-
-    const summary = data.choices?.[0]?.message?.content || "Could not generate summary.";
-    if (summaryArea) summaryArea.value = summary;
-
-  } catch (err) {
-    if (summaryArea) summaryArea.value = "Failed to generate summary. Please check your connection and try again.";
-    console.error("Summary error:", err);
-  } finally {
-    if (btn) { btn.textContent = "Generate Summary"; btn.disabled = false; }
-  }
-}
-
-window.summarizeComments = summarizeComments;
-
 // ── Add a blank row to supervisor comment table only ──
+// NOTE: these row-management functions apply ONLY to the supervisor
+// comment table (tbodyId "supervisor-comments-tbody"). They explicitly
+// refuse to run against anything named "student-comments-tbody" — no
+// such table exists in this report, and it must never be added. Student
+// comments are shown as a plain, read-only list (see viewReport() above)
+// with no add/remove controls at all, by design and by policy.
 function addCommentRow(tbodyId) {
   if (tbodyId === "student-comments-tbody") return;
   const tbody = document.getElementById(tbodyId);
@@ -2223,7 +2345,7 @@ async function loadSemesters() {
     } else {
       action = `<div style="display:flex; gap:6px;">
           <button onclick="activateSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
-            style="font-size:11px; padding:4px 10px; background:#1a56db; color:white; border:none; border-radius:4px; cursor:pointer;">
+            style="font-size:11px; padding:4px 10px; background:#671408; color:white; border:none; border-radius:4px; cursor:pointer;">
             Set as Active
           </button>
           <button onclick="deleteSemester('${s.id}', '${s.label.replace(/'/g, "\\'")}')"
@@ -2420,10 +2542,6 @@ loadSemesters();
 
 // ══════════════════════════════════════════════════════════════
 //  SUBJECT → TEACHER ASSIGNMENT
-//  Every subject created by the XLSX import starts with teacher_id
-//  NULL — the registrar can't supply teacher-assignment data at all,
-//  so this has to be done here, manually, by whoever knows who
-//  actually teaches what.
 // ══════════════════════════════════════════════════════════════
 let allSubjectsForAssignment = [];
 let subjectAssignPage        = 1;
@@ -2559,9 +2677,6 @@ function updateSubjectAssignSelectionBar() {
   }
 }
 
-// Only reflects selection state for rows on the CURRENT page — selections
-// on other pages are preserved (tracked in selectedSubjectIds) but this
-// checkbox only speaks for what's visible right now.
 function updateSubjectAssignSelectAllCheckbox(pageItems) {
   const selectAll = document.getElementById("subject-assign-select-all");
   if (!selectAll) return;

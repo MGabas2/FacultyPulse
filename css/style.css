@@ -13,7 +13,7 @@ body {
 
 /* ── NAV ── */
 nav {
-  background: #1a56db;
+  background: #671408;
   color: white;
   padding: 12px 24px;
   display: flex;
@@ -46,7 +46,7 @@ nav a:hover {
 
 .login-container h1 {
   font-size: 28px;
-  color: #1a56db;
+  color: #671408;
 }
 
 .login-container > p {
@@ -97,7 +97,7 @@ nav a:hover {
 .card-value {
   font-size: 26px;
   font-weight: bold;
-  color: #1a56db;
+  color: #671408;
 }
 
 /* ── FORM ── */
@@ -123,12 +123,12 @@ input, select, textarea {
 
 input:focus, select:focus {
   outline: none;
-  border-color: #1a56db;
+  border-color: #671408;
 }
 
 /* ── BUTTONS ── */
 button {
-  background: #1a56db;
+  background: #671408;
   color: white;
   border: none;
   padding: 9px 18px;
@@ -138,7 +138,7 @@ button {
 }
 
 button:hover {
-  background: #1447b8;
+  background: #4d0f06;
 }
 
 button:disabled {
@@ -148,12 +148,12 @@ button:disabled {
 
 .btn-secondary {
   background: white;
-  color: #1a56db;
-  border: 1px solid #1a56db;
+  color: #671408;
+  border: 1px solid #671408;
 }
 
 .btn-secondary:hover {
-  background: #eef3ff;
+  background: #fdf0ee;
 }
 
 /* ── ERROR ── */
@@ -166,10 +166,10 @@ button:disabled {
 /* ── FIELD HINT (shown below student ID input) ── */
 .field-hint {
   font-size: 12px;
-  color: #1a56db;
+  color: #671408;
   margin-top: 6px;
-  background: #eef3ff;
-  border: 1px solid #c3d4f7;
+  background: #fdf0ee;
+  border: 1px solid #f3c9bd;
   border-radius: 5px;
   padding: 7px 10px;
   line-height: 1.6;
@@ -224,7 +224,7 @@ table {
 }
 
 th {
-  background: #f0f4ff;
+  background: #fdf0ee;
   text-align: left;
   padding: 10px 12px;
   border-bottom: 2px solid #ddd;
@@ -332,7 +332,7 @@ tr:last-child td {
 .report-section h4 {
   font-size: 14px;
   margin-bottom: 8px;
-  color: #1a56db;
+  color: #671408;
 }
 
 @media print {

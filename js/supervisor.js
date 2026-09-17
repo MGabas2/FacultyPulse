@@ -19,7 +19,7 @@ const supervisorName = sessionStorage.getItem("name");
 document.getElementById("nav-user").textContent = "Logged in as: " + supervisorName;
 
 // ══════════════════════════════════════════════════════════════
-//  SEF QUESTIONS — same as SET (Annex B, CMO No. 19 s. 2025)
+//  SEF QUESTIONS — Annex B, CMO No. 19 s. 2025 (1:1 copy)
 // ══════════════════════════════════════════════════════════════
 const QUESTIONS = [
   { id:"q1",  cat:"A", text:"Comes to class on time." },
@@ -38,6 +38,25 @@ const QUESTIONS = [
   { id:"q14", cat:"C", text:"Provides immediate feedback on student outputs and performance." },
   { id:"q15", cat:"C", text:"Provides transparent and clear criteria in rating student's performance." },
 ];
+
+// ── Suggested Means for Verification — 1:1 copy from Annex B ──
+const MEANS_OF_VERIFICATION = {
+  q1:  ["Daily time record","Faculty schedule and timetable","Informal interview with students"],
+  q2:  ["Documents submission log","Submission Receipts or Acknowledgment Emails"],
+  q3:  ["Class Schedules & Timetables","LMS Logs","Informal interview with students"],
+  q4:  ["Course syllabus","Learning Plan","Classroom Observation","Informal interview with students","LMS Logs"],
+  q5:  ["Course Syllabus","Learning Plan","Student Work Samples","Classroom Observation","LMS Logs","Informal interview with students","Faculty Consultation Log"],
+  q6:  ["Graded Student Work with Feedback","Faculty Consultation Log","Informal interview with students","Emails or Official correspondence","LMS Logs"],
+  q7:  ["Course Syllabus","Learning Plan","IMs developed by the faculty","Informal interview with students","Mentorship or Thesis/Dissertation Advisory records"],
+  q8:  ["Learning Plan","Course Syllabus","Classroom Observation","Informal interview with students","Lecture notes and presentations","LMS Logs"],
+  q9:  ["Course Syllabus","Learning Plan","Classroom Observation","Informal interview with students","LMS Logs","IMs developed by the faculty","Participation in Conferences, Webinars, and Training"],
+  q10: ["Course Syllabus","Learning Plan","Classroom Observation","Informal interview with students","LMS Logs","Multimedia Lecture Materials","Student Work Samples"],
+  q11: ["Course Syllabus","Learning Plan","Informal interview with students","Assessment tools and rubrics","Exam and Quiz Samples","Graded Student Work Samples","LMS records"],
+  q12: ["Course Syllabus","Learning Plan","IMs developed by the faculty","Classroom Observation","Informal interview with students"],
+  q13: ["Course Syllabus","Faculty Consultation Log","Advisory Records","LMS Logs","Emails or Official Correspondence"],
+  q14: ["Graded Student Work Samples","Assessment tools and rubrics","Informal interview with students","LMS Logs","Emails or Official Correspondence"],
+  q15: ["Faculty Consultation Log","Advising Reports","Course Syllabus","Assessment Tools and Rubrics","Informal interview with students","LMS Records","Grade Sheets and Records"],
+};
 
 const CAT_LABELS = {
   A: "A. Management of Teaching and Learning",
@@ -81,7 +100,10 @@ function computeSEFFromInputs() {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  WEIGHTED SET COMPUTATION (for reference display)
+//  WEIGHTED SET COMPUTATION
+//  (still used for the "Student SET" badge on the faculty list
+//   cards — that badge was NOT crossed out, only the in-modal
+//   reference box and improvement-areas panel were removed.)
 // ══════════════════════════════════════════════════════════════
 async function computeWeightedSET(teacherId, semesterId) {
   const { data: subjects } = await supabase
@@ -93,10 +115,6 @@ async function computeWeightedSET(teacherId, semesterId) {
   if (!subjects || subjects.length === 0) return null;
 
   let totalWeighted = 0, totalEnrolled = 0, totalRespondents = 0;
-  const catTotals = { A:0, B:0, C:0 };
-  const catCounts = { A:0, B:0, C:0 };
-  const qTotals = {}; const qCounts = {};
-  for (let i = 1; i <= 15; i++) { qTotals[`q${i}`] = 0; qCounts[`q${i}`] = 0; }
 
   for (const subject of subjects) {
     const { data: evals } = await supabase
@@ -111,17 +129,6 @@ async function computeWeightedSET(teacherId, semesterId) {
     evals.forEach(e => {
       const totalScore = Object.values(e.scores).reduce((s,v) => s+v, 0);
       sumRatings += (totalScore / 75) * 100;
-      const catA = ["q1","q2","q3","q4","q5","q6"].reduce((s,k) => s+(e.scores[k]||0), 0);
-      const catB = ["q7","q8","q9","q10","q11"].reduce((s,k) => s+(e.scores[k]||0), 0);
-      const catC = ["q12","q13","q14","q15"].reduce((s,k) => s+(e.scores[k]||0), 0);
-      catTotals.A += (catA/30)*100; catCounts.A++;
-      catTotals.B += (catB/25)*100; catCounts.B++;
-      catTotals.C += (catC/20)*100; catCounts.C++;
-      for (let i = 1; i <= 15; i++) {
-        const k = `q${i}`;
-        qTotals[k] += (e.scores[k] || 0);
-        qCounts[k]++;
-      }
     });
 
     const respondents = evals.length;
@@ -134,18 +141,8 @@ async function computeWeightedSET(teacherId, semesterId) {
 
   if (totalRespondents === 0) return null;
 
-  const qAvgs = {};
-  for (let i = 1; i <= 15; i++) {
-    const k = `q${i}`;
-    qAvgs[k] = qCounts[k] > 0 ? parseFloat((qTotals[k] / qCounts[k]).toFixed(2)) : 0;
-  }
-
   return {
     overallSET: parseFloat((totalWeighted / totalEnrolled).toFixed(2)),
-    avgA: catCounts.A > 0 ? parseFloat((catTotals.A/catCounts.A).toFixed(2)) : 0,
-    avgB: catCounts.B > 0 ? parseFloat((catTotals.B/catCounts.B).toFixed(2)) : 0,
-    avgC: catCounts.C > 0 ? parseFloat((catTotals.C/catCounts.C).toFixed(2)) : 0,
-    qAvgs,
   };
 }
 
@@ -195,9 +192,11 @@ async function loadForwardedReports() {
   container.innerHTML = "";
   for (const release of releases) {
     const teacherName = release.users?.name || "Unknown Faculty";
+    const teacherRank = release.users?.academic_rank || "";
     const isDone      = release.stage === "supervisor_done";
     const safeId      = release.teacher_id;
     const safeName    = escapeHtml(teacherName).replace(/'/g,"\\'");
+    const safeRank    = escapeHtml(teacherRank).replace(/'/g,"\\'");
 
     const card = document.createElement("div");
     card.className = "faculty-card";
@@ -216,7 +215,7 @@ async function loadForwardedReports() {
           ${isDone ? "✅ SEF Submitted" : "📋 Pending SEF"}
         </span>
         <button
-          onclick="openReview('${safeId}', '${safeName}', ${isDone})"
+          onclick="openReview('${safeId}', '${safeName}', ${isDone}, '${safeRank}')"
           ${isDone ? 'class="btn-secondary"' : ""}
           style="font-size:13px; padding:6px 14px;">
           ${isDone ? "View Submission" : "Complete SEF →"}
@@ -225,7 +224,7 @@ async function loadForwardedReports() {
     `;
     container.appendChild(card);
 
-    // Load SET score async
+    // Load SET score async (list-card badge only — unaffected by this update)
     computeWeightedSET(release.teacher_id, semester.id).then(result => {
       const el = document.getElementById(`score-${release.teacher_id}`);
       if (!el || !result) return;
@@ -235,10 +234,36 @@ async function loadForwardedReports() {
   }
 }
 
+// ── Fill College/Department + Course Code/Title from the teacher's
+//    actual subjects/sections this semester. Annex B assumes one
+//    row per course; a faculty here can have several, so we list
+//    them all rather than guessing a single one. ──
+async function populateCollegeAndCourse(teacherId) {
+  const collegeEl = document.getElementById("fi-college");
+  const courseEl  = document.getElementById("fi-course");
+  collegeEl.textContent = "—";
+  courseEl.textContent  = "—";
+  if (!activeSemester) return;
+
+  const { data: subjects } = await supabase
+    .from("subjects")
+    .select("name, sections(name, department)")
+    .eq("teacher_id", teacherId)
+    .eq("semester_id", activeSemester.id);
+
+  if (!subjects || subjects.length === 0) return;
+
+  const departments = [...new Set(subjects.map(s => s.sections?.department).filter(Boolean))];
+  const courseNames  = [...new Set(subjects.map(s => s.name).filter(Boolean))];
+
+  if (departments.length) collegeEl.textContent = departments.join(", ");
+  if (courseNames.length) courseEl.textContent  = courseNames.join(", ");
+}
+
 // ══════════════════════════════════════════════════════════════
 //  OPEN REVIEW MODAL
 // ══════════════════════════════════════════════════════════════
-async function openReview(teacherId, teacherName, isDone) {
+async function openReview(teacherId, teacherName, isDone, academicRank) {
   currentTeacherId = teacherId;
 
   document.getElementById("modal-teacher-name").textContent = teacherName;
@@ -247,32 +272,16 @@ async function openReview(teacherId, teacherName, isDone) {
   document.getElementById("sef-live-score").textContent     = "—";
   document.getElementById("sef-live-score").style.color     = "#1a56db";
 
+  // ── A. Faculty Information (1:1 copy from Annex B) ──
+  document.getElementById("fi-name").textContent     = teacherName;
+  document.getElementById("fi-rank").textContent      = academicRank || "—";
+  document.getElementById("fi-semester").textContent  = activeSemester?.label || "—";
+  document.getElementById("fi-programyear").textContent = "—"; // not tracked anywhere in the schema — see note
+  await populateCollegeAndCourse(teacherId);
+
   // Toggle form vs submitted view
   document.getElementById("review-form").style.display    = isDone ? "none" : "block";
   document.getElementById("submitted-view").style.display = isDone ? "block" : "none";
-
-  // Load SET score for reference
-  const setResult = await computeWeightedSET(teacherId, activeSemester.id);
-  if (setResult) {
-    document.getElementById("modal-catA").textContent =
-      `${setResult.avgA} / 100 — ${getRatingLabel(setResult.avgA)}`;
-    document.getElementById("modal-catB").textContent =
-      `${setResult.avgB} / 100 — ${getRatingLabel(setResult.avgB)}`;
-    document.getElementById("modal-catC").textContent =
-      `${setResult.avgC} / 100 — ${getRatingLabel(setResult.avgC)}`;
-    const overallEl = document.getElementById("modal-overall");
-    overallEl.textContent = `${setResult.overallSET} / 100`;
-    overallEl.style.color = getRatingColor(setResult.overallSET);
-
-    // Show recommendations so supervisor knows what to address in comments
-    renderSupRecommendations(setResult.avgA, setResult.avgB, setResult.avgC, setResult.qAvgs || {});
-  } else {
-    ["modal-catA","modal-catB","modal-catC","modal-overall"].forEach(id => {
-      document.getElementById(id).textContent = "No data";
-    });
-    const recPanel = document.getElementById("modal-rec-panel");
-    if (recPanel) recPanel.style.display = "none";
-  }
 
   if (isDone) {
     // Load existing submission
@@ -316,16 +325,18 @@ function buildSEFTable() {
       currentCat = q.cat;
       const catRow = document.createElement("tr");
       catRow.innerHTML = `
-        <td colspan="6" style="background:#334155; color:white; font-weight:bold; font-size:12px; padding:8px 12px; border-color:#1e293b;">
+        <td colspan="7" style="background:#334155; color:white; font-weight:bold; font-size:12px; padding:8px 12px; border-color:#1e293b;">
           ${CAT_LABELS[q.cat]}
         </td>`;
       tbody.appendChild(catRow);
     }
 
+    const means = MEANS_OF_VERIFICATION[q.id] || [];
     const row = document.createElement("tr");
     row.id = `sef-row-${q.id}`;
     row.innerHTML = `
       <td class="q-text"><b>${idx+1}.</b> ${q.text}</td>
+      <td class="means-cell"><ul>${means.map(m => `<li>${m}</li>`).join("")}</ul></td>
       ${[5,4,3,2,1].map(n => `
         <td class="r-cell">
           <input type="radio" name="sef_${q.id}" value="${n}"
@@ -352,11 +363,16 @@ function buildSEFMobileCards() {
       container.appendChild(header);
     }
 
+    const means = MEANS_OF_VERIFICATION[q.id] || [];
     const card = document.createElement("div");
     card.className = "sef-q-card";
     card.id = `sef-mcard-${q.id}`;
     card.innerHTML = `
       <div class="sef-q-text"><b>${idx+1}.</b> ${q.text}</div>
+      <div class="sef-q-means">
+        <b>Suggested Means:</b>
+        <ul>${means.map(m => `<li>${m}</li>`).join("")}</ul>
+      </div>
       <div class="sef-q-options">
         ${[5,4,3,2,1].map(n => `
           <label class="sef-q-btn" id="sef-mbtn-${q.id}-${n}">
@@ -565,72 +581,6 @@ function initCommentRows(existingText = "") {
     : [];
   const count = Math.max(lines.length, 3); // at least 3 rows
   for (let i = 0; i < count; i++) addCommentRow(lines[i] || "");
-}
-
-// ══════════════════════════════════════════════════════════════
-//  PRESET RECOMMENDATIONS (supervisor view)
-//  Same logic as teacher dashboard — helps supervisor see
-//  which areas students flagged before writing comments.
-// ══════════════════════════════════════════════════════════════
-const SUP_Q_PRESETS = {
-  q1:"Punctuality", q2:"Clarity of expectations", q3:"Time management",
-  q4:"Critical thinking activities", q5:"Student autonomy", q6:"Constructive feedback",
-  q7:"Subject knowledge", q8:"Simplifying complex ideas", q9:"Relevance to current issues",
-  q10:"Active learning & ICT", q11:"Assessment alignment", q12:"Valuing diversity",
-  q13:"Consultation support", q14:"Feedback on outputs", q15:"Transparent grading",
-};
-const SUP_CAT_QUESTIONS = {
-  A: ["q1","q2","q3","q4","q5","q6"],
-  B: ["q7","q8","q9","q10","q11"],
-  C: ["q12","q13","q14","q15"],
-};
-const SUP_CAT_NAMES = {
-  A: "A. Management of Teaching & Learning",
-  B: "B. Content Knowledge, Pedagogy & Technology",
-  C: "C. Commitment & Transparency",
-};
-
-function renderSupRecommendations(avgA, avgB, avgC, qAvgs) {
-  const panel   = document.getElementById("modal-rec-panel");
-  const body    = document.getElementById("modal-rec-body");
-  if (!panel || !body) return;
-
-  const catScores = { A: avgA, B: avgB, C: avgC };
-  const WARN = 70; const WATCH = 60;
-  let html = "";
-
-  for (const [cat, catScore] of Object.entries(catScores)) {
-    let weakestQ = null, weakestScore = Infinity;
-    for (const qId of SUP_CAT_QUESTIONS[cat]) {
-      if ((qAvgs[qId] ?? 0) < weakestScore) { weakestScore = qAvgs[qId] ?? 0; weakestQ = qId; }
-    }
-    const weakest100 = parseFloat(((weakestScore / 5) * 100).toFixed(1));
-
-    if (catScore <= WARN) {
-      const isCrit  = catScore <= 50;
-      const border  = isCrit ? "#fca5a5" : "#fcd34d";
-      const bg      = isCrit ? "#fff7f7" : "#fffbeb";
-      const icon    = isCrit ? "⚠️" : "💡";
-      html += `<div style="border:1px solid ${border}; background:${bg}; border-radius:6px;
-        padding:8px 12px; margin-bottom:8px;">
-        <b>${icon} ${SUP_CAT_NAMES[cat]}</b> — ${catScore}/100<br/>
-        <span style="color:#64748b;">Lowest item: <b>${SUP_Q_PRESETS[weakestQ]}</b> (${weakest100}/100)</span>
-      </div>`;
-    } else if (weakest100 < WATCH) {
-      html += `<div style="border:1px solid #e2e8f0; background:#f8fafc; border-radius:6px;
-        padding:8px 12px; margin-bottom:8px;">
-        <b>📌 Watch — ${SUP_CAT_NAMES[cat]}</b> — ${catScore}/100<br/>
-        <span style="color:#64748b;">One lower item: <b>${SUP_Q_PRESETS[weakestQ]}</b> (${weakest100}/100)</span>
-      </div>`;
-    }
-  }
-
-  if (!html) {
-    html = `<div style="color:#16a34a; font-size:12px;">🌟 All categories above threshold. Strong performance.</div>`;
-  }
-
-  body.innerHTML = html;
-  panel.style.display = "block";
 }
 
 // ── Events ──

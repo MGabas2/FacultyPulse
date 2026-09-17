@@ -10,283 +10,81 @@
     /* ── LAYOUT ── */
     html, body { height: 100%; margin: 0; }
     body { display: flex; flex-direction: column; overflow: hidden; }
-
-    /* ── STICKY TOP NAV ── */
-    nav {
-      position: sticky;
-      top: 0;
-      z-index: 50;
-      flex: none;
-    }
-
-    .admin-shell {
-      display: flex;
-      flex: 1;
-      min-height: 0; /* critical: lets flex children scroll independently */
-    }
-
-    /* ── SIDEBAR ── */
+    nav { position: sticky; top: 0; z-index: 50; flex: none; }
+    .admin-shell { display: flex; flex: 1; min-height: 0; }
     .sidebar {
-      width: 230px;
-      flex: none;
-      background: #1e293b;
-      display: flex;
-      flex-direction: column;
-      padding-top: 8px;
-      overflow-y: auto;
-      /* sidebar scrolls independently, doesn't move with page */
+      width: 230px; flex: none; background: #1e293b;
+      display: flex; flex-direction: column; padding-top: 8px; overflow-y: auto;
     }
-
     .sidebar-nav-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px 20px;
-      color: #94a3b8;
-      cursor: pointer;
-      font-size: 14px;
-      border: none;
-      background: none;
-      width: 100%;
-      text-align: left;
-      border-left: 3px solid transparent;
-      transition: background 0.15s, color 0.15s;
-      white-space: nowrap; /* prevent text wrapping */
+      display: flex; align-items: center; gap: 10px; padding: 12px 20px;
+      color: #94a3b8; cursor: pointer; font-size: 14px; border: none;
+      background: none; width: 100%; text-align: left;
+      border-left: 3px solid transparent; transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
     }
-
-    .sidebar-nav-item:hover {
-      background: #273447;
-      color: #e2e8f0;
-    }
-
+    .sidebar-nav-item:hover { background: #273447; color: #e2e8f0; }
     .sidebar-nav-item.active {
-      background: #273447;
-      color: #ffffff;
-      border-left-color: #1a56db;
-      font-weight: bold;
+      background: #273447; color: #ffffff; border-left-color: #671408; font-weight: bold;
     }
-
     .sidebar-nav-item .nav-icon { font-size: 15px; }
-
-    .sidebar-divider {
-      border: none;
-      border-top: 1px solid #334155;
-      margin: 8px 16px;
-    }
-
-    /* ── MAIN CONTENT ── */
+    .sidebar-divider { border: none; border-top: 1px solid #334155; margin: 8px 16px; }
     .main-content {
-      flex: 1;
-      min-height: 0;
-      overflow: hidden;
-      background: #f4f6f8;
-      display: flex;
-      flex-direction: column;
+      flex: 1; min-height: 0; overflow: hidden; background: #f4f6f8;
+      display: flex; flex-direction: column;
     }
-
     .panel { display: none; }
     .panel.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
     .panel.active:not(#panel-dashboard) { overflow-y: auto; }
     #panel-dashboard { flex: 1; min-height: 0; overflow: hidden; }
-
-    /* ── DASHBOARD: fills viewport, no scroll ── */
     .dash-wrap {
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      padding: 10px 14px;
-      box-sizing: border-box;
-      gap: 8px;
-      overflow: hidden;
+      height: 100%; display: flex; flex-direction: column; padding: 10px 14px;
+      box-sizing: border-box; gap: 8px; overflow: hidden;
     }
-
-    /* title bar */
-    .dash-title {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 17px;
-      font-weight: bold;
-      flex: none;
-    }
-
-    /* ── STAT PILLS ROW ── */
-    .icon-stats-row {
-      display: flex;
-      gap: 8px;
-      flex: none;
-    }
-
+    .dash-title { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: bold; flex: none; }
+    .icon-stats-row { display: flex; gap: 8px; flex: none; }
     .icon-stat {
-      flex: 1;
-      background: white;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      padding: 8px 12px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
+      flex: 1; background: white; border: 1px solid #e2e8f0; border-radius: 8px;
+      padding: 8px 12px; display: flex; align-items: center; gap: 10px;
     }
-
     .icon-stat .icon-circle {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 18px;
-      background: #eff6ff;
-      color: #1a56db;
-      flex-shrink: 0;
+      width: 36px; height: 36px; border-radius: 50%; display: flex;
+      align-items: center; justify-content: center; font-size: 18px;
+      background: #fdf0ee; color: #671408; flex-shrink: 0;
     }
-
     .icon-stat .icon-circle.green  { background: #f0fdf4; color: #16a34a; }
     .icon-stat .icon-circle.purple { background: #faf5ff; color: #7c3aed; }
-
     .icon-stat-text { display: flex; flex-direction: column; }
-
-    .icon-stat .icon-value {
-      font-size: 20px;
-      font-weight: 800;
-      color: #1e293b;
-      line-height: 1;
-    }
-
-    .icon-stat .icon-label {
-      font-size: 10px;
-      color: #64748b;
-      font-weight: 500;
-      margin-top: 2px;
-    }
-
+    .icon-stat .icon-value { font-size: 20px; font-weight: 800; color: #1e293b; line-height: 1; }
+    .icon-stat .icon-label { font-size: 10px; color: #64748b; font-weight: 500; margin-top: 2px; }
     .icon-stat-divider { display: none; }
-
-    /* ── MAIN BODY: left col (charts) + right col (rankings) ── */
-    .dash-body {
-      flex: 1;
-      min-height: 0;
-      display: grid;
-      grid-template-columns: 1fr 1.4fr;
-      gap: 8px;
-    }
-
-    /* LEFT: filter + two charts stacked */
-    .dash-left {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      min-height: 0;
-    }
-
-    .dash-filter-bar {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
-      flex: none;
-    }
-
-    .dash-filter-bar span {
-      font-size: 11px;
-      color: #64748b;
-      font-weight: 600;
-    }
-
-    .dash-filter-bar select {
-      font-size: 11px;
-      padding: 4px 8px;
-      width: auto;
-      min-width: 130px;
-    }
-
-    .charts-stack {
-      flex: 1;
-      min-height: 0;
-      display: grid;
-      grid-template-rows: 1fr 1fr;
-      gap: 8px;
-    }
-
+    .dash-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; }
+    .dash-left { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+    .dash-filter-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: none; }
+    .dash-filter-bar span { font-size: 11px; color: #64748b; font-weight: 600; }
+    .dash-filter-bar select { font-size: 11px; padding: 4px 8px; width: auto; min-width: 130px; }
+    .charts-stack { flex: 1; min-height: 0; display: grid; grid-template-rows: 1fr 1fr; gap: 8px; }
     .chart-card {
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: 10px 12px;
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
+      background: white; border: 1px solid #ddd; border-radius: 8px; padding: 10px 12px;
+      display: flex; flex-direction: column; min-height: 0;
     }
-
-    .chart-card h3 {
-      margin: 0 0 6px;
-      font-size: 11px;
-      color: #374151;
-      font-weight: 600;
-      flex: none;
-    }
-
-    .chart-wrapper {
-      position: relative;
-      flex: 1;
-      min-height: 0;
-    }
-
-    /* RIGHT: rankings + ifer stacked */
-    .dash-right {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      min-height: 0;
-    }
-
+    .chart-card h3 { margin: 0 0 6px; font-size: 11px; color: #374151; font-weight: 600; flex: none; }
+    .chart-wrapper { position: relative; flex: 1; min-height: 0; }
+    .dash-right { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
     .rankings-full {
-      flex: 1;
-      min-height: 0;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: 10px 12px;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
+      flex: 1; min-height: 0; background: white; border: 1px solid #ddd; border-radius: 8px;
+      padding: 10px 12px; display: flex; flex-direction: column; overflow: hidden;
     }
-
-    .rankings-full h3 {
-      font-size: 12px;
-      margin: 0 0 8px;
-      flex: none;
-      font-weight: 600;
-    }
-
-    .rankings-scroll {
-      flex: 1;
-      overflow: hidden;
-      min-height: 0;
-    }
-
+    .rankings-full h3 { font-size: 12px; margin: 0 0 8px; flex: none; font-weight: 600; }
+    .rankings-scroll { flex: 1; overflow: hidden; min-height: 0; }
     .rankings-full table { font-size: 11px; width: 100%; }
     .rankings-full th, .rankings-full td { padding: 5px 7px; }
-
     .rankings-footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-top: 6px;
-      flex-wrap: wrap;
-      gap: 4px;
-      flex: none;
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 6px; flex-wrap: wrap; gap: 4px; flex: none;
     }
-
-
-
-    /* old classes kept for compat */
     .rankings-col table { font-size: 11px; }
     .rankings-col th, .rankings-col td { padding: 5px 7px; }
-    .chart-card h3 { margin-bottom: 6px; }
-    .chart-wrapper { position: relative; }
-
-    /* ── RESPONSIVE: stack on smaller screens ── */
     @media (max-width: 900px) {
       .dash-wrap { overflow-y: auto; }
       .dash-body { grid-template-columns: 1fr; }
@@ -294,206 +92,88 @@
       .chart-wrapper { height: 180px; }
       .rankings-scroll { overflow: hidden; }
     }
-
     @media (max-width: 600px) {
       .icon-stats-row { flex-direction: column; }
       .icon-stat { padding: 6px 10px; }
       .dash-filter-bar select { min-width: 100px; }
     }
-
-    /* ── OTHER PANELS ── */
-    .container {
-      max-width: 1000px;
-      margin: 0 auto;
-      padding: 20px;
-    }
-
-    /* ── USER MANAGEMENT ── */
-    .toolbar {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
-    }
+    .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
+    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
     .toolbar input[type="text"] { width: 200px; }
     .toolbar select { width: auto; }
     .sort-btn {
-      background: white;
-      color: #1a56db;
-      border: 1px solid #1a56db;
-      padding: 7px 14px;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 13px;
+      background: white; color: #671408; border: 1px solid #671408;
+      padding: 7px 14px; border-radius: 5px; cursor: pointer; font-size: 13px;
     }
-    .sort-btn.active { background: #1a56db; color: white; }
+    .sort-btn.active { background: #671408; color: white; }
     .sort-arrow { font-size: 11px; margin-left: 4px; }
     .modal-box h3 { margin-bottom: 16px; }
     .role-fields { margin-top: 8px; }
-
-    /* ── MONITORING FILTER BAR (clean grid layout) ── */
-    .filter-bar {
-      background: white;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      padding: 14px 16px;
-      margin-bottom: 14px;
-    }
-
+    .filter-bar { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
     .filter-bar-search { margin-bottom: 10px; }
     .filter-bar-search input[type="text"] { width: 100%; }
-
-    .filter-bar-grid {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr) auto;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .filter-bar-grid select,
-    .filter-bar-grid input[type="text"] {
-      width: 100%;
-      font-size: 13px;
-      padding: 7px 10px;
-    }
-
-    .filter-bar-footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-top: 10px;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    @media (max-width: 950px) {
-      .filter-bar-grid { grid-template-columns: repeat(3, 1fr); }
-    }
-    @media (max-width: 600px) {
-      .filter-bar-grid { grid-template-columns: repeat(2, 1fr); }
-    }
-    @media (max-width: 420px) {
-      .filter-bar-grid { grid-template-columns: 1fr; }
-    }
-
-    /* Sort buttons group — wraps on small screens */
-    .sort-group {
-      display: flex;
-      gap: 5px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    .sort-group .sort-label {
-      font-size: 11px;
-      color: #94a3b8;
-      white-space: nowrap;
-    }
-
-    /* ── MONITORING ── */
+    .filter-bar-grid { display: grid; grid-template-columns: repeat(5, 1fr) auto; gap: 8px; align-items: center; }
+    .filter-bar-grid select, .filter-bar-grid input[type="text"] { width: 100%; font-size: 13px; padding: 7px 10px; }
+    .filter-bar-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; flex-wrap: wrap; gap: 8px; }
+    @media (max-width: 950px) { .filter-bar-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 600px) { .filter-bar-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 420px) { .filter-bar-grid { grid-template-columns: 1fr; } }
+    .sort-group { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+    .sort-group .sort-label { font-size: 11px; color: #94a3b8; white-space: nowrap; }
     .search-row { margin-bottom: 10px; }
     .search-row input[type="text"] { width: 100%; max-width: 320px; }
-    .toolbar #row-count,
-    .toolbar #comments-count { margin-left: auto; flex: none; }
-
+    .toolbar #row-count, .toolbar #comments-count { margin-left: auto; flex: none; }
     .badge.submitted   { background:#d1fae5; color:#065f46; }
     .badge.not-submitted { background:#fef3c7; color:#92400e; }
     .badge.never-login { background:#fee2e2; color:#991b1b; }
-
-    .monitor-cards {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
-    }
+    .monitor-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
     .monitor-card {
-      flex: 1;
-      min-width: 130px;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: 12px;
-      text-align: center;
+      flex: 1; min-width: 130px; background: white; border: 1px solid #ddd;
+      border-radius: 8px; padding: 12px; text-align: center;
     }
     .monitor-card .num { font-size: 22px; font-weight: bold; }
     .monitor-card .lbl { font-size: 12px; color: #64748b; margin-top: 4px; }
     .progress-bar { height: 6px; background: #e2e8f0; border-radius: 4px; overflow: hidden; margin-top: 6px; }
     .progress-fill { height: 100%; background: #16a34a; transition: width 0.3s; }
     .last-login-cell { font-size: 12px; color: #475569; }
-
-    .view-tabs {
-      display: flex; gap: 8px;
-      margin: 12px 0 16px;
-      border-bottom: 2px solid #e2e8f0;
-    }
+    .view-tabs { display: flex; gap: 8px; margin: 12px 0 16px; border-bottom: 2px solid #e2e8f0; }
     .view-tab {
       padding: 8px 16px; border: none; background: none; cursor: pointer;
       font-size: 14px; font-weight: 600; color: #64748b;
       border-bottom: 3px solid transparent; margin-bottom: -2px;
     }
-    .view-tab.active { color: #1a56db; border-bottom-color: #1a56db; }
+    .view-tab.active { color: #671408; border-bottom-color: #671408; }
     .view-tab:hover:not(.active) { color: #1e293b; }
-
     .faculty-group { margin-bottom: 24px; }
     .faculty-group > h3 {
-      font-size: 15px; color: #1e293b; margin: 0 0 6px;
-      padding: 8px 12px; background: #f1f5f9;
-      border-left: 4px solid #1a56db; border-radius: 4px;
+      font-size: 15px; color: #1e293b; margin: 0 0 6px; padding: 8px 12px;
+      background: #f1f5f9; border-left: 4px solid #671408; border-radius: 4px;
     }
     .subject-group { margin: 12px 0 12px 8px; }
-    .subject-group > h4 {
-      font-size: 13px; color: #475569; margin: 0 0 6px;
-      padding-bottom: 4px; border-bottom: 1px solid #e2e8f0;
-    }
-    .comment-card {
-      background: white; border: 1px solid #e2e8f0; border-radius: 8px;
-      padding: 10px 12px; margin-bottom: 8px;
-    }
+    .subject-group > h4 { font-size: 13px; color: #475569; margin: 0 0 6px; padding-bottom: 4px; border-bottom: 1px solid #e2e8f0; }
+    .comment-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
     .comment-card .c-text { font-size: 13px; color: #334155; line-height: 1.5; }
-
-    /* ── PAGINATION ── */
     .page-btn {
-      min-width: 32px;
-      padding: 5px 9px;
-      border: 1px solid #d1d5db;
-      background: white;
-      color: #374151;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 13px;
-      font-family: Arial, sans-serif;
+      min-width: 32px; padding: 5px 9px; border: 1px solid #d1d5db; background: white;
+      color: #374151; border-radius: 6px; cursor: pointer; font-size: 13px; font-family: Arial, sans-serif;
     }
-    .page-btn:hover:not(:disabled) { border-color: #1a56db; color: #1a56db; }
-    .page-btn.active { background: #1a56db; border-color: #1a56db; color: white; font-weight: bold; }
+    .page-btn:hover:not(:disabled) { border-color: #671408; color: #671408; }
+    .page-btn.active { background: #671408; border-color: #671408; color: white; font-weight: bold; }
     .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    /* ── PRINT ── */
-    /* ── Hide scrollbar in report modal (screen only) — keeps scroll functional ── */
-    #report-modal .modal-box {
-      scrollbar-width: none;       /* Firefox */
-      -ms-overflow-style: none;    /* old Edge/IE */
-    }
-    #report-modal .modal-box::-webkit-scrollbar {
-      display: none;               /* Chrome, Safari, new Edge */
-    }
-
+    #report-modal .modal-box { scrollbar-width: none; -ms-overflow-style: none; }
+    #report-modal .modal-box::-webkit-scrollbar { display: none; }
     @media print {
-      /* Suppress browser default header/footer (date, URL, page number) */
       @page { margin: 15mm; }
-
       #report-content, #report-content * {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
         color: #000 !important;
       }
-
       nav, .sidebar, .no-print { display: none !important; }
       .print-section { display: block !important; }
       body { overflow: visible !important; }
-
       .panel, #add-modal, #delete-modal, #edit-modal, #archive-modal,
       #fedaf-view-modal, #change-password-modal { display: none !important; }
-
       #report-modal {
         position: static !important; background: none !important;
         display: block !important; overflow: visible !important;
@@ -502,58 +182,27 @@
         box-shadow: none !important; max-width: 100% !important;
         width: 100% !important; max-height: none !important;
         overflow: visible !important; padding: 0 !important;
-        border: none !important; border-radius: 0 !important;
-        display: block !important;
+        border: none !important; border-radius: 0 !important; display: block !important;
       }
-
-      #report-content {
-        overflow: visible !important;
-        padding: 0 !important;
+      #report-content { overflow: visible !important; padding: 0 !important; }
+      #report-content th, #report-content td {
+        background: #ffffff !important; color: #000000 !important; border: 1px solid #000 !important;
       }
-
-      /* All table cells — plain black borders, white background */
-      #report-content th,
-      #report-content td {
-        background: #ffffff !important;
-        color: #000000 !important;
-        border: 1px solid #000 !important;
-      }
-
-      /* Faculty info rows (Section A) — no visible borders, like plain text */
-      #report-content td[style*="border:none"] {
-        border: none !important;
-      }
-
-      /* Exception: dark header cells (SUPERVISOR/FACULTY in FEDAF) keep dark bg */
-      #report-content th[style*="background:#333"] {
-        background: #333 !important;
-        color: #fff !important;
-      }
-
+      #report-content td[style*="border:none"] { border: none !important; }
+      #report-content th[style*="background:#333"] { background: #333 !important; color: #fff !important; }
       #report-content table { page-break-inside: auto; }
       #report-content tr    { page-break-inside: avoid; }
-
-      /* Page break before Annex D */
-      #report-content [style*="page-break-before:always"],
-      #annex-d-section {
-        page-break-before: always !important;
-      }
-
-      /* Keep prepared/reviewed blocks together */
-      #report-content [style*="page-break-inside:avoid"],
-      #report-content [style*="break-inside:avoid"] {
-        page-break-inside: avoid !important;
-        break-inside: avoid !important;
+      #report-content [style*="page-break-before:always"], #annex-d-section { page-break-before: always !important; }
+      #report-content [style*="page-break-inside:avoid"], #report-content [style*="break-inside:avoid"] {
+        page-break-inside: avoid !important; break-inside: avoid !important;
       }
     }
-
     #report-content, #report-content td, #report-content p, #report-content tr { color: #1e293b; }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
-  <!-- TOP NAV (sticky) -->
   <nav>
     <span><b>FacultyPulse</b> — Admin Portal</span>
     <div>
@@ -563,8 +212,6 @@
   </nav>
 
   <div class="admin-shell">
-
-    <!-- SIDEBAR -->
     <aside class="sidebar">
       <button class="sidebar-nav-item active" data-panel="panel-dashboard" id="nav-dashboard">
         <span class="nav-icon">📊</span> Dashboard
@@ -590,19 +237,12 @@
         <span class="nav-icon">🎓</span> Subject Assignment
       </button>
       <hr class="sidebar-divider" />
-
     </aside>
 
-    <!-- MAIN CONTENT (scrolls independently) -->
     <div class="main-content" id="main-content">
 
-      <!-- ══════════════════════════════════════════ -->
-      <!-- PANEL: DASHBOARD                          -->
-      <!-- ══════════════════════════════════════════ -->
       <div id="panel-dashboard" class="panel active">
         <div class="dash-wrap">
-
-          <!-- Title + Stats Row -->
           <div class="dash-title">
             Admin Dashboard
             <button id="refresh-btn" style="font-size:11px; padding:4px 10px;">🔄 Refresh</button>
@@ -611,7 +251,6 @@
             </button>
           </div>
 
-          <!-- Stat Pills -->
           <div class="icon-stats-row">
             <div class="icon-stat">
               <div class="icon-circle">🏛️</div>
@@ -636,13 +275,8 @@
             </div>
           </div>
 
-          <!-- Main Body: Left (charts) + Right (rankings) -->
           <div class="dash-body">
-
-            <!-- LEFT COLUMN -->
             <div class="dash-left">
-
-              <!-- Filter bar -->
               <div class="dash-filter-bar">
                 <span>Filter by:</span>
                 <select id="dash-program-filter">
@@ -653,7 +287,6 @@
                 </select>
               </div>
 
-              <!-- Charts stacked -->
               <div class="charts-stack">
                 <div class="chart-card">
                   <h3>📊 Faculty SET Rating Comparison (out of 100)</h3>
@@ -668,13 +301,9 @@
                   </div>
                 </div>
               </div>
-
             </div><!-- /dash-left -->
 
-            <!-- RIGHT COLUMN -->
             <div class="dash-right">
-
-              <!-- Rankings -->
               <div class="rankings-full">
                 <h3 style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
                   <span>Faculty Rankings — Active Semester</span>
@@ -704,42 +333,35 @@
                 </div>
               </div>
 
-              <!-- IFER Generator -->
-<div class="ifer-row" id="ifer-section">
-  <h3>📄 Generate IFER</h3>
-  <p>Individual Faculty Evaluation Report per CMO No. 19, s. 2025 (Annex C). <b>Student identities encrypted.</b></p>
-  <div class="ifer-controls" style="display:flex; flex-wrap:nowrap; gap:6px; align-items:center;">
-    <input type="text" id="report-faculty-filter" placeholder="🔍 Search..."
-      autocomplete="off"
-      style="flex:1 1 0; min-width:0; width:auto; font-size:12px; padding:6px 8px;" />
-    <select id="report-faculty"
-      style="flex:1.3 1 0; min-width:0; width:auto; font-size:12px; padding:6px 8px;">
-      <option value="">— select faculty —</option>
-    </select>
-    <button id="generate-report-btn"
-      style="flex:0 0 auto; white-space:nowrap; font-size:12px; padding:6px 12px;">
-      Generate IFER
-    </button>
-  </div>
-</div>
+              <div class="ifer-row" id="ifer-section">
+                <h3>📄 Generate IFER</h3>
+                <p>Individual Faculty Evaluation Report per CMO No. 19, s. 2025 (Annex C). <b>Student identities encrypted.</b></p>
+                <div class="ifer-controls" style="display:flex; flex-wrap:nowrap; gap:6px; align-items:center;">
+                  <input type="text" id="report-faculty-filter" placeholder="🔍 Search..."
+                    autocomplete="off"
+                    style="flex:1 1 0; min-width:0; width:auto; font-size:12px; padding:6px 8px;" />
+                  <select id="report-faculty"
+                    style="flex:1.3 1 0; min-width:0; width:auto; font-size:12px; padding:6px 8px;">
+                    <option value="">— select faculty —</option>
+                  </select>
+                  <button id="generate-report-btn"
+                    style="flex:0 0 auto; white-space:nowrap; font-size:12px; padding:6px 12px;">
+                    Generate IFER
+                  </button>
+                </div>
+              </div>
             </div><!-- /dash-right -->
-
           </div><!-- /dash-body -->
-
         </div>
       </div><!-- /panel-dashboard -->
 
 
-      <!-- ══════════════════════════════════════════ -->
-      <!-- PANEL: USER MANAGEMENT                    -->
-      <!-- ══════════════════════════════════════════ -->
       <div id="panel-users" class="panel">
         <div class="container">
           <h2>User Management</h2>
           <p style="color:#666; margin-bottom:16px;">Add, view, and manage all system users.</p>
 
           <div class="section">
-            <!-- Row 1: Search + Import + Add User -->
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
               <input type="text" id="search-input" placeholder="🔍 Search name or ID..."
                 style="flex:1;" />
@@ -750,7 +372,6 @@
               <input type="file" id="import-file-input" accept=".xlsx" style="display:none;" />
               <button id="add-user-btn" style="flex:none; white-space:nowrap;">+ Add User</button>
             </div>
-            <!-- Row 2: Sort + Filters -->
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
               <button class="sort-btn active" id="sort-az-btn" onclick="toggleSortDir()"
                 style="font-size:12px; padding:6px 10px; white-space:nowrap; flex:none;">
@@ -797,7 +418,6 @@
         </div>
       </div><!-- /panel-users -->
 
-      <!-- Import Results Modal (shared by both User Management surfaces) -->
       <div id="import-modal" class="modal hidden">
         <div class="modal-box" style="max-width:520px;">
           <h3>📥 Import Students</h3>
@@ -831,9 +451,6 @@
       </div>
 
 
-      <!-- ══════════════════════════════════════════ -->
-      <!-- PANEL: SUBMISSION MONITORING              -->
-      <!-- ══════════════════════════════════════════ -->
       <div id="panel-monitoring" class="panel">
         <div class="container">
           <h2 style="display:flex; align-items:center; gap:10px;">
@@ -850,7 +467,7 @@
           <div id="view-monitoring">
             <div class="monitor-cards">
               <div class="monitor-card">
-                <div class="num" id="card-total" style="color:#1a56db;">—</div>
+                <div class="num" id="card-total" style="color:#671408;">—</div>
                 <div class="lbl">Total Students</div>
               </div>
               <div class="monitor-card">
@@ -938,14 +555,10 @@
               </div>
             </div>
           </div><!-- /view-comments -->
-
         </div>
       </div><!-- /panel-monitoring -->
 
 
-      <!-- ══════════════════════════════════════════ -->
-      <!-- PANEL: PRINT HISTORY                      -->
-      <!-- ══════════════════════════════════════════ -->
       <div id="panel-history" class="panel">
         <div class="container">
           <h2 style="display:flex; align-items:center; gap:10px; margin-top:24px;">
@@ -986,9 +599,6 @@
         </div>
       </div><!-- /panel-history -->
 
-      <!-- ══════════════════════════════════════════ -->
-      <!-- PANEL: EMAIL CHANGE REQUESTS              -->
-      <!-- ══════════════════════════════════════════ -->
       <div id="panel-email-requests" class="panel">
         <div class="container">
           <h2 style="display:flex; align-items:center; gap:10px; margin-top:24px;">
@@ -1030,9 +640,6 @@
         </div>
       </div><!-- /panel-email-requests -->
 
-      <!-- ══════════════════════════════════════════ -->
-      <!-- PANEL: SEMESTER MANAGEMENT                -->
-      <!-- ══════════════════════════════════════════ -->
       <div id="panel-semesters" class="panel">
         <div class="container">
           <h2 style="display:flex; align-items:center; gap:10px; margin-top:24px;">
@@ -1064,7 +671,7 @@
               </div>
               <div style="flex:none;">
                 <p style="font-size:11px; color:#64748b; margin:0 0 4px;">Preview</p>
-                <p id="new-sem-preview" style="font-size:13px; font-weight:600; color:#1a56db; margin:0; padding:7px 0;">—</p>
+                <p id="new-sem-preview" style="font-size:13px; font-weight:600; color:#671408; margin:0; padding:7px 0;">—</p>
               </div>
               <button id="create-semester-btn" style="flex:none; padding:7px 16px;">
                 Create Semester
@@ -1091,9 +698,6 @@
         </div>
       </div><!-- /panel-semesters -->
 
-      <!-- ══════════════════════════════════════════ -->
-      <!-- PANEL: SUBJECT ASSIGNMENT                 -->
-      <!-- ══════════════════════════════════════════ -->
       <div id="panel-subjects" class="panel">
         <div class="container">
           <h2 style="display:flex; align-items:center; gap:10px; margin-top:24px;">
@@ -1119,7 +723,6 @@
             </div>
             <p id="subject-assign-count" style="font-size:12px; color:#64748b; margin-bottom:10px;"></p>
 
-            <!-- Bulk assign bar — only visible when rows are selected -->
             <div id="subject-assign-bulkbar" style="display:none; align-items:center; gap:10px; flex-wrap:wrap;
               background:#eff6ff; border:1px solid #93c5fd; border-radius:8px; padding:10px 14px; margin-bottom:12px;">
               <span style="font-size:13px; color:#1e40af;">
@@ -1157,18 +760,12 @@
   </div><!-- /admin-shell -->
 
 
-  <!-- ══════════════════════════════════════════ -->
-  <!-- MODALS                                    -->
-  <!-- ══════════════════════════════════════════ -->
-
   <div id="report-modal" class="modal hidden">
     <div class="modal-box print-section" style="max-width:780px; width:95vw;
       display:flex; flex-direction:column; padding:0; overflow:hidden;">
 
-      <!-- Scrollable report content -->
       <div id="report-content" style="flex:1; overflow-y:auto; padding:24px 28px;"></div>
 
-      <!-- Sticky button bar — always visible at bottom of modal -->
       <div class="no-print" style="
         padding:14px 20px;
         border-top:1px solid #e2e8f0;
@@ -1176,7 +773,7 @@
         display:flex; gap:10px; flex-wrap:wrap; align-items:center;
         flex-shrink:0;">
         <button id="release-btn" style="background:#16a34a;">📤 Release to Faculty</button>
-        <button id="print-both-btn" style="background:#1a56db;">🖨 Print Both</button>
+        <button id="print-both-btn" style="background:#475569;">🖨 Print Both</button>
         <button id="print-annexc-btn" style="background:#0e7490;">Print Annex C</button>
         <button id="print-annexd-btn" style="background:#7c3aed;">Print Annex D</button>
         <button id="pdf-btn" style="background:#0f172a;">💾 Save as PDF</button>
@@ -1250,10 +847,9 @@
     </div>
   </div>
 
-  <!-- Edit User Modal -->
   <div id="edit-modal" class="modal hidden">
     <div class="modal-box" style="max-width:480px;">
-      <h3>Edit User — <span id="edit-role-display" style="color:#1a56db;"></span></h3>
+      <h3>Edit User — <span id="edit-role-display" style="color:#671408;"></span></h3>
 
       <div class="form-group" id="edit-name-row">
         <label>Full Name</label>
@@ -1300,7 +896,6 @@
     </div>
   </div>
 
-  <!-- Archive Modal (soft-delete — data preserved) -->
   <div id="archive-modal" class="modal hidden">
     <div class="modal-box">
       <h3>📦 Archive User</h3>
@@ -1317,7 +912,6 @@
     </div>
   </div>
 
-  <!-- Reject Email Request Modal — requires a stated reason per QA -->
   <div id="reject-email-modal" class="modal hidden">
     <div class="modal-box">
       <h3>❌ Reject Email Request</h3>
@@ -1338,9 +932,6 @@
   </div>
 
 
-  <!-- ══════════════════════════════════════════ -->
-  <!-- SIDEBAR CONTROLLER                        -->
-  <!-- ══════════════════════════════════════════ -->
   <script>
     const loaded = { dashboard: true, users: false, monitoring: false };
 
@@ -1352,19 +943,13 @@
     }
 
     function switchPanel(targetPanelId) {
-      // Hide all panels, show target
       document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
       document.getElementById(targetPanelId).classList.add("active");
-
-      // Scroll main content back to top on panel switch
       document.getElementById("main-content").scrollTop = 0;
-
-      // Update sidebar active state
       document.querySelectorAll(".sidebar-nav-item").forEach(btn => btn.classList.remove("active"));
       const activeBtn = document.querySelector(`[data-panel="${targetPanelId}"]`);
       if (activeBtn) activeBtn.classList.add("active");
 
-      // Lazy-load JS on first visit
       if (targetPanelId === "panel-users" && !loaded.users) {
         loaded.users = true;
         injectScript("../js/admin-users.js");
@@ -1375,7 +960,6 @@
       }
     }
 
-    // Regular nav items
     document.getElementById("nav-dashboard").addEventListener("click", () => switchPanel("panel-dashboard"));
     document.getElementById("nav-users").addEventListener("click", () => switchPanel("panel-users"));
     document.getElementById("nav-monitoring").addEventListener("click", () => switchPanel("panel-monitoring"));
@@ -1383,8 +967,6 @@
     document.getElementById("nav-email-requests").addEventListener("click", () => switchPanel("panel-email-requests"));
     document.getElementById("nav-semesters").addEventListener("click", () => switchPanel("panel-semesters"));
     document.getElementById("nav-subjects").addEventListener("click", () => switchPanel("panel-subjects"));
-
-
   </script>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>

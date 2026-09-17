@@ -257,20 +257,6 @@
       margin: 14px 0 8px;
     }
 
-    /* ── RATING LEGEND ── */
-    .rating-legend {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      padding: 10px 14px;
-      border-radius: 6px;
-      margin-bottom: 14px;
-      font-size: 11px;
-      color: #475569;
-    }
-
     /* ── ANONYMITY NOTICE ── */
     .anon-notice {
       background: #f0fdf4;
@@ -396,7 +382,6 @@
         overflow-y: auto !important;
       }
 
-      .rating-legend { font-size: 10px; gap: 6px; }
       #submit-all-btn {
         width: 100%; padding: 14px;
         font-size: 16px; min-height: 50px;
@@ -546,14 +531,14 @@
           🔒 Your evaluation is <b>completely anonymous</b>. Your identity cannot be traced back to you.
         </div>
 
-        <div class="rating-legend">
-          <b>Scale:</b>
-          <span><b>5</b> — Always (91–100%)</span>
-          <span><b>4</b> — Often (61–90%)</span>
-          <span><b>3</b> — Sometimes (31–60%)</span>
-          <span><b>2</b> — Seldom (11–30%)</span>
-          <span><b>1</b> — Never (0–10%)</span>
-        </div>
+        <!-- A. Faculty Information — filled in by openEval() per subject -->
+        <div id="eval-section-a"></div>
+
+        <!-- B. Rating Scale — full table, filled in by openEval() -->
+        <div id="eval-section-b"></div>
+
+        <!-- C. Instruction — filled in by openEval() -->
+        <div id="eval-instruction"></div>
 
         <!-- DESKTOP -->
         <div class="desktop-questions">

@@ -28,21 +28,27 @@
     /* ── SEF MODAL ── */
     .sef-modal-box {
       background:white; border-radius:10px; padding:24px 28px;
-      max-width:760px; width:95vw; max-height:92vh; overflow-y:auto;
+      max-width:900px; width:95vw; max-height:92vh; overflow-y:auto;
     }
 
-    /* SET summary read-only */
-    .set-summary {
-      background:#f8fafc; border:1px solid #e2e8f0;
-      border-radius:8px; padding:14px 16px; margin-bottom:20px;
+    /* A. Faculty Information */
+    .faculty-info-box {
+      background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;
+      padding:14px 16px; margin-bottom:16px;
     }
-    .set-summary h4 { font-size:12px; color:#475569; text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px; }
-    .cat-row { display:flex; justify-content:space-between; font-size:13px; padding:4px 0; border-bottom:1px solid #f1f5f9; }
-    .cat-row:last-child { border-bottom:none; }
-    .cat-score { font-weight:bold; }
-    .overall-row { display:flex; justify-content:space-between; align-items:center; margin-top:10px; padding-top:10px; border-top:2px solid #e2e8f0; }
-    .overall-row .label { font-weight:bold; font-size:14px; }
-    .overall-row .value { font-size:22px; font-weight:bold; }
+    .faculty-info-box h4 {
+      font-size:12px; color:#475569; text-transform:uppercase;
+      letter-spacing:.04em; margin-bottom:10px;
+    }
+    .fi-row {
+      display:grid; grid-template-columns:210px 12px 1fr;
+      font-size:13px; color:#1e293b; padding:3px 0;
+    }
+    .fi-label { color:#475569; }
+
+    @media (max-width: 640px) {
+      .fi-row { grid-template-columns:150px 10px 1fr; font-size:12px; }
+    }
 
     /* SEF table */
     .sef-section-header {
@@ -55,9 +61,13 @@
       background:#1a56db; color:white; padding:8px 10px;
       text-align:center; border:1px solid #1447b8; font-size:12px;
     }
-    .sef-table th.q-col { text-align:left; width:55%; }
+    .sef-table th.q-col { text-align:left; width:38%; }
+    .sef-table th.means-col { text-align:left; width:32%; }
     .sef-table td { padding:8px 10px; border:1px solid #e2e8f0; vertical-align:middle; }
     .sef-table td.q-text { text-align:left; line-height:1.5; color:#1e293b; }
+    .sef-table td.means-cell { text-align:left; font-size:11.5px; color:#475569; vertical-align:top; }
+    .sef-table td.means-cell ul { margin:0; padding-left:16px; }
+    .sef-table td.means-cell li { margin-bottom:2px; }
     .sef-table td.r-cell { text-align:center; }
     .sef-table input[type=radio] { width:16px; height:16px; cursor:pointer; accent-color:#1a56db; }
     .sef-table tbody tr:nth-child(even) { background:#f8fafc; }
@@ -149,7 +159,10 @@
       padding:12px 14px; margin-bottom:8px;
     }
     .sef-q-card.unanswered { border-color:#fca5a5; background:#fef2f2; }
-    .sef-q-text { font-size:13px; color:#1e293b; margin-bottom:10px; line-height:1.5; }
+    .sef-q-text { font-size:13px; color:#1e293b; margin-bottom:8px; line-height:1.5; }
+    .sef-q-means { font-size:11px; color:#64748b; margin-bottom:10px; }
+    .sef-q-means ul { margin:2px 0 0; padding-left:16px; }
+    .sef-q-means li { margin-bottom:2px; }
     .sef-q-options { display:flex; gap:6px; justify-content:space-between; }
     .sef-q-btn {
       flex:1; padding:10px 4px; border:1.5px solid #e2e8f0;
@@ -231,34 +244,15 @@
       <h3 id="modal-teacher-name" style="margin-bottom:4px;">—</h3>
       <p id="modal-semester" style="font-size:13px; color:#64748b; margin-bottom:14px;">—</p>
 
-      <!-- SET Summary (read-only reference) -->
-      <div class="set-summary">
-        <h4>📊 Student SET Score (Reference)</h4>
-        <div class="cat-row">
-          <span>A. Management of Teaching &amp; Learning</span>
-          <span class="cat-score" id="modal-catA">—</span>
-        </div>
-        <div class="cat-row">
-          <span>B. Content Knowledge, Pedagogy &amp; Technology</span>
-          <span class="cat-score" id="modal-catB">—</span>
-        </div>
-        <div class="cat-row">
-          <span>C. Commitment &amp; Transparency</span>
-          <span class="cat-score" id="modal-catC">—</span>
-        </div>
-        <div class="overall-row">
-          <span class="label">Overall Student SET Rating</span>
-          <span class="value" id="modal-overall">—</span>
-        </div>
-      </div>
-
-      <!-- Preset Recommendations (faculty improvement areas) -->
-      <div id="modal-rec-panel" style="display:none; margin-bottom:20px;">
-        <div style="font-size:12px; font-weight:bold; color:#475569; text-transform:uppercase;
-          letter-spacing:.04em; margin-bottom:8px;">
-          📋 Faculty Improvement Areas (from SET scores)
-        </div>
-        <div id="modal-rec-body" style="font-size:12px;"></div>
+      <!-- A. Faculty Information — 1:1 copy from Annex B -->
+      <div class="faculty-info-box">
+        <h4>A. Faculty Information</h4>
+        <div class="fi-row"><span class="fi-label">Name of Faculty being Evaluated</span><span>:</span><span id="fi-name">—</span></div>
+        <div class="fi-row"><span class="fi-label">Academic Rank</span><span>:</span><span id="fi-rank">—</span></div>
+        <div class="fi-row"><span class="fi-label">College/Department</span><span>:</span><span id="fi-college">—</span></div>
+        <div class="fi-row"><span class="fi-label">Course Code/Title</span><span>:</span><span id="fi-course">—</span></div>
+        <div class="fi-row"><span class="fi-label">Program Year</span><span>:</span><span id="fi-programyear">—</span></div>
+        <div class="fi-row"><span class="fi-label">Semester or Term/Academic Year</span><span>:</span><span id="fi-semester">—</span></div>
       </div>
 
       <!-- ── SUBMITTED VIEW (read-only after submission) ── -->
@@ -303,6 +297,7 @@
           <thead>
             <tr>
               <th class="q-col">Benchmark Statements</th>
+              <th class="means-col">Suggested Means for Verification</th>
               <th>5</th><th>4</th><th>3</th><th>2</th><th>1</th>
             </tr>
           </thead>

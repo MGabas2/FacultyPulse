@@ -23,6 +23,7 @@ document.getElementById("welcome-name").textContent = studentName !== studentId
 document.getElementById("nav-user").textContent = "Logged in as: " + studentId;
 
 maybeShowEmailNudge();
+checkEmailRejection();
 
 // ══════════════════════════════════════════════════════════════
 //  OFFICIAL SET QUESTIONS — CMO No. 19, s. 2025 (Annex A)
@@ -45,6 +46,33 @@ const QUESTIONS = [
   { id: "q15", category: "C. Commitment and Transparency", text: "Provides transparent and clear criteria in rating student's performance." },
 ];
 
+// ── Category description paragraphs — exact text from Annex A ──
+const CATEGORY_DESCRIPTIONS = {
+  "A. Management of Teaching and Learning":
+    "Management of Teaching and Learning refers to the intentional and organized handling of classroom presence, clear communication of academic expectations, efficient use of time, and the purposeful use of student-centered activities that promote critical thinking, independent learning, reflection, decision-making, and continuous academic improvement through constructive feedback.",
+  "B. Content Knowledge, Pedagogy and Technology":
+    "Content Knowledge, Pedagogy, and Technology refer to a teacher's ability to demonstrate a strong grasp of subject matter, present complex concepts in a clear and accessible way, relate content to real-world contexts and current developments, engage students through appropriate instructional strategies and digital tools, and apply assessment methods aligned with intended learning outcomes.",
+  "C. Commitment and Transparency":
+    "Commitment and Transparency refer to the teacher's consistent dedication to supporting student learning by acknowledging learner diversity, offering timely academic support and feedback, and upholding fairness and accountability through the use of clear and openly communicated performance criteria.",
+};
+
+// ── B. Rating Scale — exact text from Annex A ──
+const RATING_SCALE_ROWS = [
+  { scale: 5, label: "Always manifested",       def: "Evident in nearly all relevant situations (91–100% of instances)." },
+  { scale: 4, label: "Often manifested",        def: "Evident most of the time, with occasional lapses (61–90%)." },
+  { scale: 3, label: "Sometimes manifested",    def: "Evident about half the time (31–60%)." },
+  { scale: 2, label: "Seldom manifested",       def: "Infrequently Demonstrated: Rarely evident in relevant situations (11–30%)." },
+  { scale: 1, label: "Never/Rarely manifested", def: "Seldom Demonstrated: Almost never evident, with only isolated cases (0–10%)." },
+];
+
+// Best-effort parse of the year level out of a section name built as
+// "{Program}-{YearLevel}-{AcademicYear}" (the convention used by the
+// XLSX import). Falls back gracefully if the name doesn't match.
+function parseYearLevel(sectionName) {
+  const parts = String(sectionName || "").split("-");
+  return parts.length >= 2 ? parts[1] : "—";
+}
+
 // ══════════════════════════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════════════════════════
@@ -53,6 +81,7 @@ let submittedIds    = new Set(); // already submitted to DB
 let currentIdx      = null; // which subject is open in modal
 let drafts          = {};   // { subjectId: { scores: {}, comment: "" } }
 let activeSemId     = null;
+let activeSemLabel  = "";
 
 const DRAFT_KEY = `fp_draft_${studentId}`;
 
@@ -117,7 +146,8 @@ async function init() {
   }
 
   document.getElementById("semester-label").textContent = semester.label;
-  activeSemId = semester.id;
+  activeSemId    = semester.id;
+  activeSemLabel = semester.label;
 
   // ── Pause check: block the eval flow entirely while paused ──
   if (semester.is_paused) {
@@ -130,10 +160,12 @@ async function init() {
   // exists anywhere in their section — sections can contain students with
   // different individual course loads (electives, retakes, irregular
   // enrollment), so section membership alone isn't the same as "subjects
-  // this specific student takes."
+  // this specific student takes." Also pull section name/department here
+  // so the eval modal's "A. Faculty Information" block (College/Department,
+  // Program Level) can be filled in without a second query per subject.
   const { data: enrollmentRows, error } = await supabase
     .from("student_subjects")
-    .select("subjects(id, name, users(name))")
+    .select("subjects(id, name, users(name), sections(name, department))")
     .eq("student_id", studentId)
     .eq("semester_id", semester.id);
 
@@ -274,6 +306,76 @@ function openEval(idx) {
 
   const draft = drafts[sub.id] || { scores: {}, comment: "" };
 
+  // ── A. Faculty Information (matches Annex A layout) ──
+  const sectionAEl = document.getElementById("eval-section-a");
+  if (sectionAEl) {
+    const dept      = sub.sections?.department || "—";
+    const yearLevel = parseYearLevel(sub.sections?.name);
+    sectionAEl.innerHTML = `
+      <p style="font-weight:bold; font-size:13px; margin-bottom:6px;">A. Faculty Information</p>
+      <table style="width:100%; font-size:12px; margin-bottom:14px; border-collapse:collapse;">
+        <tr>
+          <td style="width:44%; padding:2px 0; color:#334155;">Name of Faculty being Evaluated</td>
+          <td style="padding:2px 0; font-weight:600; color:#1e293b;">: ${escapeHtml(sub.users?.name || "—")}</td>
+        </tr>
+        <tr>
+          <td style="padding:2px 0; color:#334155;">College/Department</td>
+          <td style="padding:2px 0; color:#1e293b;">: ${escapeHtml(dept)}</td>
+        </tr>
+        <tr>
+          <td style="padding:2px 0; color:#334155;">Course Code/Title</td>
+          <td style="padding:2px 0; color:#1e293b;">: ${escapeHtml(sub.name)}</td>
+        </tr>
+        <tr>
+          <td style="padding:2px 0; color:#334155;">Program Level</td>
+          <td style="padding:2px 0; color:#1e293b;">: ${escapeHtml(yearLevel)}</td>
+        </tr>
+        <tr>
+          <td style="padding:2px 0; color:#334155;">Semester or Term/Academic Year</td>
+          <td style="padding:2px 0; color:#1e293b;">: ${escapeHtml(activeSemLabel)}</td>
+        </tr>
+      </table>
+    `;
+  }
+
+  // ── B. Rating Scale (full table, matches Annex A) ──
+  const sectionBEl = document.getElementById("eval-section-b");
+  if (sectionBEl) {
+    sectionBEl.innerHTML = `
+      <p style="font-weight:bold; font-size:13px; margin-bottom:6px;">B. Rating Scale</p>
+      <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:14px;">
+        <thead>
+          <tr>
+            <th style="border:1px solid #cbd5e1; background:#f1f5f9; padding:6px 8px; width:44px;">Scale</th>
+            <th style="border:1px solid #cbd5e1; background:#f1f5f9; padding:6px 8px; width:140px; text-align:left;">Qualitative Description</th>
+            <th style="border:1px solid #cbd5e1; background:#f1f5f9; padding:6px 8px; text-align:left;">Operational Definition</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${RATING_SCALE_ROWS.map(r => `
+            <tr>
+              <td style="border:1px solid #cbd5e1; padding:6px 8px; text-align:center; font-weight:700; color:#1e293b;">${r.scale}</td>
+              <td style="border:1px solid #cbd5e1; padding:6px 8px; color:#1e293b;">${escapeHtml(r.label)}</td>
+              <td style="border:1px solid #cbd5e1; padding:6px 8px; color:#334155;">${escapeHtml(r.def)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  // ── C. Instruction ──
+  const instructionEl = document.getElementById("eval-instruction");
+  if (instructionEl) {
+    instructionEl.innerHTML = `
+      <p style="font-weight:bold; font-size:13px; margin-bottom:6px;">C. Instruction</p>
+      <p style="font-size:12px; color:#334155; margin-bottom:14px; line-height:1.6;">
+        Read the benchmark statements carefully. Please rate the faculty on each of the
+        following statements below using the above-listed rating scale.
+      </p>
+    `;
+  }
+
   // Restore comment
   document.getElementById("eval-comment").value = draft.comment || "";
 
@@ -288,6 +390,13 @@ function openEval(idx) {
       catRow.className = "category-row";
       catRow.innerHTML = `<td colspan="6">${q.category}</td>`;
       tbody.appendChild(catRow);
+
+      // Category description paragraph — matches the highlighted italic
+      // text under each section heading in the official Annex A.
+      const descRow = document.createElement("tr");
+      descRow.className = "category-desc-row";
+      descRow.innerHTML = `<td colspan="6" style="font-style:italic; font-size:11px; color:#475569; background:#fffbeb; padding:8px 12px; border:1px solid #fde68a;">${escapeHtml(CATEGORY_DESCRIPTIONS[q.category] || "")}</td>`;
+      tbody.appendChild(descRow);
     }
     const row = document.createElement("tr");
     row.id = "row-" + q.id;
@@ -303,6 +412,15 @@ function openEval(idx) {
     tbody.appendChild(row);
   });
 
+  // Total score row — live running total, matches the "TOTAL SCORE" row
+  // at the bottom of the paper Annex A (max 75, 15 questions × 5 points).
+  const totalRow = document.createElement("tr");
+  totalRow.innerHTML = `
+    <td style="font-weight:bold; text-align:right; padding:10px 12px; border:1px solid #e2e8f0;">TOTAL SCORE</td>
+    <td colspan="5" style="font-weight:bold; text-align:center; padding:10px 12px; border:1px solid #e2e8f0;" id="eval-total-score-cell">0 / 75</td>
+  `;
+  tbody.appendChild(totalRow);
+
   // ── Mobile cards ──
   const mobileContainer = document.getElementById("mobile-questions-container");
   mobileContainer.innerHTML = "";
@@ -314,6 +432,11 @@ function openEval(idx) {
       div.className = "category-divider";
       div.textContent = q.category;
       mobileContainer.appendChild(div);
+
+      const descDiv = document.createElement("div");
+      descDiv.style.cssText = "font-style:italic; font-size:12px; color:#475569; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:8px 12px; margin-bottom:10px;";
+      descDiv.textContent = CATEGORY_DESCRIPTIONS[q.category] || "";
+      mobileContainer.appendChild(descDiv);
     }
     const card = document.createElement("div");
     card.className = "question-card";
@@ -334,12 +457,35 @@ function openEval(idx) {
     mobileContainer.appendChild(card);
   });
 
-  // Live save on desktop radio change
+  // Mobile total score display
+  const mobileTotalDiv = document.createElement("div");
+  mobileTotalDiv.style.cssText = "background:#f1f5f9; border-radius:8px; padding:10px 14px; text-align:center; font-weight:700; font-size:14px; color:#1e293b; margin-top:8px;";
+  mobileTotalDiv.id = "eval-total-score-mobile";
+  mobileTotalDiv.textContent = "TOTAL SCORE: 0 / 75";
+  mobileContainer.appendChild(mobileTotalDiv);
+
+  // Live save + total-score update on desktop radio change
   document.querySelectorAll("#questions-tbody input[type=radio]").forEach(r => {
-    r.addEventListener("change", () => saveDraftFromModal());
+    r.addEventListener("change", () => { saveDraftFromModal(); updateTotalScoreDisplay(); });
   });
 
+  updateTotalScoreDisplay();
   document.getElementById("eval-modal").classList.remove("hidden");
+}
+
+// Recompute and display the running total score (max 75) — mirrors the
+// TOTAL SCORE row on the paper Annex A instrument.
+function updateTotalScoreDisplay() {
+  if (currentIdx === null) return;
+  const sub   = subjects[currentIdx];
+  const draft = drafts[sub.id] || { scores: {} };
+  const total = QUESTIONS.reduce((sum, q) => sum + (draft.scores[q.id] || 0), 0);
+
+  const cell = document.getElementById("eval-total-score-cell");
+  if (cell) cell.textContent = `${total} / 75`;
+
+  const mobileTotal = document.getElementById("eval-total-score-mobile");
+  if (mobileTotal) mobileTotal.textContent = `TOTAL SCORE: ${total} / 75`;
 }
 
 function onMobileRate(qId, val, input) {
@@ -350,6 +496,7 @@ function onMobileRate(qId, val, input) {
     input.closest(".q-rating-btn").classList.add("selected");
   }
   saveDraftFromModal();
+  updateTotalScoreDisplay();
 }
 window.onMobileRate = onMobileRate;
 
@@ -733,6 +880,45 @@ function maybeShowEmailNudge() {
 
   document.getElementById("email-nudge-add-btn")?.addEventListener("click", () => {
     document.getElementById("change-email-btn")?.click();
+    banner.remove();
+  });
+}
+
+// ── Email change rejection notice — this was the actual gap: an admin
+//    could reject a request and the student would never find out, because
+//    nothing ever checked for it. Shows once, until dismissed. ──
+async function checkEmailRejection() {
+  const userId = sessionStorage.getItem("userId");
+  if (!userId) return;
+
+  const { data, error } = await supabase
+    .from("email_change_requests")
+    .select("id, requested_email, review_note")
+    .eq("student_id", userId)
+    .eq("status", "rejected")
+    .eq("student_acknowledged", false)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return;
+
+  const banner = document.createElement("div");
+  banner.id = "email-rejection-banner";
+  banner.style.cssText = `
+    background:#fef2f2; border:1px solid #fca5a5; border-radius:8px;
+    padding:12px 16px; margin-bottom:16px; font-size:13px; color:#991b1b;
+  `;
+  banner.innerHTML = `
+    <div style="font-weight:700; margin-bottom:4px;">❌ Your email change request was rejected</div>
+    <div style="margin-bottom:4px;">Requested email: <b>${escapeHtml(data.requested_email)}</b></div>
+    <div style="margin-bottom:10px;">Reason: ${escapeHtml(data.review_note || "No reason provided.")}</div>
+    <button id="email-rejection-ack-btn" style="font-size:12px; padding:6px 14px; background:#dc2626; color:white; border:none; border-radius:5px; cursor:pointer;">OK, Got It</button>
+  `;
+  document.querySelector(".container")?.prepend(banner);
+
+  document.getElementById("email-rejection-ack-btn")?.addEventListener("click", async () => {
+    await supabase.from("email_change_requests").update({ student_acknowledged: true }).eq("id", data.id);
     banner.remove();
   });
 }
