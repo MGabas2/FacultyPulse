@@ -18,6 +18,30 @@ const supervisorName = sessionStorage.getItem("name");
 
 document.getElementById("nav-user").textContent = "Logged in as: " + supervisorName;
 
+// ── This supervisor's own department — fetched once at load, since
+//    faculty visibility below is scoped by department match (exactly
+//    one supervisor per department, i.e. the program chair), not by
+//    the old per-teacher supervisor_id link. ──
+let supervisorDepartment = null;
+async function loadSupervisorDepartment() {
+  const { data, error } = await supabase
+    .from("users")
+    .select("department")
+    .eq("id", supervisorId)
+    .maybeSingle();
+  if (error || !data?.department) {
+    document.getElementById("faculty-cards-container").innerHTML = `
+      <div class="empty-state">
+        <div class="icon">⚠️</div>
+        <h3>No Department Set</h3>
+        <p>Your account has no department assigned, so no faculty can be shown.
+           Ask an admin to set your department in User Management.</p>
+      </div>`;
+    return null;
+  }
+  return data.department;
+}
+
 // ══════════════════════════════════════════════════════════════
 //  SEF QUESTIONS — Annex B, CMO No. 19 s. 2025 (1:1 copy)
 // ══════════════════════════════════════════════════════════════
@@ -153,6 +177,11 @@ async function loadForwardedReports() {
   const container = document.getElementById("faculty-cards-container");
   container.innerHTML = `<p style="color:#94a3b8; text-align:center; padding:32px 0;">Loading...</p>`;
 
+  if (supervisorDepartment === null) {
+    supervisorDepartment = await loadSupervisorDepartment();
+    if (!supervisorDepartment) return; // empty-state already rendered
+  }
+
   const { data: semester } = await supabase
     .from("semesters").select("id, label").eq("is_active", true).single();
 
@@ -164,10 +193,21 @@ async function loadForwardedReports() {
   activeSemester = semester;
   document.getElementById("semester-label").textContent = semester.label;
 
+  // ── Ownership filter ──
+  // users!inner + .eq("users.department", supervisorDepartment) restricts
+  // this query, at the database level, to faculty in THIS supervisor's own
+  // department — the model here is exactly one supervisor per department
+  // (the program chair), so department match IS the assignment. This
+  // replaces the earlier users.supervisor_id link, which nothing in the
+  // admin UI ever actually set. Without a real filter here, every
+  // supervisor account could see and submit an SEF for every faculty
+  // member in the system, regardless of department — that was a real
+  // bug, not a hypothetical one.
   const { data: releases, error } = await supabase
     .from("report_releases")
-    .select("id, teacher_id, stage, users(name, academic_rank)")
+    .select("id, teacher_id, stage, users!inner(name, academic_rank, department)")
     .eq("semester_id", semester.id)
+    .eq("users.department", supervisorDepartment)
     .in("stage", ["forwarded_to_supervisor", "supervisor_done"]);
 
   if (error || !releases || releases.length === 0) {
@@ -175,7 +215,7 @@ async function loadForwardedReports() {
       <div class="empty-state">
         <div class="icon">📭</div>
         <h3>No Reports Forwarded Yet</h3>
-        <p>The QAO has not forwarded any faculty evaluation reports for your review.</p>
+        <p>The QAO has not forwarded any faculty evaluation reports assigned to you for review.</p>
       </div>`;
     document.getElementById("count-pending").textContent = "0";
     document.getElementById("count-done").textContent    = "0";
@@ -193,10 +233,12 @@ async function loadForwardedReports() {
   for (const release of releases) {
     const teacherName = release.users?.name || "Unknown Faculty";
     const teacherRank = release.users?.academic_rank || "";
+    const teacherDept = release.users?.department || "";
     const isDone      = release.stage === "supervisor_done";
     const safeId      = release.teacher_id;
     const safeName    = escapeHtml(teacherName).replace(/'/g,"\\'");
     const safeRank    = escapeHtml(teacherRank).replace(/'/g,"\\'");
+    const safeDept    = escapeHtml(teacherDept).replace(/'/g,"\\'");
 
     const card = document.createElement("div");
     card.className = "faculty-card";
@@ -215,7 +257,7 @@ async function loadForwardedReports() {
           ${isDone ? "✅ SEF Submitted" : "📋 Pending SEF"}
         </span>
         <button
-          onclick="openReview('${safeId}', '${safeName}', ${isDone}, '${safeRank}')"
+          onclick="openReview('${safeId}', '${safeName}', ${isDone}, '${safeRank}', '${safeDept}')"
           ${isDone ? 'class="btn-secondary"' : ""}
           style="font-size:13px; padding:6px 14px;">
           ${isDone ? "View Submission" : "Complete SEF →"}
@@ -234,36 +276,35 @@ async function loadForwardedReports() {
   }
 }
 
-// ── Fill College/Department + Course Code/Title from the teacher's
-//    actual subjects/sections this semester. Annex B assumes one
-//    row per course; a faculty here can have several, so we list
-//    them all rather than guessing a single one. ──
-async function populateCollegeAndCourse(teacherId) {
-  const collegeEl = document.getElementById("fi-college");
+// ── Fill Course Code/Title from the teacher's actual subjects this
+//    semester. Annex B assumes one row per course; a faculty here can
+//    have several, so we list them all rather than guessing a single
+//    one. College/Department comes straight from the teacher's own
+//    stored `department` now (passed in from the card, matches the
+//    supervisor's own department by construction) rather than being
+//    inferred from subjects/sections — more reliable, and works even
+//    for a teacher with zero subjects assigned yet. ──
+async function populateCourseTitle(teacherId) {
   const courseEl  = document.getElementById("fi-course");
-  collegeEl.textContent = "—";
-  courseEl.textContent  = "—";
+  courseEl.textContent = "—";
   if (!activeSemester) return;
 
   const { data: subjects } = await supabase
     .from("subjects")
-    .select("name, sections(name, department)")
+    .select("name")
     .eq("teacher_id", teacherId)
     .eq("semester_id", activeSemester.id);
 
   if (!subjects || subjects.length === 0) return;
 
-  const departments = [...new Set(subjects.map(s => s.sections?.department).filter(Boolean))];
-  const courseNames  = [...new Set(subjects.map(s => s.name).filter(Boolean))];
-
-  if (departments.length) collegeEl.textContent = departments.join(", ");
-  if (courseNames.length) courseEl.textContent  = courseNames.join(", ");
+  const courseNames = [...new Set(subjects.map(s => s.name).filter(Boolean))];
+  if (courseNames.length) courseEl.textContent = courseNames.join(", ");
 }
 
 // ══════════════════════════════════════════════════════════════
 //  OPEN REVIEW MODAL
 // ══════════════════════════════════════════════════════════════
-async function openReview(teacherId, teacherName, isDone, academicRank) {
+async function openReview(teacherId, teacherName, isDone, academicRank, department) {
   currentTeacherId = teacherId;
 
   document.getElementById("modal-teacher-name").textContent = teacherName;
@@ -275,9 +316,10 @@ async function openReview(teacherId, teacherName, isDone, academicRank) {
   // ── A. Faculty Information (1:1 copy from Annex B) ──
   document.getElementById("fi-name").textContent     = teacherName;
   document.getElementById("fi-rank").textContent      = academicRank || "—";
+  document.getElementById("fi-college").textContent   = department || "—";
   document.getElementById("fi-semester").textContent  = activeSemester?.label || "—";
   document.getElementById("fi-programyear").textContent = "—"; // not tracked anywhere in the schema — see note
-  await populateCollegeAndCourse(teacherId);
+  await populateCourseTitle(teacherId);
 
   // Toggle form vs submitted view
   document.getElementById("review-form").style.display    = isDone ? "none" : "block";

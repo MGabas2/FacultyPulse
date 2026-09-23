@@ -4,7 +4,7 @@
 // ============================================================
 
 import { supabase } from "./supabase.js";
-import { fpAlert, fpConfirm } from "./modal.js";
+import { fpAlert, fpConfirm, fpLoading } from "./modal.js";
 
 function escHtml(str) {
   return String(str || "")
@@ -34,7 +34,6 @@ function getRatingLabel(score) {
   return "Poor";
 }
 
-// ── Report pipeline stage badge ──
 function getReportStageBadge(stage) {
   const map = {
     pending:                 { label: "Pending Review",      bg: "#fef3c7", color: "#92400e" },
@@ -56,7 +55,6 @@ function getRatingColor(score) {
 
 // ══════════════════════════════════════════════════════════════
 //  WEIGHTED SET COMPUTATION — CMO No. 19 Annex C
-//  Returns { overallSET, classData, totalEnrolled, totalWeighted }
 // ══════════════════════════════════════════════════════════════
 async function computeWeightedSET(teacherId, semesterId) {
   const { data: subjects } = await supabase
@@ -72,7 +70,6 @@ async function computeWeightedSET(teacherId, semesterId) {
   let totalEnrolled    = 0;
   let totalRespondents = 0;
 
-  // Category accumulators
   const catTotals = { A: 0, B: 0, C: 0 };
   const catCounts = { A: 0, B: 0, C: 0 };
 
@@ -81,7 +78,7 @@ async function computeWeightedSET(teacherId, semesterId) {
       .from("evaluation_scores")
       .select("scores")
       .eq("subject_id", subject.id)
-      .eq("semester_id", semesterId); // always read all scores for analytics
+      .eq("semester_id", semesterId);
 
     if (!evals || evals.length === 0) {
       classData.push({
@@ -98,12 +95,10 @@ async function computeWeightedSET(teacherId, semesterId) {
 
     let sumRatings = 0;
     evals.forEach(e => {
-      // Per student: (total score / 75) × 100
       const totalScore = Object.values(e.scores).reduce((s, v) => s + v, 0);
       const rating     = (totalScore / 75) * 100;
       sumRatings      += rating;
 
-      // Category scores
       const catA = ["q1","q2","q3","q4","q5","q6"]
         .reduce((s,k) => s + (e.scores[k] || 0), 0);
       const catB = ["q7","q8","q9","q10","q11"]
@@ -121,9 +116,6 @@ async function computeWeightedSET(teacherId, semesterId) {
 
     const respondents   = evals.length;
     const avgSETRating  = parseFloat((sumRatings / respondents).toFixed(2));
-    // Guard: enrolled_count must be at least the number of respondents.
-    // If admin set it too low (or 0), fall back to respondents to avoid
-    // a mathematically invalid weighted score.
     let enrolled = subject.enrolled_count || 0;
     if (enrolled < respondents) {
       console.warn(
@@ -189,18 +181,12 @@ async function loadSummary() {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  LOAD FACULTY RANKINGS + CHARTS
-// ══════════════════════════════════════════════════════════════
-// ══════════════════════════════════════════════════════════════
 //  FACULTY RANKINGS — with pagination
 // ══════════════════════════════════════════════════════════════
 let allRanked    = [];
 let rankPage     = 1;
 const RANK_SIZE  = 8;
 
-// Employment-type grouping toggle. Default matches the current UI
-// (checkbox starts checked). When false, faculty rank purely by SET
-// score with no Full-time/Part-time split.
 const EMPLOYMENT_GROUP_ORDER = { "Full-time": 0, "Part-time": 1 };
 let rankGroupByEmployment = true;
 
@@ -219,9 +205,6 @@ async function loadRankings() {
   const { data: allTeachers } = await supabase
     .from("users").select("id, name, academic_rank, employment_type").eq("role", "teacher");
 
-  // COS (Contract of Service) faculty are excluded from rankings entirely —
-  // per admin's request, they don't appear anywhere in this view (table,
-  // charts, or the Generate IFER dropdown, since all three read from `ranked`).
   const teachers = (allTeachers || []).filter(t => t.employment_type !== "COS");
 
   if (!teachers || teachers.length === 0) {
@@ -229,7 +212,6 @@ async function loadRankings() {
     return;
   }
 
-  // Bulk fetch — 2 queries instead of N*M sequential queries
   const { data: allSubjects } = await supabase
     .from("subjects")
     .select("id, name, teacher_id, enrolled_count, sections(name, department)")
@@ -240,7 +222,6 @@ async function loadRankings() {
     .select("subject_id, scores")
     .eq("semester_id", semester.id);
 
-  // Bulk fetch all report release stages for this semester
   const { data: allReleases } = await supabase
     .from("report_releases")
     .select("teacher_id, stage")
@@ -251,14 +232,12 @@ async function loadRankings() {
     releaseStageByTeacher[r.teacher_id] = r.stage;
   });
 
-  // Index by subject_id
   const evalsBySubject = {};
   (allEvals || []).forEach(e => {
     if (!evalsBySubject[e.subject_id]) evalsBySubject[e.subject_id] = [];
     evalsBySubject[e.subject_id].push(e);
   });
 
-  // Index subjects by teacher_id
   const subjectsByTeacher = {};
   (allSubjects || []).forEach(s => {
     if (!subjectsByTeacher[s.teacher_id]) subjectsByTeacher[s.teacher_id] = [];
@@ -307,9 +286,6 @@ async function loadRankings() {
     });
   }
 
-  // Base order: highest SET first. Employment-type grouping (if enabled) is
-  // applied at render time in renderRankingsPage(), so toggling it doesn't
-  // require refetching data.
   ranked.sort((a, b) => b.overallSET - a.overallSET);
   allRanked = ranked;
 
@@ -329,11 +305,9 @@ async function loadRankings() {
   renderDonutChart(ranked);
 }
 
-// ── Render current page of rankings ──
 function renderRankingsPage() {
   const tbody = document.getElementById("rankings-tbody");
 
-  // Apply program + faculty filters
   const progFilter = document.getElementById("dash-program-filter")?.value || "";
   const facFilter  = document.getElementById("dash-faculty-filter")?.value || "";
 
@@ -345,8 +319,6 @@ function renderRankingsPage() {
     filtered = filtered.filter(t => t.id === facFilter);
   }
 
-  // Re-sort per the current grouping toggle. Cheap enough to redo on every
-  // render rather than maintaining two parallel cached arrays.
   if (rankGroupByEmployment) {
     filtered.sort((a, b) => {
       const groupA = EMPLOYMENT_GROUP_ORDER[a.employmentType] ?? 2;
@@ -358,8 +330,6 @@ function renderRankingsPage() {
     filtered.sort((a, b) => b.overallSET - a.overallSET);
   }
 
-  // Bar chart reflects the current program filter (department averages when
-  // "All Programs", individual faculty when a specific program is chosen)
   renderBarChart(filtered);
 
   if (filtered.length === 0) {
@@ -369,11 +339,6 @@ function renderRankingsPage() {
     return;
   }
 
-  // Rank numbers restart at 1 for each employment-type group when grouping
-  // is on (Full-time: 1,2,3… / Part-time: 1,2,3… independently), rather
-  // than counting straight through both groups. When grouping is off,
-  // there's only one implicit group, so this collapses to a normal
-  // continuous 1..N ranking — same as before.
   const groupRankCounters = {};
   filtered.forEach(t => {
     const key = rankGroupByEmployment ? t.employmentType : "__all__";
@@ -390,13 +355,9 @@ function renderRankingsPage() {
 
   tbody.innerHTML = "";
 
-  // Track the group of the row immediately before this page (if any) so a
-  // divider still renders correctly even if the Full-time → Part-time
-  // boundary falls exactly on a page break. Skipped entirely when the
-  // "Group by employment type" toggle is off.
   let prevGroup = rankGroupByEmployment
     ? (start > 0 ? filtered[start - 1].employmentType : null)
-    : undefined; // undefined = grouping disabled, no dividers ever
+    : undefined;
 
   pageRows.forEach((t) => {
     if (rankGroupByEmployment) {
@@ -447,86 +408,13 @@ function renderRankingsPage() {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  LOAD USERS — full list with pagination
-// ══════════════════════════════════════════════════════════════
-let allUsersList = [];
-let currentPage  = 1;
-const PAGE_SIZE  = 15;
-
-async function loadUsers() {
-  const tbody = document.getElementById("users-tbody");
-  tbody.innerHTML = `<tr><td colspan="4">Loading...</td></tr>`;
-
-  const { data: users } = await supabase
-    .from("users")
-    .select("name, role, student_id, sections(name)")
-    .order("role")
-    .order("student_id");
-
-  allUsersList = users || [];
-
-  // Fill user-summary cards (count by role from the loaded list)
-  const studentN = allUsersList.filter(u => u.role === "student").length;
-  const teacherN = allUsersList.filter(u => u.role === "teacher").length;
-  const adminN   = allUsersList.filter(u => u.role === "admin").length;
-  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  setText("usum-students", studentN);
-  setText("usum-teachers", teacherN);
-  setText("usum-admins",   adminN);
-
-  currentPage  = 1;
-  renderUsersPage();
-}
-
-// ── Render the current page of users ──
-function renderUsersPage() {
-  const tbody = document.getElementById("users-tbody");
-
-  if (allUsersList.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4">No users found.</td></tr>`;
-    document.getElementById("page-info").textContent = "";
-    document.getElementById("page-buttons").innerHTML = "";
-    return;
-  }
-
-  const totalPages = Math.ceil(allUsersList.length / PAGE_SIZE);
-  if (currentPage > totalPages) currentPage = totalPages;
-
-  const start = (currentPage - 1) * PAGE_SIZE;
-  const end   = start + PAGE_SIZE;
-  const pageUsers = allUsersList.slice(start, end);
-
-  tbody.innerHTML = "";
-  pageUsers.forEach(u => {
-    tbody.innerHTML += `
-      <tr>
-        <td>${u.name || u.student_id || "—"}</td>
-        <td style="text-transform:capitalize">${u.role}</td>
-        <td>${u.sections?.name || "—"}</td>
-        <td><span class="badge done">Active</span></td>
-      </tr>
-    `;
-  });
-
-  document.getElementById("page-info").textContent =
-    `Showing ${start + 1}–${Math.min(end, allUsersList.length)} of ${allUsersList.length} users`;
-
-  renderPager("page-buttons", totalPages, currentPage, (p) => {
-    currentPage = p;
-    renderUsersPage();
-  });
-}
-
-// ══════════════════════════════════════════════════════════════
 //  SHARED PAGINATION RENDERER
-//  containerId = where buttons go, totalPages, current, onGo(page)
 // ══════════════════════════════════════════════════════════════
 function renderPager(containerId, totalPages, current, onGo) {
   const container = document.getElementById(containerId);
   container.innerHTML = "";
   if (totalPages <= 1) return;
 
-  // Prev
   const prev = document.createElement("button");
   prev.className   = "page-btn";
   prev.textContent = "‹ Prev";
@@ -534,7 +422,6 @@ function renderPager(containerId, totalPages, current, onGo) {
   prev.onclick     = () => onGo(current - 1);
   container.appendChild(prev);
 
-  // Windowed page numbers: first, last, current ±2
   const pages = [];
   for (let i = 1; i <= totalPages; i++) {
     if (i === 1 || i === totalPages || (i >= current - 2 && i <= current + 2)) {
@@ -559,7 +446,6 @@ function renderPager(containerId, totalPages, current, onGo) {
     }
   });
 
-  // Next
   const next = document.createElement("button");
   next.className   = "page-btn";
   next.textContent = "Next ›";
@@ -570,23 +456,12 @@ function renderPager(containerId, totalPages, current, onGo) {
 
 // ══════════════════════════════════════════════════════════════
 //  GENERATE IFER REPORT — Annex C Format
-//  Faculty-facing report shows aggregated scores + verified comments
-//  with NO student identity. Admin/QA identity data stays in the
-//  tracking table and is never included in the report.
-//
-//  STUDENT COMMENTS ARE NEVER DELETABLE FROM THIS REPORT, FULL STOP.
-//  There is no button, function, or code path anywhere below that
-//  removes a student's comment text — the raw list is display-only.
-//  Do not add one. If a comment needs to be excluded from a report for
-//  cause, that decision and its reasoning belongs in a separate,
-//  auditable moderation record — not a silent delete here.
 // ══════════════════════════════════════════════════════════════
 async function viewReport(teacherId, teacherName) {
   const reportContent = document.getElementById("report-content");
   reportContent.innerHTML = `<p style="text-align:center; color:#64748b;">Loading report...</p>`;
   document.getElementById("report-modal").classList.remove("hidden");
 
-  // Stash current target so the Release button knows what to release
   window._reportTeacherId   = teacherId;
   window._reportTeacherName = teacherName;
 
@@ -599,7 +474,6 @@ async function viewReport(teacherId, teacherName) {
   }
   window._reportSemesterId = semester.id;
 
-  // ── Check release stage ──
   const { data: release } = await supabase
     .from("report_releases")
     .select("released_at, released_by, stage")
@@ -610,15 +484,12 @@ async function viewReport(teacherId, teacherName) {
   window._reportStage    = release?.stage || "pending";
   window._reportReleased = release?.stage === "released";
 
-
-  // Get teacher info
   const { data: teacher } = await supabase
     .from("users")
     .select("name, academic_rank, email")
     .eq("id", teacherId)
     .single();
 
-  // Get faculty's department from first subject
   const { data: deptSubject } = await supabase
     .from("subjects")
     .select("sections(department)")
@@ -628,7 +499,6 @@ async function viewReport(teacherId, teacherName) {
 
   const department = deptSubject?.sections?.department || "—";
 
-  // Compute weighted SET
   const result = await computeWeightedSET(teacherId, semester.id);
 
   if (!result) {
@@ -639,7 +509,6 @@ async function viewReport(teacherId, teacherName) {
   const { overallSET, classData, totalEnrolled, totalWeighted,
           avgA, avgB, avgC } = result;
 
-  // Get SEF rating and supervisor comments from supervisor_remarks
   const { data: supRemarks } = await supabase
     .from("supervisor_remarks")
     .select("sef_score, comments, remarks")
@@ -649,15 +518,12 @@ async function viewReport(teacherId, teacherName) {
     .limit(1)
     .maybeSingle();
 
-  // Scores are always shown to 2 decimal places, never as "X / 100" —
-  // apply .toFixed(2) at display time everywhere in this report.
   const sefRating      = supRemarks?.sef_score != null
     ? Number(supRemarks.sef_score).toFixed(2)
     : "—";
   const supComments    = supRemarks?.comments || "";
   const supRemarksTxt  = supRemarks?.remarks  || "";
 
-  // Get FEDAF development plan (Annex D) — prints attached to IFER
   const { data: fedaf } = await supabase
     .from("fedaf")
     .select("areas_improvement, proposed_activities, action_plan, supervisor_signed")
@@ -665,11 +531,6 @@ async function viewReport(teacherId, teacherName) {
     .eq("semester_id", semester.id)
     .maybeSingle();
 
-  // Fetch student comments from evaluation_comments for this teacher's subjects.
-  // Comments are linked to subject_id only — not to a specific student.
-  // This satisfies CMO §6.10 (student anonymity) — QAO sees the comment
-  // but cannot identify the student who wrote it. This list is READ-ONLY —
-  // see the policy note at the top of this function.
   const subjectIds = classData.map(c => c.subjectId).filter(Boolean);
   let studentComments = [];
   if (subjectIds.length > 0) {
@@ -683,17 +544,8 @@ async function viewReport(teacherId, teacherName) {
       .filter(Boolean);
   }
 
-  // Store on window so the Restore button can access it without re-fetching
   window._studentComments = studentComments;
 
-  // ══════════════════════════════════════════════════════════════
-  //  RAW DATA DRILL-DOWN — QA-only, never printed.
-  //  Shows every individual respondent's answer to all 15 questions,
-  //  per subject, with a per-question average column. This is what lets
-  //  QA answer "why did Category B drop from 90 to 87?" by actually
-  //  looking at which question (and which respondent) pulled it down,
-  //  instead of only ever seeing the final averaged number.
-  // ══════════════════════════════════════════════════════════════
   const rawScoresBySubject = {};
   for (const c of classData) {
     const { data: rawEvals } = await supabase
@@ -885,7 +737,6 @@ async function viewReport(teacherId, teacherName) {
     return html;
   }
 
-  // ── Build IFER HTML — Annex C Format ──
   const dateGenerated = new Date().toLocaleDateString("en-PH", {
     year: "numeric", month: "long", day: "numeric"
   });
@@ -1011,7 +862,7 @@ async function viewReport(teacherId, teacherName) {
         *Note: rating given by the supervisor using the SEF instrument
       </p>
 
-      <!-- Category Breakdown (FacultyPulse addition — not in CMO but useful for panel) -->
+      <!-- Category Breakdown -->
       <p style="font-size:11px; color:#000; font-weight:bold; margin-bottom:6px;">Category Breakdown</p>
       <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:16px;">
         <thead>
@@ -1046,9 +897,6 @@ async function viewReport(teacherId, teacherName) {
         Comments shown exactly as submitted, without student identity, per CMO §6.10.
       </p>
 
-      <!-- Same Seq + comment table structure as the Supervisor table below —
-           one row per comment. READ-ONLY, no delete/remove control exists
-           here on purpose (see policy note at top of viewReport()). -->
       <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:16px;">
         <thead>
           <tr>
@@ -1154,17 +1002,13 @@ async function viewReport(teacherId, teacherName) {
         </div>
       </div>
 
-      <!-- ══════════════════════════════════════════════════════════
-           ANNEX D — FEDAF
-           Prints on a new page. Fields blank for hand-fill per CMO §10.2.
-           ══════════════════════════════════════════════════════════ -->
+      <!-- ANNEX D — FEDAF -->
       <div id="annex-d-section" style="page-break-before:always; padding-top:8px;">
 
         <h3 style="text-align:center; font-size:12px; font-weight:bold; margin-bottom:16px; text-transform:uppercase; letter-spacing:.02em;">
           Faculty Evaluation and Development Acknowledgment Form
         </h3>
 
-        <!-- A. Faculty Member Information -->
         <p style="font-weight:bold; font-size:12px; margin-bottom:8px;">A. FACULTY MEMBER INFORMATION</p>
         <table style="width:100%; font-size:12px; margin-bottom:16px; border-collapse:collapse;">
           <tr>
@@ -1185,7 +1029,6 @@ async function viewReport(teacherId, teacherName) {
           </tr>
         </table>
 
-        <!-- B. Faculty Evaluation Summary -->
         <p style="font-weight:bold; font-size:12px; margin-bottom:8px;">B. FACULTY EVALUATION SUMMARY</p>
         <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:16px;">
           <thead>
@@ -1215,7 +1058,6 @@ async function viewReport(teacherId, teacherName) {
           </tbody>
         </table>
 
-        <!-- C. Development Plan -->
         <p style="font-weight:bold; font-size:12px; margin-bottom:4px;">
           C. DEVELOPMENT PLAN
           <span style="font-weight:normal; font-size:11px; color:#000;">
@@ -1272,7 +1114,6 @@ async function viewReport(teacherId, teacherName) {
              </table>`
         }
 
-        <!-- Acknowledgment statement -->
         <p style="font-size:12px; line-height:1.8; margin-bottom:20px; text-align:justify; color:#000; font-weight:bold;">
           I acknowledge that I have received and reviewed the faculty evaluation conducted for
           the period mentioned above. I understand that my signature below does not necessarily
@@ -1280,7 +1121,6 @@ async function viewReport(teacherId, teacherName) {
           opportunity to discuss it with my supervisor.
         </p>
 
-        <!-- Signature blocks -->
         <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:8px;">
           <thead>
             <tr>
@@ -1332,7 +1172,6 @@ async function viewReport(teacherId, teacherName) {
       </div><!-- /annex-d-section -->
     </div>
   `;
-  // Show/hide the Release button based on release status
   updateReleaseButton();
 }
 
@@ -1346,13 +1185,11 @@ function renderBarChart(ranked) {
   const progFilter = document.getElementById("dash-program-filter")?.value || "";
   const facFilter  = document.getElementById("dash-faculty-filter")?.value || "";
 
-  // Apply program filter to the working set first
   let scoped = progFilter ? ranked.filter(t => t.program === progFilter) : ranked;
 
   let labels, data, colors, chartTitle, tooltipSuffix;
 
   if (facFilter) {
-    // ── Single faculty selected: show just their score as one bar ──
     const t = scoped.find(x => x.id === facFilter);
     labels        = t ? [t.name.split(",")[0]] : [];
     data          = t ? [t.overallSET] : [];
@@ -1360,7 +1197,6 @@ function renderBarChart(ranked) {
     tooltipSuffix = [""];
     chartTitle    = t ? `${t.name} — SET Rating` : "Faculty SET Rating";
   } else if (!progFilter) {
-    // ── All Programs: show department-level averages ──
     const byProgram = new Map();
     ranked.forEach(t => {
       const prog = t.program || "—";
@@ -1382,7 +1218,6 @@ function renderBarChart(ranked) {
     tooltipSuffix = programAverages.map(p => ` (${p.count} faculty)`);
     chartTitle    = "Program-Level SET Rating Comparison (out of 100)";
   } else {
-    // ── Specific program selected, no faculty filter: show individual faculty ──
     labels        = scoped.map(t => t.name.split(",")[0]);
     data          = scoped.map(t => t.overallSET);
     colors        = scoped.map(t => getRatingColor(t.overallSET));
@@ -1390,7 +1225,6 @@ function renderBarChart(ranked) {
     chartTitle    = `Faculty SET Rating Comparison — ${progFilter} (out of 100)`;
   }
 
-  // Update chart card heading to reflect current scope
   const headingEl = document.querySelector("#bar-chart").closest(".chart-card")?.querySelector("h3");
   if (headingEl) headingEl.textContent = `📊 ${chartTitle}`;
 
@@ -1485,13 +1319,6 @@ function closeReportModal() {
   document.getElementById("report-modal").classList.add("hidden");
 }
 
-// ══════════════════════════════════════════════════════════════
-//  STAGE-AWARE RELEASE BUTTON
-//  pending / no row      → Forward to Supervisor
-//  forwarded_to_supervisor → disabled (waiting)
-//  supervisor_done        → Final Release to Faculty
-//  released               → hidden
-// ══════════════════════════════════════════════════════════════
 function updateReleaseButton() {
   const btn   = document.getElementById("release-btn");
   if (!btn) return;
@@ -1521,73 +1348,62 @@ function updateReleaseButton() {
     return;
   }
 
-  // pending or no row — forward to supervisor
   btn.textContent      = "📤 Forward to Supervisor";
   btn.style.background = "#475569";
   btn.onclick          = forwardToSupervisor;
 }
 
-// ── Navigate to Monitoring panel filtered by this teacher ──
 function goToMonitoringFiltered(teacherId, teacherName) {
-  // Close all open modals first
   document.querySelectorAll(".modal").forEach(m => m.classList.add("hidden"));
 
-  // Switch to monitoring panel (lazy-loads admin-monitoring.js if not yet loaded)
   if (typeof switchPanel === "function") {
     switchPanel("panel-monitoring");
   }
 
-  // After panel is visible and JS has loaded, apply the filter
-  // Poll briefly since the JS may still be injecting
   let attempts = 0;
   const apply = setInterval(() => {
     const input = document.getElementById("filter-faculty");
     if (input) {
       input.value = teacherName;
-      // Dispatch input event so monitoring JS picks it up
       input.dispatchEvent(new Event("input", { bubbles: true }));
       clearInterval(apply);
       sessionStorage.removeItem("mon_filter_faculty");
     }
-    if (++attempts > 20) clearInterval(apply); // give up after 2s
+    if (++attempts > 20) clearInterval(apply);
   }, 100);
 }
 
-// ── Forward to Supervisor ──
 async function forwardToSupervisor() {
   const teacherId   = window._reportTeacherId;
   const teacherName = window._reportTeacherName;
   const semesterId  = window._reportSemesterId;
   if (!teacherId || !semesterId) return;
 
-  // Look up this teacher's assigned supervisor name
+  // Supervisor assignment is now by DEPARTMENT match (exactly one
+  // supervisor per department — the program chair), not the old
+  // users.supervisor_id link, which nothing in the admin UI ever
+  // actually set. Look up this teacher's own department, then find
+  // whichever active supervisor shares it.
   const { data: teacherRow } = await supabase
     .from("users")
-    .select("supervisor_id")
+    .select("department")
     .eq("id", teacherId)
     .maybeSingle();
 
-  let supervisorName = "Immediate Supervisor";
-  if (teacherRow?.supervisor_id) {
-    const { data: supRow } = await supabase
-      .from("users")
-      .select("name")
-      .eq("id", teacherRow.supervisor_id)
-      .maybeSingle();
-    if (supRow?.name) supervisorName = supRow.name;
-  } else {
-    // No supervisor_id set — fall back to the single supervisor account
+  let supervisorName = "No supervisor assigned to this department yet";
+  if (teacherRow?.department) {
     const { data: supRow } = await supabase
       .from("users")
       .select("name")
       .eq("role", "supervisor")
-      .limit(1)
+      .eq("department", teacherRow.department)
+      .eq("is_active", true)
       .maybeSingle();
     if (supRow?.name) supervisorName = supRow.name;
+  } else {
+    supervisorName = "This faculty member has no department set — assign one in User Management first";
   }
 
-  // Get submission counts — use raw enrolled_count from subjects table,
-  // NOT the clamped value from computeWeightedSET (which adjusts for math validity).
   const { data: subjectsForCount } = await supabase
     .from("subjects")
     .select("id, name, enrolled_count, sections(name)")
@@ -1639,7 +1455,6 @@ async function forwardToSupervisor() {
   const btn = document.getElementById("release-btn");
   if (btn) { btn.textContent = "Forwarding..."; btn.disabled = true; }
 
-  // Upsert: insert if no row, update stage if row exists
   const { data: existing } = await supabase
     .from("report_releases")
     .select("id")
@@ -1675,7 +1490,6 @@ async function forwardToSupervisor() {
   viewReport(teacherId, teacherName);
 }
 
-// ── Final Release to Faculty ──
 async function finalRelease() {
   const teacherId   = window._reportTeacherId;
   const teacherName = window._reportTeacherName;
@@ -1709,16 +1523,8 @@ async function finalRelease() {
   viewReport(teacherId, teacherName);
 }
 
-// ── Expose to HTML (rankings table uses onclick) ──
 window.viewReport = viewReport;
 
-// ── Add a blank row to supervisor comment table only ──
-// NOTE: these row-management functions apply ONLY to the supervisor
-// comment table (tbodyId "supervisor-comments-tbody"). They explicitly
-// refuse to run against anything named "student-comments-tbody" — no
-// such table exists in this report, and it must never be added. Student
-// comments are shown as a plain, read-only list (see viewReport() above)
-// with no add/remove controls at all, by design and by policy.
 function addCommentRow(tbodyId) {
   if (tbodyId === "student-comments-tbody") return;
   const tbody = document.getElementById(tbodyId);
@@ -1736,7 +1542,6 @@ function addCommentRow(tbodyId) {
   renumberCommentRows(tbodyId);
 }
 
-// ── Remove the last data row from supervisor comment table only ──
 function removeCommentRow(tbodyId) {
   if (tbodyId === "student-comments-tbody") return;
   const tbody = document.getElementById(tbodyId);
@@ -1747,7 +1552,6 @@ function removeCommentRow(tbodyId) {
   renumberCommentRows(tbodyId);
 }
 
-// ── Remove a specific row (supervisor only) ──
 function removeSpecificCommentRow(btn, tbodyId) {
   if (tbodyId === "student-comments-tbody") return;
   const row = btn.closest("tr");
@@ -1759,7 +1563,6 @@ function removeSpecificCommentRow(btn, tbodyId) {
   renumberCommentRows(tbodyId);
 }
 
-// ── Renumber seq after add/remove ──
 function renumberCommentRows(tbodyId) {
   const tbody = document.getElementById(tbodyId);
   if (!tbody) return;
@@ -1775,7 +1578,6 @@ window.addCommentRow            = addCommentRow;
 window.removeCommentRow         = removeCommentRow;
 window.removeSpecificCommentRow = removeSpecificCommentRow;
 
-// ── Attach events ──
 document.getElementById("logout-btn").addEventListener("click", (e) => {
   e.preventDefault();
   supabase.auth.signOut();
@@ -1783,11 +1585,10 @@ document.getElementById("logout-btn").addEventListener("click", (e) => {
   window.location.href = "../index.html";
 });
 
-// ── Populate the Generate IFER faculty dropdown, optionally filtered ──
 function populateReportFacultySelect(list) {
   const select = document.getElementById("report-faculty");
   if (!select) return;
-  const currentValue = select.value; // preserve selection across re-filtering when possible
+  const currentValue = select.value;
   select.innerHTML = `<option value="">— select faculty —</option>` +
     list.map(t => `<option value="${t.id}|${t.name}">${t.name}</option>`).join("");
   if ([...select.options].some(o => o.value === currentValue)) {
@@ -1795,7 +1596,6 @@ function populateReportFacultySelect(list) {
   }
 }
 
-// ── Search bar narrows the dropdown as you type ──
 const reportFacultyFilterEl = document.getElementById("report-faculty-filter");
 if (reportFacultyFilterEl) {
   reportFacultyFilterEl.addEventListener("input", () => {
@@ -1816,13 +1616,11 @@ document.getElementById("generate-report-btn").addEventListener("click", () => {
   viewReport(id, nameParts.join("|"));
 });
 
-// ── Print Both Annex C + D ──
 document.getElementById("print-both-btn")?.addEventListener("click", () => {
   document.getElementById("annex-d-section").style.display = "block";
   window.print();
 });
 
-// ── Print Annex C only ──
 document.getElementById("print-annexc-btn")?.addEventListener("click", () => {
   const annexD = document.getElementById("annex-d-section");
   annexD.style.display = "none";
@@ -1830,17 +1628,14 @@ document.getElementById("print-annexc-btn")?.addEventListener("click", () => {
   annexD.style.display = "block";
 });
 
-// ── Print Annex D only ──
 document.getElementById("print-annexd-btn")?.addEventListener("click", () => {
   const content = document.getElementById("report-content");
-  // Temporarily hide everything except annex-d-section
   Array.from(content.children).forEach(el => {
     if (el.id !== "annex-d-section") el.setAttribute("data-hidden-print", el.style.display);
     if (el.id !== "annex-d-section") el.style.display = "none";
   });
   document.getElementById("annex-d-section").style.removeProperty("page-break-before");
   window.print();
-  // Restore
   Array.from(content.children).forEach(el => {
     if (el.hasAttribute("data-hidden-print")) {
       el.style.display = el.getAttribute("data-hidden-print") || "";
@@ -1850,7 +1645,6 @@ document.getElementById("print-annexd-btn")?.addEventListener("click", () => {
   document.getElementById("annex-d-section").style.pageBreakBefore = "always";
 });
 
-// ── Save as PDF (full document — IFER + FEDAF) ──
 document.getElementById("pdf-btn").addEventListener("click", async () => {
   const btn         = document.getElementById("pdf-btn");
   const teacherName = window._reportTeacherName || "IFER";
@@ -1859,7 +1653,6 @@ document.getElementById("pdf-btn").addEventListener("click", async () => {
   btn.textContent = "Generating...";
   btn.disabled    = true;
 
-  // Hide all no-print elements (Add Row buttons, status banners)
   const noPrint = element.querySelectorAll(".no-print");
   noPrint.forEach(el => el.setAttribute("data-pdf-hidden", el.style.display));
   noPrint.forEach(el => el.style.display = "none");
@@ -1873,7 +1666,6 @@ document.getElementById("pdf-btn").addEventListener("click", async () => {
     pagebreak:   { mode: ["css", "legacy"] },
   }).from(element).save();
 
-  // Restore no-print elements
   noPrint.forEach(el => el.style.display = el.getAttribute("data-pdf-hidden") || "");
   noPrint.forEach(el => el.removeAttribute("data-pdf-hidden"));
 
@@ -1883,15 +1675,15 @@ document.getElementById("pdf-btn").addEventListener("click", async () => {
 
 document.getElementById("close-report-btn").addEventListener("click", closeReportModal);
 
-
-// ── Refresh button — reloads all dashboard data ──
 function refreshDashboard() {
   const btn = document.getElementById("refresh-btn");
   if (btn) {
     btn.textContent = "🔄 Refreshing...";
     btn.disabled = true;
   }
+  const loading = fpLoading("Refreshing dashboard...");
   Promise.all([loadSummary(), loadRankings()]).finally(() => {
+    loading.close();
     if (btn) {
       btn.textContent = "🔄 Refresh";
       btn.disabled = false;
@@ -1905,9 +1697,8 @@ const dashProgramFilterEl = document.getElementById("dash-program-filter");
 if (dashProgramFilterEl) {
   dashProgramFilterEl.addEventListener("change", () => {
     rankPage = 1;
-    // Refresh faculty filter options to only show faculty in selected program
     populateDashFacultyFilter();
-    document.getElementById("dash-faculty-filter").value = ""; // reset on program change
+    document.getElementById("dash-faculty-filter").value = "";
     renderRankingsPage();
     renderBarChart(allRanked);
     renderDonutChart(allRanked);
@@ -1924,10 +1715,9 @@ if (dashFacultyFilterEl) {
   });
 }
 
-// ── "Group by employment type" toggle above the rankings table ──
 const rankGroupToggleEl = document.getElementById("rank-group-toggle");
 if (rankGroupToggleEl) {
-  rankGroupByEmployment = rankGroupToggleEl.checked; // sync with HTML default
+  rankGroupByEmployment = rankGroupToggleEl.checked;
   rankGroupToggleEl.addEventListener("change", () => {
     rankGroupByEmployment = rankGroupToggleEl.checked;
     rankPage = 1;
@@ -1935,7 +1725,6 @@ if (rankGroupToggleEl) {
   });
 }
 
-// ── Populate faculty filter dropdown, scoped to current program filter ──
 function populateDashFacultyFilter() {
   const facultySel = document.getElementById("dash-faculty-filter");
   if (!facultySel) return;
@@ -1950,7 +1739,7 @@ function populateDashFacultyFilter() {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  PRINT HISTORY — audit log of released reports
+//  PRINT HISTORY
 // ══════════════════════════════════════════════════════════════
 let allHistory      = [];
 let historyPage     = 1;
@@ -1958,7 +1747,7 @@ const HISTORY_PAGE_SIZE = 10;
 
 async function loadPrintHistory() {
   const tbody = document.getElementById("history-tbody");
-  if (!tbody) return; // panel not yet loaded
+  if (!tbody) return;
   tbody.innerHTML = `<tr><td colspan="6">Loading...</td></tr>`;
 
   const { data, error } = await supabase
@@ -1974,7 +1763,6 @@ async function loadPrintHistory() {
 
   allHistory = data || [];
 
-  // Populate semester filter (once)
   const semFilter = document.getElementById("history-semester-filter");
   if (semFilter && semFilter.options.length <= 1) {
     const uniqueSemesters = [...new Map(
@@ -2077,7 +1865,6 @@ function renderHistoryPagination(totalPages) {
   container.appendChild(makeBtn("Next →", historyPage + 1, { disabled: historyPage === totalPages }));
 }
 
-// Attach history panel events (elements exist in initial admin.html, not lazy-loaded)
 const historyRefreshBtn = document.getElementById("refresh-btn-history");
 if (historyRefreshBtn) historyRefreshBtn.addEventListener("click", loadPrintHistory);
 
@@ -2087,7 +1874,6 @@ if (historySearchEl) historySearchEl.addEventListener("input", () => { historyPa
 const historySemFilterEl = document.getElementById("history-semester-filter");
 if (historySemFilterEl) historySemFilterEl.addEventListener("change", () => { historyPage = 1; renderHistoryTable(); });
 
-// Load history data on init too (panel is hidden but data ready when user clicks)
 loadPrintHistory();
 
 // ══════════════════════════════════════════════════════════════
@@ -2126,7 +1912,6 @@ async function loadEmailRequests() {
   emailRequests = data;
   if (countEl) countEl.textContent = `${data.length} request${data.length !== 1 ? "s" : ""}`;
 
-  // Update pending badge
   const pending = data.filter(r => r.status === "pending").length;
   const badge   = document.getElementById("email-req-badge");
   if (badge) { badge.textContent = pending; badge.style.display = pending > 0 ? "inline-block" : "none"; }
@@ -2177,7 +1962,6 @@ async function approveEmailRequest(requestId, studentUuid) {
   );
   if (!confirmed) return;
 
-  // Use studentUuid passed directly — req.users?.id is unreliable from the join
   const { error: updateError } = await supabase
     .from("users")
     .update({ email: req.requested_email })
@@ -2260,11 +2044,9 @@ document.getElementById("cancel-reject-email-btn")?.addEventListener("click", ()
 window.approveEmailRequest = approveEmailRequest;
 window.openRejectEmailModal = openRejectEmailModal;
 
-// Email requests panel events
 document.getElementById("refresh-email-req-btn")?.addEventListener("click", loadEmailRequests);
 document.getElementById("email-req-filter")?.addEventListener("change", loadEmailRequests);
 
-// Load pending badge count on init
 loadEmailRequests();
 
 // ══════════════════════════════════════════════════════════════
@@ -2404,7 +2186,6 @@ async function activateSemester(semesterId, semesterLabel) {
   loadRankings();
 }
 
-// ── Pause: blocks new student submissions without deactivating the semester ──
 async function pauseSemester(semesterId, semesterLabel) {
   const confirmed = await fpConfirm(
     `Pause submissions for "${semesterLabel}"?\n\n` +
@@ -2430,7 +2211,6 @@ async function pauseSemester(semesterId, semesterLabel) {
   loadSemesters();
 }
 
-// ── Resume: re-allow student submissions ──
 async function resumeSemester(semesterId, semesterLabel) {
   const confirmed = await fpConfirm(
     `Resume submissions for "${semesterLabel}"?\n\nStudents will be able to submit evaluations again immediately.`,
@@ -2542,33 +2322,96 @@ loadSemesters();
 
 // ══════════════════════════════════════════════════════════════
 //  SUBJECT → TEACHER ASSIGNMENT
+//
+//  Redesigned around Department as the primary filter:
+//    1. Admin picks a Department first.
+//    2. Only THEN do the Teacher dropdown and the subject table
+//       populate — both scoped to that department.
+//    3. Nothing renders in the container until a department is
+//       picked, instead of showing an unfiltered "everything" list
+//       that scrolls forever across every program in the school.
+//
+//  This requires users.department (set on teacher/supervisor
+//  accounts in User Management) — see admin-users.js. Without a
+//  stored department, "which teachers belong to this department"
+//  has no answer until subjects already exist, which is a chicken/
+//  egg problem for the exact step that assigns those subjects.
 // ══════════════════════════════════════════════════════════════
 let allSubjectsForAssignment = [];
 let subjectAssignPage        = 1;
 const SUBJECT_ASSIGN_PAGE_SIZE = 20;
 let selectedSubjectIds       = new Set();
 let teachersForAssignment    = [];
+let subjectAssignDepartment  = "";
+let subjectAssignYearLevel   = "";
 
-async function loadTeachersForAssignment() {
-  const { data } = await supabase
+// Section names follow {Department}-{RomanYearLevel}-{AcademicYear}
+// (e.g. "BSInfoTech-III-2026-2027") — pull the Roman numeral segment
+// out of that instead of storing year level anywhere separately.
+function extractYearLevelFromSection(sectionName) {
+  const match = String(sectionName || "").match(/-([IVX]+)-\d{4}-\d{4}$/);
+  return match ? match[1] : "";
+}
+
+function populateYearLevelOptions() {
+  const sel = document.getElementById("subject-assign-yearlevel");
+  if (!sel) return;
+  const current = sel.value;
+
+  // "All Departments" (empty string) scopes year-level options to every
+  // subject currently loaded, not zero — this dropdown is a real filter
+  // now, not gated behind picking a department first.
+  const deptSubjects = subjectAssignDepartment
+    ? allSubjectsForAssignment.filter(s => s.sections?.department === subjectAssignDepartment)
+    : allSubjectsForAssignment;
+  const levels = [...new Set(
+    deptSubjects.map(s => extractYearLevelFromSection(s.sections?.name)).filter(Boolean)
+  )];
+  // Sort by Roman-numeral value, not alphabetically (IV would otherwise sort before II)
+  const ROMAN_ORDER = { I:1, II:2, III:3, IV:4, V:5, VI:6 };
+  levels.sort((a, b) => (ROMAN_ORDER[a] || 99) - (ROMAN_ORDER[b] || 99));
+
+  sel.innerHTML = `<option value="">All Year Levels</option>` +
+    levels.map(l => `<option value="${l}">${l}</option>`).join("");
+  if (levels.includes(current)) sel.value = current;
+  else subjectAssignYearLevel = "";
+}
+
+async function loadDepartmentsForAssignment() {
+  const sel = document.getElementById("subject-assign-department");
+  if (!sel) return;
+  const { data, error } = await supabase.from("sections").select("department");
+  if (error) { console.error("Failed to load departments:", error); return; }
+  const depts = [...new Set((data || []).map(r => r.department).filter(Boolean))].sort();
+  sel.innerHTML = `<option value="">All Departments</option>` +
+    depts.map(d => `<option value="${escHtml(d)}">${escHtml(d)}</option>`).join("");
+}
+
+async function loadTeachersForAssignment(department) {
+  const sel = document.getElementById("subject-assign-teacher");
+  if (!sel) return;
+
+  // "All Departments" now loads every active teacher, not a disabled
+  // placeholder — assigning across departments in one batch is a valid
+  // (if less common) workflow, so the teacher list should support it.
+  let query = supabase
     .from("users")
     .select("id, name")
     .eq("role", "teacher")
     .neq("is_active", false)
     .order("name");
+  if (department) query = query.eq("department", department);
+
+  const { data } = await query;
   teachersForAssignment = data || [];
-  const sel = document.getElementById("subject-assign-teacher");
-  if (sel) {
-    sel.innerHTML = `<option value="">— select teacher —</option>` +
-      teachersForAssignment.map(t => `<option value="${t.id}">${escHtml(t.name)}</option>`).join("");
-  }
+  sel.disabled = false;
+  sel.innerHTML = teachersForAssignment.length
+    ? `<option value="">— select teacher —</option>` +
+      teachersForAssignment.map(t => `<option value="${t.id}">${escHtml(t.name)}</option>`).join("")
+    : `<option value="">No teachers found${department ? " in this department" : ""}</option>`;
 }
 
 async function loadSubjectsForAssignment() {
-  const tbody = document.getElementById("subjects-assign-tbody");
-  if (!tbody) return;
-  tbody.innerHTML = `<tr><td colspan="5">Loading...</td></tr>`;
-
   const semSel = document.getElementById("subject-assign-semester-filter");
   if (semSel && semSel.options.length <= 1) {
     const { data: sems } = await supabase
@@ -2589,11 +2432,13 @@ async function loadSubjectsForAssignment() {
 
   const { data, error } = await query;
   if (error) {
-    tbody.innerHTML = `<tr><td colspan="5">Error loading subjects: ${escHtml(error.message)}</td></tr>`;
+    const tbody = document.getElementById("subjects-assign-tbody");
+    if (tbody) tbody.innerHTML = `<tr><td colspan="5">Error loading subjects: ${escHtml(error.message)}</td></tr>`;
     return;
   }
 
   allSubjectsForAssignment = data || [];
+  populateYearLevelOptions();
   subjectAssignPage = 1;
   selectedSubjectIds.clear();
   updateSubjectAssignSelectionBar();
@@ -2604,27 +2449,39 @@ function renderSubjectAssignPage() {
   const tbody = document.getElementById("subjects-assign-tbody");
   if (!tbody) return;
 
+  document.getElementById("subject-assign-select-all").disabled = false;
+
   const search             = (document.getElementById("subject-assign-search")?.value || "").toLowerCase();
   const showUnassignedOnly = document.getElementById("subject-assign-unassigned-only")?.checked;
 
   let filtered = allSubjectsForAssignment.filter(s => {
-    const matchSearch     = !search
+    const matchDept        = !subjectAssignDepartment || s.sections?.department === subjectAssignDepartment;
+    const matchYearLevel   = !subjectAssignYearLevel
+      || extractYearLevelFromSection(s.sections?.name) === subjectAssignYearLevel;
+    const matchSearch      = !search
       || s.name.toLowerCase().includes(search)
       || (s.sections?.name || "").toLowerCase().includes(search);
-    const matchUnassigned = !showUnassignedOnly || !s.teacher_id;
-    return matchSearch && matchUnassigned;
+    const matchUnassigned  = !showUnassignedOnly || !s.teacher_id;
+    return matchDept && matchYearLevel && matchSearch && matchUnassigned;
   });
 
   filtered.sort((a, b) =>
     a.name.localeCompare(b.name) || (a.sections?.name || "").localeCompare(b.sections?.name || "")
   );
 
-  const totalUnassigned = allSubjectsForAssignment.filter(s => !s.teacher_id).length;
+  const deptSubjects    = subjectAssignDepartment
+    ? allSubjectsForAssignment.filter(s => s.sections?.department === subjectAssignDepartment)
+    : allSubjectsForAssignment;
+  const totalUnassigned = deptSubjects.filter(s => !s.teacher_id).length;
+  const deptLabel  = subjectAssignDepartment || "All Departments";
+  const scopeLabel = subjectAssignYearLevel
+    ? `${deptLabel} — Year ${subjectAssignYearLevel}`
+    : deptLabel;
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5">No subjects match.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5">No subjects match in ${escHtml(scopeLabel)}.</td></tr>`;
     document.getElementById("subject-assign-count").textContent =
-      `No subjects found. (${totalUnassigned} unassigned in total)`;
+      `No subjects found in ${scopeLabel}. (${totalUnassigned} unassigned in ${deptLabel})`;
     renderPager("subject-assign-page-buttons", 0, 1, () => {});
     return;
   }
@@ -2635,11 +2492,11 @@ function renderSubjectAssignPage() {
   const pageItems  = filtered.slice(start, start + SUBJECT_ASSIGN_PAGE_SIZE);
 
   document.getElementById("subject-assign-count").textContent =
-    `Showing ${start + 1}–${Math.min(start + SUBJECT_ASSIGN_PAGE_SIZE, filtered.length)} of ${filtered.length} ` +
-    `(${totalUnassigned} unassigned in total)`;
+    `Showing ${start + 1}–${Math.min(start + SUBJECT_ASSIGN_PAGE_SIZE, filtered.length)} of ${filtered.length} in ${scopeLabel} ` +
+    `(${totalUnassigned} unassigned in ${deptLabel})`;
 
   tbody.innerHTML = pageItems.map(s => `
-    <tr>
+    <tr class="subject-assign-row" data-id="${s.id}" style="cursor:pointer;">
       <td><input type="checkbox" class="subject-assign-checkbox" data-id="${s.id}" ${selectedSubjectIds.has(s.id) ? "checked" : ""} /></td>
       <td><b>${escHtml(s.name)}</b></td>
       <td>${escHtml(s.sections?.name || "—")}</td>
@@ -2657,6 +2514,17 @@ function renderSubjectAssignPage() {
     });
   });
 
+  // Clicking anywhere on the row toggles its checkbox, not just the tiny
+  // checkbox itself. Guarded so clicking the checkbox directly doesn't
+  // toggle it twice (once from the native click, once from this handler).
+  tbody.querySelectorAll(".subject-assign-row").forEach(row => {
+    row.addEventListener("click", (e) => {
+      if (e.target.matches(".subject-assign-checkbox")) return;
+      const cb = row.querySelector(".subject-assign-checkbox");
+      if (cb) cb.click();
+    });
+  });
+
   renderPager("subject-assign-page-buttons", totalPages, subjectAssignPage, (p) => {
     subjectAssignPage = p;
     renderSubjectAssignPage();
@@ -2665,16 +2533,22 @@ function renderSubjectAssignPage() {
   updateSubjectAssignSelectAllCheckbox(pageItems);
 }
 
+// Always visible — an admin has no way to know "select teacher" even
+// exists if the whole bar only appears after checking a subject first.
+// Assign/Clear just disable at 0 selected instead of the bar vanishing.
 function updateSubjectAssignSelectionBar() {
-  const bar     = document.getElementById("subject-assign-bulkbar");
-  const countEl = document.getElementById("subject-assign-selected-count");
+  const bar        = document.getElementById("subject-assign-bulkbar");
+  const countEl    = document.getElementById("subject-assign-selected-count");
+  const assignBtn  = document.getElementById("subject-assign-btn");
+  const clearBtn   = document.getElementById("subject-unassign-btn");
   if (!bar) return;
-  if (selectedSubjectIds.size > 0) {
-    bar.style.display = "flex";
-    if (countEl) countEl.textContent = selectedSubjectIds.size;
-  } else {
-    bar.style.display = "none";
-  }
+
+  bar.style.display = "flex";
+  if (countEl) countEl.textContent = selectedSubjectIds.size;
+
+  const hasSelection = selectedSubjectIds.size > 0;
+  if (assignBtn) assignBtn.disabled = !hasSelection;
+  if (clearBtn)  clearBtn.disabled  = !hasSelection;
 }
 
 function updateSubjectAssignSelectAllCheckbox(pageItems) {
@@ -2682,6 +2556,24 @@ function updateSubjectAssignSelectAllCheckbox(pageItems) {
   if (!selectAll) return;
   selectAll.checked = pageItems.length > 0 && pageItems.every(s => selectedSubjectIds.has(s.id));
 }
+
+document.getElementById("subject-assign-department")?.addEventListener("change", async (e) => {
+  subjectAssignDepartment = e.target.value;
+  subjectAssignYearLevel  = "";
+  populateYearLevelOptions();
+  selectedSubjectIds.clear();
+  updateSubjectAssignSelectionBar();
+  document.getElementById("subject-assign-teacher").value = "";
+  await loadTeachersForAssignment(subjectAssignDepartment);
+  subjectAssignPage = 1;
+  renderSubjectAssignPage();
+});
+
+document.getElementById("subject-assign-yearlevel")?.addEventListener("change", (e) => {
+  subjectAssignYearLevel = e.target.value;
+  subjectAssignPage = 1;
+  renderSubjectAssignPage();
+});
 
 document.getElementById("subject-assign-select-all")?.addEventListener("change", (e) => {
   const checked = e.target.checked;
@@ -2702,7 +2594,10 @@ document.getElementById("subject-assign-unassigned-only")?.addEventListener("cha
   renderSubjectAssignPage();
 });
 document.getElementById("subject-assign-semester-filter")?.addEventListener("change", loadSubjectsForAssignment);
-document.getElementById("refresh-btn-subjects")?.addEventListener("click", loadSubjectsForAssignment);
+document.getElementById("refresh-btn-subjects")?.addEventListener("click", async () => {
+  await loadSubjectsForAssignment();
+  await loadTeachersForAssignment(subjectAssignDepartment);
+});
 
 document.getElementById("subject-assign-btn")?.addEventListener("click", async () => {
   const teacherId = document.getElementById("subject-assign-teacher")?.value;
@@ -2748,9 +2643,205 @@ document.getElementById("subject-unassign-btn")?.addEventListener("click", async
   await loadSubjectsForAssignment();
 });
 
-loadTeachersForAssignment();
+loadDepartmentsForAssignment();
+loadTeachersForAssignment(""); // "" = All Departments, the new default — loads every active teacher
 loadSubjectsForAssignment();
 
+// ══════════════════════════════════════════════════════════════
+//  FACULTY TRENDS — a faculty's Overall SET Rating across every past
+//  semester with data, not just the active one. Reuses
+//  computeWeightedSET() unchanged (it already takes any semesterId).
+// ══════════════════════════════════════════════════════════════
+let trendChart = null;
+
+// Semester labels are free text like "1st Semester 2025-2026", "Summer
+// 2026-2027" — not sortable alphabetically (Summer < 1st Semester, and
+// year isn't the leading token). Parse out a real sort key instead.
+const TREND_TERM_ORDER = { "1st Semester": 0, "2nd Semester": 1, "Summer": 2 };
+function parseSemesterSortKey(label) {
+  const yearMatch = String(label || "").match(/(\d{4})-\d{4}/);
+  const startYear = yearMatch ? parseInt(yearMatch[1], 10) : 0;
+  let termOrder = 3; // unrecognized terms sort last within their year
+  for (const [term, order] of Object.entries(TREND_TERM_ORDER)) {
+    if (label.startsWith(term)) { termOrder = order; break; }
+  }
+  return startYear * 10 + termOrder;
+}
+
+async function loadTrendFacultyOptions() {
+  const sel = document.getElementById("trend-faculty-select");
+  if (!sel) return;
+
+  // Same exclusion as Faculty Rankings: COS faculty don't appear in any
+  // faculty-facing analytics view in this system.
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, name, employment_type")
+    .eq("role", "teacher")
+    .neq("is_active", false)
+    .order("name");
+
+  if (error) {
+    sel.innerHTML = `<option value="">Failed to load faculty</option>`;
+    return;
+  }
+
+  const teachers = (data || []).filter(t => t.employment_type !== "COS");
+  sel.innerHTML = `<option value="">— select faculty —</option>` +
+    teachers.map(t => `<option value="${t.id}">${escHtml(t.name)}</option>`).join("");
+}
+
+async function loadFacultyTrend(teacherId, teacherName) {
+  const emptyState = document.getElementById("trend-empty-state");
+  const content     = document.getElementById("trend-content");
+  const tbody       = document.getElementById("trend-tbody");
+
+  if (!teacherId) {
+    emptyState.style.display = "block";
+    content.style.display    = "none";
+    return;
+  }
+
+  emptyState.style.display = "none";
+  content.style.display    = "block";
+  tbody.innerHTML = `<tr><td colspan="7">Loading...</td></tr>`;
+  document.getElementById("trend-chart-title").textContent =
+    `📊 Overall SET Rating by Semester — ${teacherName}`;
+
+  const { data: semesters, error } = await supabase
+    .from("semesters")
+    .select("id, label");
+
+  if (error || !semesters || semesters.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7">No semesters found.</td></tr>`;
+    return;
+  }
+
+  semesters.sort((a, b) => parseSemesterSortKey(a.label) - parseSemesterSortKey(b.label));
+
+  // Cap to the last 5 academic years — older history isn't dropped from
+  // the database, just excluded from this view. Keeps the chart readable
+  // and avoids an ever-growing chain of computeWeightedSET() calls (one
+  // Supabase round trip per semester) as more semesters accumulate.
+  const currentYear = new Date().getFullYear();
+  const recentSemesters = semesters.filter(s => {
+    const match = String(s.label || "").match(/(\d{4})-\d{4}/);
+    if (!match) return true; // unparseable label — don't silently drop it
+    return currentYear - parseInt(match[1], 10) <= 5;
+  });
+
+  // computeWeightedSET() already exists for the IFER report — it takes
+  // any semesterId, not just the active one, so it's reused as-is here.
+  // Semesters with zero respondents for this faculty return null and
+  // are skipped, rather than plotted as a misleading 0.
+  const points = [];
+  for (const sem of recentSemesters) {
+    const result = await computeWeightedSET(teacherId, sem.id);
+    if (!result || result.totalRespondents === 0) continue;
+    points.push({
+      label:       sem.label,
+      overallSET:  result.overallSET,
+      avgA:        result.avgA,
+      avgB:        result.avgB,
+      avgC:        result.avgC,
+      respondents: result.totalRespondents,
+    });
+  }
+
+  if (points.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7">No evaluation data found for this faculty in any semester.</td></tr>`;
+    renderTrendChart([]);
+    return;
+  }
+
+  tbody.innerHTML = points.map((p, i) => {
+    const prev = i > 0 ? points[i - 1].overallSET : null;
+    let change = `<span style="color:#94a3b8;">—</span>`;
+    if (prev !== null) {
+      const diff = parseFloat((p.overallSET - prev).toFixed(2));
+      if (diff > 0)      change = `<span style="color:#16a34a; font-weight:600;">▲ +${diff}</span>`;
+      else if (diff < 0) change = `<span style="color:#dc2626; font-weight:600;">▼ ${diff}</span>`;
+      else               change = `<span style="color:#64748b;">— 0.00</span>`;
+    }
+    return `
+      <tr>
+        <td><b>${escHtml(p.label)}</b></td>
+        <td style="color:${getRatingColor(p.overallSET)}; font-weight:700;">${p.overallSET.toFixed(2)}</td>
+        <td>${p.avgA.toFixed(2)}</td>
+        <td>${p.avgB.toFixed(2)}</td>
+        <td>${p.avgC.toFixed(2)}</td>
+        <td>${p.respondents}</td>
+        <td>${change}</td>
+      </tr>`;
+  }).join("");
+
+  renderTrendChart(points);
+}
+
+function renderTrendChart(points) {
+  const canvas = document.getElementById("trend-chart");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (trendChart) trendChart.destroy();
+
+  trendChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: points.map(p => p.label),
+      datasets: [{
+        label: "Overall SET Rating",
+        data: points.map(p => p.overallSET),
+        borderColor: "#671408",
+        backgroundColor: "rgba(103,20,8,0.08)",
+        pointBackgroundColor: points.map(p => getRatingColor(p.overallSET)),
+        pointRadius: 5,
+        tension: 0.2,
+        fill: true,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.parsed.y.toFixed(2)} — ${getRatingLabel(ctx.parsed.y)}`
+          }
+        }
+      },
+      scales: {
+        y: { min: 0, max: 100, ticks: { stepSize: 20 }, grid: { color: "#f0f0f0" } },
+        x: { ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+document.getElementById("trend-faculty-select")?.addEventListener("change", (e) => {
+  const sel  = e.target;
+  const name = sel.options[sel.selectedIndex]?.textContent || "";
+  loadFacultyTrend(sel.value, name);
+});
+
+document.getElementById("refresh-btn-trends")?.addEventListener("click", async () => {
+  await loadTrendFacultyOptions();
+  const sel = document.getElementById("trend-faculty-select");
+  if (sel?.value) {
+    const name = sel.options[sel.selectedIndex]?.textContent || "";
+    await loadFacultyTrend(sel.value, name);
+  }
+});
+
+loadTrendFacultyOptions();
+
 // ── Init ──
-loadSummary();
-loadRankings();
+// Shows the loading popup for the very first thing the admin sees —
+// the default Dashboard panel's data (summary counts + rankings/charts).
+// The other panels' own init calls below this (semesters, subjects,
+// email requests, etc.) run independently and don't block this popup,
+// since their panels aren't visible until the admin clicks their tab.
+{
+  const initialLoad = fpLoading("Loading dashboard...");
+  Promise.all([loadSummary(), loadRankings()]).finally(() => initialLoad.close());
+}

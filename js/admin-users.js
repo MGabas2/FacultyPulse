@@ -34,10 +34,35 @@ const ACADEMIC_RANKS = [
 // ── State ──
 let allUsers        = [];
 let sections        = [];
+let departments      = [];
 let editTargetId    = null;
 let archiveTargetId = null;
 let currentPage     = 1;
 const PAGE_SIZE     = 10;
+
+// ══════════════════════════════════════════════════════════════
+//  LOAD DEPARTMENTS
+//  Departments come from the sections table (BSIT, BSHM, ...) —
+//  the same canonical list used for student sections — so a
+//  teacher/supervisor's Department dropdown always matches real
+//  program names instead of admins retyping free text that could
+//  drift out of sync (e.g. "BSIT" vs "BS IT" vs "BSInfoTech").
+// ══════════════════════════════════════════════════════════════
+async function loadDepartments() {
+  const { data, error } = await supabase.from("sections").select("department");
+  if (error) { console.error("Failed to load departments:", error); return; }
+
+  departments = [...new Set((data || []).map(r => r.department).filter(Boolean))].sort();
+
+  ["new-department", "edit-department"].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = `<option value="">-- Select Department --</option>` +
+      departments.map(d => `<option value="${escHtml(d)}">${escHtml(d)}</option>`).join("");
+    if (departments.includes(current)) sel.value = current;
+  });
+}
 
 // ══════════════════════════════════════════════════════════════
 //  LOAD SECTIONS
@@ -52,10 +77,8 @@ async function loadSections() {
   });
 
   const newSection = document.getElementById("new-section-id");
-  const supSection = document.getElementById("new-supervisor-section");
   sections.forEach(s => {
     newSection.innerHTML += `<option value="${s.id}">${s.name}</option>`;
-    supSection.innerHTML += `<option value="${s.id}">${s.name}</option>`;
   });
 
   // Populate edit-modal section dropdown
@@ -86,7 +109,7 @@ async function loadUsers() {
 
   const { data, error } = await supabase
     .from("users")
-    .select("id, student_id, role, name, email, section_id, is_active, academic_rank, employment_type, sections(name)");
+    .select("id, student_id, role, name, email, section_id, is_active, academic_rank, employment_type, department, sections(name)");
 
   if (error) {
     tbody.innerHTML = `<tr><td colspan="6">Error loading users.</td></tr>`;
@@ -349,20 +372,27 @@ function onNewRoleChange() {
   const role          = document.getElementById("new-role").value;
   const studentFields = document.getElementById("student-fields");
   const staffFields   = document.getElementById("staff-fields");
-  const supSection    = document.getElementById("supervisor-section-group");
   const rankGroup     = document.getElementById("new-rank-group");
+  const deptGroup     = document.getElementById("new-department-group");
 
   studentFields.classList.add("hidden");
   staffFields.classList.add("hidden");
-  supSection.style.display = "none";
   if (rankGroup) rankGroup.style.display = "none";
+  if (deptGroup) deptGroup.style.display = "none";
 
   if (role === "student") {
     studentFields.classList.remove("hidden");
   } else if (["teacher","supervisor","admin"].includes(role)) {
     staffFields.classList.remove("hidden");
-    if (role === "supervisor") supSection.style.display = "block";
     if (role === "teacher" && rankGroup) rankGroup.style.display = "block";
+    // Department applies to teacher AND supervisor — not admin, who isn't
+    // scoped to any one department. For supervisors, Department IS their
+    // assignment: exactly one supervisor per department (the program
+    // chair), enforced at save time — there's no separate "which section"
+    // concept for supervisors anymore.
+    if ((role === "teacher" || role === "supervisor") && deptGroup) {
+      deptGroup.style.display = "block";
+    }
     const empGroup = document.getElementById("new-employment-group");
     if (role === "teacher" && empGroup) empGroup.style.display = "block";
     else if (empGroup) empGroup.style.display = "none";
@@ -410,19 +440,47 @@ async function saveUser() {
       const name          = document.getElementById("new-name").value.trim();
       const email         = document.getElementById("new-email").value.trim();
       const password      = document.getElementById("new-password").value.trim();
-      const supSec        = document.getElementById("new-supervisor-section").value;
       const academicRank  = document.getElementById("new-academic-rank")?.value || null;
       const employmentType = document.getElementById("new-employment-type")?.value || null;
+      const department     = document.getElementById("new-department")?.value || null;
 
       if (!name)     { errorEl.textContent = "Full name is required."; return; }
       if (!email)    { errorEl.textContent = "Email is required."; return; }
       if (!password) { errorEl.textContent = "Password is required."; return; }
+      if ((role === "teacher" || role === "supervisor") && !department) {
+        errorEl.textContent = "Please select a department.";
+        return;
+      }
+
+      // Exactly one supervisor per department (the program chair) is the
+      // assumed model — a second supervisor on the same department would
+      // silently give both of them the exact same faculty list, which
+      // isn't "co-supervision" by design here, it's a data-entry mistake.
+      if (role === "supervisor") {
+        const { data: existingSup, error: checkError } = await supabase
+          .from("users")
+          .select("id, name")
+          .eq("role", "supervisor")
+          .eq("department", department)
+          .eq("is_active", true)
+          .maybeSingle();
+        if (checkError) {
+          errorEl.textContent = "Failed to check existing supervisors: " + checkError.message;
+          return;
+        }
+        if (existingSup) {
+          errorEl.textContent =
+            `${existingSup.name} is already the active supervisor for ${department}. ` +
+            `Archive them first if you're replacing them, or pick a different department.`;
+          return;
+        }
+      }
 
       const insertData = {
         role, name, email,
-        section_id:      role === "supervisor" ? supSec || null : null,
         academic_rank:   academicRank || null,
         employment_type: employmentType || null,
+        department:      (role === "teacher" || role === "supervisor") ? department : null,
       };
 
       const { error: insertError } = await supabase.from("users").insert(insertData);
@@ -492,6 +550,10 @@ function openAddModal() {
   document.getElementById("staff-fields").classList.add("hidden");
   if (document.getElementById("new-rank-group"))
     document.getElementById("new-rank-group").style.display = "none";
+  if (document.getElementById("new-department-group"))
+    document.getElementById("new-department-group").style.display = "none";
+  if (document.getElementById("new-department"))
+    document.getElementById("new-department").value = "";
   document.getElementById("add-modal").classList.remove("hidden");
 }
 
@@ -514,15 +576,20 @@ function openEditModal(userId) {
   document.getElementById("edit-section-id").value    = u.section_id || "";
   document.getElementById("edit-academic-rank").value = u.academic_rank || "";
   document.getElementById("edit-employment-type").value = u.employment_type || "";
+  if (document.getElementById("edit-department"))
+    document.getElementById("edit-department").value = u.department || "";
   document.getElementById("edit-is-active").value     = u.is_active !== false ? "active" : "inactive";
   document.getElementById("edit-error").textContent   = "";
 
-  // Show/hide rank + section fields based on role
+  // Show/hide rank + section + department fields based on role
   const isTeacher    = u.role === "teacher";
+  const isSupervisor = u.role === "supervisor";
   const isStudent    = u.role === "student";
   document.getElementById("edit-rank-row").style.display       = isTeacher ? "block" : "none";
   document.getElementById("edit-employment-row").style.display  = isTeacher ? "block" : "none";
   document.getElementById("edit-section-row").style.display     = isStudent ? "block" : "none";
+  const deptRow = document.getElementById("edit-department-row");
+  if (deptRow) deptRow.style.display = (isTeacher || isSupervisor) ? "block" : "none";
   document.getElementById("edit-name-row").style.display        = isStudent ? "none"  : "block";
   document.getElementById("edit-email-row").style.display       = isStudent ? "none"  : "block";
 
@@ -556,6 +623,37 @@ async function saveEdit() {
   if (u.role === "teacher") {
     updates.academic_rank   = document.getElementById("edit-academic-rank").value || null;
     updates.employment_type = document.getElementById("edit-employment-type").value || null;
+  }
+
+  if (u.role === "teacher" || u.role === "supervisor") {
+    const dept = document.getElementById("edit-department")?.value || "";
+    if (!dept) { errorEl.textContent = "Please select a department."; return; }
+
+    // Same one-supervisor-per-department guard as Add User, but excluding
+    // this supervisor's own row — otherwise they'd permanently fail this
+    // check the moment they're saved once (matching themselves).
+    if (u.role === "supervisor" && dept !== u.department) {
+      const { data: existingSup, error: checkError } = await supabase
+        .from("users")
+        .select("id, name")
+        .eq("role", "supervisor")
+        .eq("department", dept)
+        .eq("is_active", true)
+        .neq("id", editTargetId)
+        .maybeSingle();
+      if (checkError) {
+        errorEl.textContent = "Failed to check existing supervisors: " + checkError.message;
+        return;
+      }
+      if (existingSup) {
+        errorEl.textContent =
+          `${existingSup.name} is already the active supervisor for ${dept}. ` +
+          `Archive them first if you're replacing them, or pick a different department.`;
+        return;
+      }
+    }
+
+    updates.department = dept;
   }
 
   if (u.role === "student") {
@@ -883,15 +981,6 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
 
   try {
     // ── 1. Resolve sections (create any that don't exist) ──
-    // Uses upsert with onConflict:'name' instead of select-then-insert.
-    // The old select-then-insert pattern isn't atomic — it created a
-    // duplicate section row every time the import ran, because nothing
-    // stopped two "this section doesn't exist yet" checks from both being
-    // true at once. This requires a UNIQUE constraint on sections.name:
-    //   ALTER TABLE sections ADD CONSTRAINT sections_name_unique UNIQUE (name);
-    // Without it, upsert's onConflict has nothing to match against and
-    // Postgres will error loudly — which is the correct failure mode here,
-    // not a silent fourth duplicate.
     setImportStatus(`Resolving sections for ${dedupedParsed.length} student row(s)…`);
     const uniqueSectionNames = [...new Set(dedupedParsed.map(p => p.sectionName))];
     const sectionMap = {}; // name -> id
@@ -926,9 +1015,6 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
       }
       sectionsCreated = missingSections.length;
 
-      // Re-fetch to get the real ids — upsert with ignoreDuplicates:true
-      // doesn't reliably return rows it skipped, so its own response can't
-      // be trusted to build sectionMap from.
       for (const batch of chunkArray(missingSections.map(s => s.name), 200)) {
         const { data, error } = await supabase.from("sections").select("id, name").in("name", batch);
         if (error) throw new Error("Section lookup failed: " + error.message);
@@ -981,9 +1067,6 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
         studentsAdded += batch.length;
         continue;
       }
-      // Batch failed — a single bad row (e.g. an unexpected duplicate) fails
-      // the whole INSERT statement. Fall back to one-at-a-time for this
-      // batch so the other 499 good rows aren't lost with it.
       for (const row of batch) {
         const { error: rowError } = await supabase.from("users").insert(row);
         if (rowError) {
@@ -994,8 +1077,7 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
       }
     }
 
-    // ── 5. Promote existing students (section_id only — never touch name/email,
-    //        which could silently undo an approved email-change request) ──
+    // ── 5. Promote existing students (section_id only) ──
     setImportStatus(`Updating section for ${toPromote.length} returning student(s)…`);
     let studentsPromoted = 0;
     await runWithConcurrency(toPromote, 15, async (p) => {
@@ -1010,20 +1092,11 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
     });
 
     // ── 6. Create subject placeholders from the course columns ──
-    // teacher_id is deliberately left NULL — the registrar cannot supply
-    // teacher-assignment data, so there's nothing reliable to set it from.
-    // A person still has to claim/assign each subject to a teacher.
-    // Requires a UNIQUE constraint on (name, section_id, semester_id):
-    //   ALTER TABLE subjects ADD CONSTRAINT subjects_name_section_semester_unique
-    //     UNIQUE (name, section_id, semester_id);
-    // Upsert omits teacher_id from the payload, so re-running this import
-    // later (e.g. next week with more students) refreshes enrolled_count
-    // without wiping out a teacher assignment someone made in the meantime.
     setImportStatus("Resolving course subjects…");
     const subjectMap = new Map(); // "course|sectionId" -> row
     for (const p of dedupedParsed) {
       const sectionId = sectionMap[p.sectionName];
-      if (!sectionId) continue; // already recorded as an error above
+      if (!sectionId) continue;
       for (const courseName of p.courses) {
         const key = `${courseName}|${sectionId}`;
         if (!subjectMap.has(key)) {
@@ -1049,8 +1122,6 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
               : "")
           );
         }
-        // Feed the real DB ids back into subjectMap so the enrollment-linking
-        // step below has something real to point at.
         (upserted || []).forEach(row => {
           const key = `${row.name}|${row.section_id}`;
           const existing = subjectMap.get(key);
@@ -1061,11 +1132,6 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
     }
 
     // ── 7. Link each student to the SPECIFIC subjects they take ──
-    // This is the actual enrollment record. Without it, student.js has no
-    // way to know a student is only in 3 of their section's 6 subjects —
-    // it would otherwise show every subject that exists anywhere in their
-    // section, since sections can contain students with different course
-    // loads (electives, retakes, irregular enrollment).
     setImportStatus("Linking students to their specific subjects…");
     const enrollmentRows = [];
     for (const p of dedupedParsed) {
@@ -1073,7 +1139,7 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
       if (!sectionId) continue;
       for (const courseName of p.courses) {
         const subjectRow = subjectMap.get(`${courseName}|${sectionId}`);
-        if (!subjectRow?.id) continue; // shouldn't happen, but don't crash the import if it does
+        if (!subjectRow?.id) continue;
         enrollmentRows.push({
           student_id: p.studentId,
           subject_id: subjectRow.id,
@@ -1102,6 +1168,7 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
     renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted, duplicateRows, subjectsCreated, enrollmentsLinked, errors, totalRows: rows.length });
 
     await loadSections();
+    await loadDepartments();
     await loadUsers();
   } catch (err) {
     setImportStatus("Import stopped: " + err.message, true);
@@ -1117,7 +1184,6 @@ function showImportModal() {
   if (picker) picker.style.display = "block";
 }
 
-// Hide the semester/choose-file step once processing has started
 function hideImportPicker() {
   const picker = document.getElementById("import-picker");
   if (picker) picker.style.display = "none";
@@ -1207,5 +1273,6 @@ document.getElementById("close-import-btn")?.addEventListener("click", () => {
   document.getElementById("import-modal").classList.add("hidden");
 });
 
+loadDepartments();
 loadSections();
 loadUsers();

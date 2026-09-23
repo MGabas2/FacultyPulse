@@ -158,6 +158,16 @@
           <label>Password</label>
           <input type="password" id="new-password" placeholder="Temporary password" />
         </div>
+        <div class="form-group" id="new-department-group" style="display:none;">
+          <label>Department</label>
+          <select id="new-department">
+            <option value="">-- Select Department --</option>
+          </select>
+          <p class="field-hint">
+            Which department this person belongs to — used to filter Subject Assignment
+            by department before subjects are assigned.
+          </p>
+        </div>
         <div class="form-group" id="new-rank-group" style="display:none;">
           <label>Academic Rank</label>
           <select id="new-academic-rank">
@@ -171,13 +181,6 @@
             <option value="Full-time">Full-time</option>
             <option value="Part-time">Part-time</option>
             <option value="COS">Contract of Service (COS)</option>
-          </select>
-        </div>
-        <!-- Section only for supervisor -->
-        <div class="form-group" id="supervisor-section-group" style="display:none;">
-          <label>Assigned Section</label>
-          <select id="new-supervisor-section">
-            <option value="">-- Select Section --</option>
           </select>
         </div>
       </div>
@@ -203,6 +206,12 @@
       <div class="form-group" id="edit-email-row">
         <label>Email</label>
         <input type="email" id="edit-email" />
+      </div>
+      <div class="form-group" id="edit-department-row" style="display:none;">
+        <label>Department</label>
+        <select id="edit-department">
+          <option value="">-- Select Department --</option>
+        </select>
       </div>
       <div class="form-group" id="edit-rank-row" style="display:none;">
         <label>Academic Rank</label>

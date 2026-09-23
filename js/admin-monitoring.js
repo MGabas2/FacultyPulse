@@ -19,8 +19,27 @@ if (!sessionStorage.getItem("role") || sessionStorage.getItem("role") !== "admin
 
 document.getElementById("nav-user").textContent = "Logged in as: " + sessionStorage.getItem("name");
 
+// ── Fetch every row of a query, ignoring Supabase's default 1000-row
+//    cap. Pass a function that builds (but doesn't execute) the query —
+//    .range() gets appended fresh on every page, since a query builder
+//    can't be re-run after it's already been awaited once.
+//    e.g. fetchAllPages(() => supabase.from("users").select("id").eq("role","student"))
+async function fetchAllPages(buildQuery) {
+  const PAGE = 1000;
+  let from = 0;
+  const all = [];
+  while (true) {
+    const { data, error } = await buildQuery().range(from, from + PAGE - 1);
+    if (error) throw error;
+    all.push(...(data || []));
+    if (!data || data.length < PAGE) break;
+    from += PAGE;
+  }
+  return all;
+}
+
 // ── State ──
-let rows           = [];   // each row = one student × one subject (participation)
+let rows           = [];   // each row = one student × one subject they're ACTUALLY enrolled in
 let commentList    = [];   // identity-free comments: {subjectId, subjectName, teacherId, teacherName, comment}
 let sections       = [];
 let subjects       = [];
@@ -28,8 +47,8 @@ let activeSemester = null;
 
 // ══════════════════════════════════════════════════════════════
 //  LOAD EVERYTHING
-//  Builds a row for every (student × subject they should evaluate)
-//  then marks whether each one submitted.
+//  Builds a row for every (student × subject they're actually enrolled
+//  in, per student_subjects) then marks whether each one submitted.
 // ══════════════════════════════════════════════════════════════
 async function loadMonitoring() {
   const tbody = document.getElementById("monitor-tbody");
@@ -48,48 +67,74 @@ async function loadMonitoring() {
   }
   activeSemester = semester;
 
-  // 2. All students with their section + last login
-  const { data: students } = await supabase
-    .from("users")
-    .select("id, student_id, section_id, last_login, sections(name, department)")
-    .eq("role", "student");
+  let students, subs, tracking, comments, enrollments;
+  try {
+    // 2. All students with their section + last login
+    students = await fetchAllPages(() =>
+      supabase.from("users")
+        .select("id, student_id, section_id, last_login, sections(name, department)")
+        .eq("role", "student")
+    );
+
+    // 3. All subjects this semester (with teacher + section)
+    subs = await fetchAllPages(() =>
+      supabase.from("subjects")
+        .select("id, name, section_id, teacher_id, users(name), sections(department)")
+        .eq("semester_id", semester.id)
+    );
+
+    // 4. All submissions this semester (tracking = participation only, no comment)
+    tracking = await fetchAllPages(() =>
+      supabase.from("evaluation_tracking")
+        .select("id, student_id, subject_id, submitted_at")
+        .eq("semester_id", semester.id)
+    );
+
+    // 4b comments source data
+    comments = await fetchAllPages(() =>
+      supabase.from("evaluation_comments")
+        .select("id, subject_id, comment")
+        .eq("semester_id", semester.id)
+    );
+
+    // 5. Actual enrollment — see note below on why this can't be a
+    //    plain unpaginated .select()
+    enrollments = await fetchAllPages(() =>
+      supabase.from("student_subjects")
+        .select("student_id, subject_id")
+        .eq("semester_id", semester.id)
+    );
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6">
+      Failed to load monitoring data: ${err.message}
+      ${err.message?.includes("does not exist")
+        ? " — check that all required tables/migrations exist."
+        : ""}
+    </td></tr>`;
+    return;
+  }
 
   if (!students || students.length === 0) {
     tbody.innerHTML = `<tr><td colspan="6">No students found.</td></tr>`;
     return;
   }
-
-  // 3. All subjects this semester (with teacher + section)
-  const { data: subs } = await supabase
-    .from("subjects")
-    .select("id, name, section_id, teacher_id, users(name), sections(department)")
-    .eq("semester_id", semester.id);
+  const studentByStudentId = new Map(students.map(s => [s.student_id, s]));
 
   subjects = subs || [];
-
-  // 4. All submissions this semester (tracking = participation only, no comment)
-  const { data: tracking } = await supabase
-    .from("evaluation_tracking")
-    .select("id, student_id, subject_id, submitted_at")
-    .eq("semester_id", semester.id);
+  const subjectById = new Map(subjects.map(s => [s.id, s]));
 
   const trackMap = new Map();
   (tracking || []).forEach(t => {
     trackMap.set(`${t.student_id}|${t.subject_id}`, t);
   });
 
-  // 4b. Identity-free comments (separate table — no student link)
+  // Identity-free comments (separate table — no student link)
   const subjectInfo = new Map();
   subjects.forEach(s => subjectInfo.set(s.id, {
     name:        s.name,
     teacherId:   s.teacher_id || null,
     teacherName: s.users?.name || "—",
   }));
-
-  const { data: comments } = await supabase
-    .from("evaluation_comments")
-    .select("id, subject_id, comment")
-    .eq("semester_id", semester.id);
 
   commentList = (comments || [])
     .filter(c => subjectInfo.has(c.subject_id))
@@ -104,28 +149,35 @@ async function loadMonitoring() {
       };
     });
 
-  // 5. Build rows: each student × each subject in their section
+  // Build rows from ACTUAL enrollment (student_subjects), not from
+  // "every subject offered to this student's section." Sections can
+  // mix regular and irregular students with different course loads —
+  // that's the whole reason student_subjects exists (see the import
+  // redesign). Cross-joining by section instead of using this table
+  // fabricates evaluation obligations students were never enrolled
+  // in, which inflates the total row count and makes the "fully
+  // submitted" completion rate essentially unreachable.
   rows = [];
-  students.forEach(student => {
-    const studentSubjects = subjects.filter(s => s.section_id === student.section_id);
+  enrollments.forEach(en => {
+    const student = studentByStudentId.get(en.student_id);
+    const subject = subjectById.get(en.subject_id);
+    if (!student || !subject) return; // orphaned enrollment row — skip rather than crash
 
-    studentSubjects.forEach(subject => {
-      const key   = `${student.student_id}|${subject.id}`;
-      const track = trackMap.get(key);
+    const key   = `${en.student_id}|${en.subject_id}`;
+    const track = trackMap.get(key);
 
-      rows.push({
-        studentId:   student.student_id,
-        section:     student.sections?.name || "—",
-        sectionId:   student.section_id,
-        department:  student.sections?.department || "—",
-        subjectId:   subject.id,
-        subjectName: subject.name,
-        teacherName: subject.users?.name || "—",
-        teacherId:   subject.teacher_id || null,
-        lastLogin:   student.last_login,
-        submitted:   !!track,
-        submittedAt: track?.submitted_at || null,
-      });
+    rows.push({
+      studentId:   en.student_id,
+      section:     student.sections?.name || "—",
+      sectionId:   student.section_id,
+      department:  student.sections?.department || "—",
+      subjectId:   subject.id,
+      subjectName: subject.name,
+      teacherName: subject.users?.name || "—",
+      teacherId:   subject.teacher_id || null,
+      lastLogin:   student.last_login,
+      submitted:   !!track,
+      submittedAt: track?.submitted_at || null,
     });
   });
 
@@ -331,26 +383,74 @@ function renderTable() {
     return;
   }
 
-  // ── Pagination ──
-  const totalPages = Math.ceil(filtered.length / MONITOR_SIZE);
+  // ── Group rows by student ──
+  // A student can have several subject rows (one per enrolled subject);
+  // grouping them under one Student ID / Section cell (via rowspan) makes
+  // the repeated ID a lot easier to scan than one flat row per subject.
+  // Preserves the order rows were already in (already sorted upstream —
+  // grouping doesn't re-sort).
+  const groups = [];
+  const groupIndexByStudent = new Map();
+  filtered.forEach(r => {
+    if (!groupIndexByStudent.has(r.studentId)) {
+      groupIndexByStudent.set(r.studentId, groups.length);
+      groups.push({ studentId: r.studentId, section: r.section, entries: [] });
+    }
+    groups[groupIndexByStudent.get(r.studentId)].entries.push(r);
+  });
+
+  // ── Pagination — by STUDENT, not by raw row, so one student's
+  //    subjects never get split across two pages. ──
+  const totalPages = Math.ceil(groups.length / MONITOR_SIZE);
   if (monitorPage > totalPages) monitorPage = totalPages;
   if (monitorPage < 1) monitorPage = 1;
 
   const start = (monitorPage - 1) * MONITOR_SIZE;
   const end   = start + MONITOR_SIZE;
-  const pageRows = filtered.slice(start, end);
+  const pageGroups = groups.slice(start, end);
 
   tbody.innerHTML = "";
-  pageRows.forEach(r => {
-    // Status badge
-    let badge;
-    if (r.submitted) {
-      badge = `<span class="badge submitted">Submitted</span>`;
-    } else if (r.lastLogin) {
-      badge = `<span class="badge not-submitted">Not Yet</span>`;
-    } else {
-      badge = `<span class="badge never-login">Never Logged In</span>`;
-    }
+  pageGroups.forEach((group, gi) => {
+    // Thicker top border marks the start of a new student, alternating
+    // rows share a subtle background so the group reads as one block.
+    const groupBg = gi % 2 === 0 ? "#ffffff" : "#fafbfc";
+
+    group.entries.forEach((r, i) => {
+      let badge;
+      if (r.submitted) {
+        badge = `<span class="badge submitted">Submitted</span>`;
+      } else if (r.lastLogin) {
+        badge = `<span class="badge not-submitted">Not Yet</span>`;
+      } else {
+        badge = `<span class="badge never-login">Never Logged In</span>`;
+      }
+
+      const lastLogin   = timeAgo(r.lastLogin);
+      const submittedAt = timeAgo(r.submittedAt);
+      const isFirstRow  = i === 0;
+      const topBorder   = isFirstRow ? "border-top:2px solid #e2e8f0;" : "";
+
+      tbody.innerHTML += `
+        <tr style="background:${groupBg};">
+          ${isFirstRow ? `
+            <td style="${topBorder} vertical-align:top;" rowspan="${group.entries.length}"><b>${r.studentId}</b></td>
+            <td style="${topBorder} vertical-align:top;" rowspan="${group.entries.length}">${r.section}</td>
+          ` : ""}
+          <td style="${topBorder}">${r.subjectName}<br/><small style="color:#94a3b8;">${r.teacherName}</small></td>
+          <td class="last-login-cell" style="${topBorder}">${lastLogin}</td>
+          <td style="${topBorder}">${badge}</td>
+          <td class="last-login-cell" style="${topBorder}">${submittedAt}</td>
+        </tr>
+      `;
+    });
+  });
+
+  // Render pagination controls — counted in students, not raw rows
+  document.getElementById("monitor-page-info").textContent =
+    `Page ${monitorPage} of ${totalPages} — showing students ${start + 1}–${Math.min(end, groups.length)} of ${groups.length}`;
+
+  renderMonitorPager(totalPages);
+}
 
 // ── Relative time formatter ──
 // < 1 min   → "just now"
@@ -386,31 +486,6 @@ function timeAgo(dateStr) {
     month: "short", day: "numeric", year: "numeric",
     hour: "2-digit", minute: "2-digit"
   });
-}
-
-    // Last login formatted
-    const lastLogin    = timeAgo(r.lastLogin);
-
-    // Submitted at formatted
-    const submittedAt  = timeAgo(r.submittedAt);
-
-    tbody.innerHTML += `
-      <tr>
-        <td><b>${r.studentId}</b></td>
-        <td>${r.section}</td>
-        <td>${r.subjectName}<br/><small style="color:#94a3b8;">${r.teacherName}</small></td>
-        <td class="last-login-cell">${lastLogin}</td>
-        <td>${badge}</td>
-        <td class="last-login-cell">${submittedAt}</td>
-      </tr>
-    `;
-  });
-
-  // Render pagination controls
-  document.getElementById("monitor-page-info").textContent =
-    `Page ${monitorPage} of ${totalPages} — showing ${start + 1}–${Math.min(end, filtered.length)}`;
-
-  renderMonitorPager(totalPages);
 }
 
 // ── Pagination renderer ──

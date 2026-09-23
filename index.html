@@ -5,169 +5,316 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>FacultyPulse – Login</title>
   <link rel="stylesheet" href="css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --ink:      #1c2b3a;
+      --slate:    #4a5b6c;
+      --mist:     #8b98a5;
+      --hairline: #d8dfe5;
+      --panel:    #f7f5f0;
+      --navy:     #16324f;
+      --navy-deep:#0e2338;
+      --brass:    #a9762f;
+      --brass-lt: #c99447;
+      --paper:    #fffdf9;
+      --error:    #a4342a;
+      --error-bg: #fbeeec;
+      --success:  #2f6b4f;
+      --success-bg:#eef6f1;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', Arial, sans-serif;
+      color: var(--ink);
+    }
+
     .login-wrapper {
       min-height: 100vh;
+      display: grid;
+      grid-template-columns: 1.05fr 1fr;
+      background: var(--paper);
+    }
+
+    .brand-panel {
+      background: #671408;
+      color: #eef2f5;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 56px 52px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Campus photo blended directly into the maroon field —
+       multiply keeps everything tinted red, no separate grid layer */
+    .brand-panel::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image: url('img/bgimage2.jpg');
+      background-size: cover;
+      background-position: center 30%;
+      mix-blend-mode: multiply;
+      opacity: 0.85;
+      pointer-events: none;
+    }
+
+    .brand-panel::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(155deg, rgba(103,20,8,0.35) 0%, rgba(30,6,3,0.75) 100%);
+      pointer-events: none;
+    }
+
+    .brand-mark {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .brand-mark .seal {
+      width: 42px;
+      height: 42px;
+      border: 1.5px solid var(--brass-lt);
+      border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: #f4f6f8;
+      font-family: 'Source Serif 4', serif;
+      font-weight: 600;
+      font-size: 17px;
+      color: var(--brass-lt);
+      flex-shrink: 0;
+    }
+
+    .brand-mark .brand-word {
+      font-family: 'Source Serif 4', serif;
+      font-size: 17px;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+      color: #f3f0e8;
+    }
+
+    .brand-hero {
+      position: relative;
+      z-index: 1;
+      max-width: 420px;
+    }
+
+    .brand-hero .kicker {
+      font-size: 12.5px;
+      color: var(--brass-lt);
+      letter-spacing: 0.04em;
+      margin-bottom: 18px;
+    }
+
+    .brand-hero h1 {
+      font-family: 'Source Serif 4', serif;
+      font-size: 34px;
+      font-weight: 500;
+      line-height: 1.25;
+      margin: 0 0 18px;
+      color: #f6f4ee;
+    }
+
+    .brand-hero p {
+      font-size: 14.5px;
+      line-height: 1.75;
+      color: #b9c4cd;
+      margin: 0;
+    }
+
+    .brand-footer {
+      position: relative;
+      z-index: 1;
+      font-size: 12px;
+      color: #7c8b98;
+      border-top: 1px solid rgba(255,255,255,0.12);
+      padding-top: 18px;
+    }
+
+    .form-panel {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 32px;
+      background: var(--paper);
+    }
+
+    /* Bordered container — brings back the old design's card frame,
+       with the school's maroon/gold identity split across top/bottom */
+    .login-card {
+      width: 100%;
+      max-width: 388px;
+      background: #fff;
+      border-left: 1px solid var(--hairline);
+      border-right: 1px solid var(--hairline);
+      border-top: 4px solid #671408;
+      border-bottom: 4px solid #ffbd59;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      padding: 36px 32px 32px;
     }
 
     .login-box {
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 12px;
-      padding: 36px 32px;
       width: 100%;
-      max-width: 400px;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
     }
 
     .login-box h2 {
-      text-align: center;
-      font-size: 24px;
-      color: #1a56db;
-      margin-bottom: 6px;
+      font-family: 'Source Serif 4', serif;
+      font-size: 25px;
+      font-weight: 500;
+      color: var(--ink);
+      margin: 0 0 4px;
     }
 
     .login-box .subtitle {
-      text-align: center;
       font-size: 13px;
-      color: #888;
-      margin-bottom: 24px;
+      color: var(--mist);
+      margin: 0 0 28px;
     }
 
-    /* ── Role Tab Buttons ── */
     .role-tabs {
       display: flex;
-      gap: 8px;
-      margin-bottom: 24px;
+      gap: 0;
+      margin-bottom: 26px;
+      border: 1px solid var(--hairline);
+      border-radius: 9px;
+      padding: 3px;
+      background: var(--panel);
     }
 
     .role-tab {
       flex: 1;
-      padding: 9px 0;
-      border: 2px solid #ddd;
-      border-radius: 8px;
-      background: white;
-      color: #888;
-      font-size: 13px;
-      font-weight: 600;
+      padding: 8px 0;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--slate);
+      font-size: 12.5px;
+      font-weight: 500;
       cursor: pointer;
-      transition: all 0.2s;
-      font-family: Arial, sans-serif;
+      transition: background 0.15s, color 0.15s;
+      font-family: 'Inter', Arial, sans-serif;
     }
 
-    .role-tab:hover {
-      border-color: #1a56db;
-      color: #1a56db;
+    .role-tab:hover:not(.active) {
+      background: #f4e5e2;
+      color: #924b37;
     }
 
     .role-tab.active {
-      background: #1a56db;
-      border-color: #1a56db;
-      color: white;
+      background: #671408;
+      color: #fff;
     }
 
-    /* ── Form fields ── */
+    .role-tab.active:hover {
+      background: #8f2f1f;
+    }
+
     .field-label {
       display: block;
-      font-size: 13px;
-      font-weight: 600;
-      color: #444;
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--slate);
       margin-bottom: 6px;
-      margin-top: 16px;
+      margin-top: 18px;
     }
 
     .field-input {
       width: 100%;
       padding: 11px 14px;
-      border: 1.5px solid #ddd;
+      border: 1.5px solid var(--hairline);
       border-radius: 8px;
       font-size: 14px;
-      transition: border-color 0.2s;
-      font-family: Arial, sans-serif;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      font-family: 'Inter', Arial, sans-serif;
+      background: #fff;
+      color: var(--ink);
     }
 
     .field-input:focus {
       outline: none;
-      border-color: #1a56db;
-      box-shadow: 0 0 0 3px rgba(26,86,219,0.1);
+      border-color: var(--navy);
+      box-shadow: 0 0 0 3px rgba(22,50,79,0.08);
     }
 
-    /* ── Hint box ── */
     .id-hint {
       font-size: 12px;
-      color: #1a56db;
-      background: #eef3ff;
-      border: 1px solid #c3d4f7;
+      color: var(--navy);
+      background: var(--panel);
+      border: 1px solid var(--hairline);
+      border-left: 2.5px solid var(--brass);
       border-radius: 6px;
-      padding: 8px 12px;
+      padding: 9px 12px;
       margin-top: 8px;
       line-height: 1.7;
     }
 
     .id-hint.hidden { display: none; }
 
-    /* ── Error ── */
     .field-error {
       font-size: 12px;
-      color: #dc2626;
+      color: var(--error);
       margin-top: 6px;
     }
 
     .field-error.hidden { display: none; }
 
-    /* ── Login button ── */
     .login-submit {
       width: 100%;
-      margin-top: 24px;
+      margin-top: 26px;
       padding: 12px;
-      background: #1a56db;
-      color: white;
+      background: #ffbd59;
+      color: #4a2c05;
       border: none;
       border-radius: 8px;
-      font-size: 15px;
-      font-weight: 600;
+      font-size: 14.5px;
+      font-weight: 500;
       cursor: pointer;
-      transition: background 0.2s;
-      font-family: Arial, sans-serif;
+      transition: background 0.15s;
+      font-family: 'Inter', Arial, sans-serif;
     }
 
-    .login-submit:hover   { background: #1447b8; }
-    .login-submit:disabled { background: #aaa; cursor: not-allowed; }
+    .login-submit:hover   { background: #f0aa3c; }
+    .login-submit:disabled { background: var(--mist); color: #fff; cursor: not-allowed; }
 
-    /* ── Error message ── */
     .login-error {
-      color: #dc2626;
+      color: var(--error);
       font-size: 13px;
       margin-top: 12px;
       text-align: center;
       min-height: 18px;
     }
 
-    /* ── Test accounts hint ── */
     .test-hint {
       margin-top: 20px;
       padding-top: 16px;
-      border-top: 1px solid #eee;
+      border-top: 1px solid var(--hairline);
       font-size: 12px;
-      color: #aaa;
+      color: var(--mist);
       text-align: center;
       line-height: 1.9;
     }
 
-    .test-hint b { color: #888; }
+    .test-hint b { color: var(--slate); }
 
-    /* ── Remember me ── */
     .remember-me-row {
       display: flex;
       align-items: center;
-      gap: 7px;
-      margin-top: 14px;
+      gap: 8px;
+      margin-top: 16px;
       font-size: 13px;
-      color: #475569;
+      color: var(--slate);
       cursor: pointer;
       user-select: none;
     }
@@ -176,27 +323,27 @@
       cursor: pointer;
       width: 15px;
       height: 15px;
-      accent-color: #1a56db;
+      accent-color: var(--navy);
     }
 
-    /* ── OTP code input ── */
     .otp-code-input {
       width: 100%;
       padding: 12px 14px;
       font-size: 20px;
       text-align: center;
       letter-spacing: 8px;
-      border: 1.5px solid #ddd;
+      border: 1.5px solid var(--hairline);
       border-radius: 8px;
-      font-family: Arial, sans-serif;
+      font-family: 'Inter', Arial, sans-serif;
       margin-bottom: 10px;
       box-sizing: border-box;
+      color: var(--ink);
     }
 
     .otp-code-input:focus {
       outline: none;
-      border-color: #1a56db;
-      box-shadow: 0 0 0 3px rgba(26,86,219,0.1);
+      border-color: var(--navy);
+      box-shadow: 0 0 0 3px rgba(22,50,79,0.08);
     }
 
     .step-btn-row {
@@ -210,219 +357,254 @@
     .step-back-link {
       display: block;
       text-align: center;
-      margin-top: 14px;
-      font-size: 12px;
-      color: #64748b;
+      margin-top: 16px;
+      font-size: 12.5px;
+      color: var(--mist);
       text-decoration: none;
       cursor: pointer;
     }
 
-    .step-back-link:hover { color: #1a56db; }
+    .step-back-link:hover { color: var(--navy); }
+
+    .hidden { display: none; }
+
+    @media (max-width: 860px) {
+      .login-wrapper { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+
+      /* Collapse to a compact header banner instead of disappearing —
+         keeps the identity/branding visible, just shorter */
+      .brand-panel {
+        padding: 28px 24px;
+        min-height: 0;
+        justify-content: flex-start;
+        gap: 4px;
+      }
+      .brand-panel::after { opacity: 0.22; }
+      .brand-hero { max-width: none; }
+      .brand-hero .kicker { margin-bottom: 8px; }
+      .brand-hero h1 { font-size: 22px; margin-bottom: 10px; }
+      .brand-hero p { font-size: 13px; line-height: 1.6; }
+      .brand-footer { display: none; }
+      .brand-mark { margin-bottom: 20px; }
+
+      .form-panel { padding: 32px 20px; }
+      .login-card { padding: 28px 22px 24px; }
+    }
+
+    @media (max-width: 480px) {
+      .brand-hero p { display: none; }
+      .brand-hero h1 { font-size: 19px; margin-bottom: 0; }
+    }
   </style>
 </head>
 <body>
   <div class="login-wrapper">
-    <div class="login-box">
 
-      <h2>FacultyPulse</h2>
-      <p class="subtitle">Faculty Performance Analytics System</p>
-
-      <!-- ── Hash error banner (e.g. otp_expired) — shown by JS ── -->
-      <div id="hash-error-banner" style="display:none; background:#fef2f2; border:1px solid #fca5a5;
-        border-radius:8px; padding:12px 14px; margin-bottom:16px; font-size:13px; color:#991b1b; line-height:1.6;">
+    <div class="brand-panel">
+      <div class="brand-mark">
+        <div class="seal">FP</div>
+        <div class="brand-word">FacultyPulse</div>
       </div>
 
-      <!-- ── Normal login UI (hidden during OTP/reset/recovery steps) ── -->
-      <div id="normal-login-ui">
+      <div class="brand-hero">
+        <p class="kicker">Faculty performance analytics</p>
+        <h1>A clearer view of teaching effectiveness, term after term.</h1>
+        <p>Structured evaluation, transparent reporting, and continuous improvement — aligned with CHED CMO No. 19, s. 2025.</p>
+      </div>
 
-        <!-- ── Role Tab Buttons ── -->
-        <div class="role-tabs">
-          <button class="role-tab active" id="tab-student"    data-role="student">Student</button>
-          <button class="role-tab"        id="tab-teacher"    data-role="teacher">Teacher</button>
-          <button class="role-tab"        id="tab-supervisor" data-role="supervisor">Supervisor</button>
-          <button class="role-tab"        id="tab-admin"      data-role="admin">Admin</button>
+      <div class="brand-footer">
+        For registered students, faculty, and quality assurance personnel only.
+      </div>
+    </div>
+
+    <div class="form-panel">
+      <div class="login-card">
+      <div class="login-box">
+
+        <h2>Sign in</h2>
+        <p class="subtitle">Enter your credentials to continue</p>
+
+        <div id="hash-error-banner" style="display:none; background:var(--error-bg); border:1px solid #e3b3ac;
+          border-radius:8px; padding:12px 14px; margin-bottom:16px; font-size:13px; color:var(--error); line-height:1.6;">
         </div>
 
-        <!-- ── Username / ID field ── -->
-        <label class="field-label" id="username-label">Student ID</label>
-        <input
-          class="field-input"
-          type="text"
-          id="username"
-          placeholder="e.g. 20XX-XXXX-AB"
-          maxlength="13"
-          autocomplete="off"
-        />
-        <div class="id-hint" id="id-hint">
-          🔒 Use your <b>Student ID</b> — not your real name.<br/>
-        </div>
-        <div class="field-error hidden" id="format-error">
-          ⚠️ Format must be: 4 digits - 4 digits - 2 uppercase letters
-        </div>
+        <div id="normal-login-ui">
 
-        <!-- ── Password field ── -->
-        <label class="field-label">Password</label>
-        <div style="position:relative;">
+          <div class="role-tabs">
+            <button class="role-tab active" id="tab-student"    data-role="student">Student</button>
+            <button class="role-tab"        id="tab-teacher"    data-role="teacher">Teacher</button>
+            <button class="role-tab"        id="tab-supervisor" data-role="supervisor">Supervisor</button>
+            <button class="role-tab"        id="tab-admin"      data-role="admin">Admin</button>
+          </div>
+
+          <label class="field-label" id="username-label">Student ID</label>
           <input
             class="field-input"
-            type="password"
-            id="password"
-            placeholder="Enter password"
+            type="text"
+            id="username"
+            placeholder="e.g. 20XX-XXXX-AB"
+            maxlength="13"
             autocomplete="off"
-            style="padding-right:40px;"
           />
-          <button
-            type="button"
-            id="toggle-password"
-            onclick="const p=document.getElementById('password'); const isHidden=p.type==='password'; p.type=isHidden?'text':'password'; this.textContent=isHidden?'Hide':'Show';"
-            style="position:absolute; right:10px; top:50%; transform:translateY(-50%);
-              background:none; border:none; cursor:pointer; font-size:12px; padding:0;
-              color:#64748b; font-weight:600;"
-            title="Show/hide password"
-          >Show</button>
+          <div class="id-hint" id="id-hint">
+            Use your <b>Student ID</b> — not your real name.
+          </div>
+          <div class="field-error hidden" id="format-error">
+            Format must be: 4 digits – 4 digits – 2 uppercase letters
+          </div>
+
+          <label class="field-label">Password</label>
+          <div style="position:relative;">
+            <input
+              class="field-input"
+              type="password"
+              id="password"
+              placeholder="Enter password"
+              autocomplete="off"
+              style="padding-right:44px;"
+            />
+            <button
+              type="button"
+              id="toggle-password"
+              onclick="const p=document.getElementById('password'); const isHidden=p.type==='password'; p.type=isHidden?'text':'password'; this.textContent=isHidden?'Hide':'Show';"
+              style="position:absolute; right:12px; top:50%; transform:translateY(-50%);
+                background:none; border:none; cursor:pointer; font-size:12px; padding:0;
+                color:var(--mist); font-weight:500;"
+              title="Show/hide password"
+            >Show</button>
+          </div>
+
+          <label class="remember-me-row">
+            <input type="checkbox" id="remember-me-checkbox" />
+            Remember me on this device
+          </label>
+
+          <button class="login-submit" id="login-btn">Sign in</button>
+          <div class="login-error" id="error-msg"></div>
+
+          <div id="forgot-wrap" style="text-align:center; margin-top:12px; display:none;">
+            <a href="#" id="forgot-link" style="font-size:12.5px; color:var(--navy); text-decoration:none;">
+              Forgot password?
+            </a>
+          </div>
+          <div id="forgot-success" style="display:none; font-size:12px; text-align:center;
+            background:var(--success-bg); border:1px solid #b7dcc7; border-radius:6px;
+            padding:8px 12px; margin-top:10px; color:var(--success);">
+            Password reset email sent. Check your inbox.
+          </div>
         </div>
 
-        <!-- ── Remember me — auto-login on this device next time (students) ── -->
-        <label class="remember-me-row">
-          <input type="checkbox" id="remember-me-checkbox" />
-          Remember me on this device
-        </label>
-
-        <!-- ── Submit ── -->
-        <button class="login-submit" id="login-btn">Login</button>
-        <div class="login-error" id="error-msg"></div>
-
-        <!-- Forgot password — staff: email-link reset. Students: OTP-verified reset. -->
-        <div id="forgot-wrap" style="text-align:center; margin-top:10px; display:none;">
-          <a href="#" id="forgot-link" style="font-size:12px; color:#1a56db; text-decoration:none;">
-            Forgot password?
-          </a>
+        <div id="otp-step" class="hidden">
+          <h3 style="font-family:'Source Serif 4', serif; font-weight:500; font-size:19px; color:var(--ink); margin-bottom:6px;">Enter verification code</h3>
+          <p style="font-size:13px; color:var(--slate); margin-bottom:18px; line-height:1.6;">
+            We sent a 6-digit code to <b id="otp-target-email"></b>.
+            Enter it below to finish signing in.
+          </p>
+          <input type="text" id="otp-code-input" class="otp-code-input"
+            inputmode="numeric" maxlength="6" placeholder="000000" />
+          <div class="field-error" id="otp-error" style="min-height:16px; margin-bottom:6px;"></div>
+          <div class="step-btn-row">
+            <button class="login-submit" id="otp-verify-btn">Verify</button>
+            <button class="login-submit" id="otp-resend-btn" style="background:var(--slate);">Resend</button>
+          </div>
+          <a class="step-back-link" id="otp-back-link">← Back to login</a>
         </div>
-        <div id="forgot-success" style="display:none; font-size:12px; text-align:center;
-          background:#f0fdf4; border:1px solid #86efac; border-radius:6px;
-          padding:8px 12px; margin-top:10px; color:#166534;">
-          ✅ Password reset email sent. Check your inbox.
+
+        <div id="forgot-reset-step" class="hidden">
+          <h3 style="font-family:'Source Serif 4', serif; font-weight:500; font-size:19px; color:var(--ink); margin-bottom:6px;">Reset password</h3>
+          <p style="font-size:13px; color:var(--slate); margin-bottom:18px; line-height:1.6;">
+            We sent a code to <b id="forgot-target-email"></b>. Enter it along with your new password.
+          </p>
+          <input type="text" id="forgot-code-input" class="otp-code-input"
+            inputmode="numeric" maxlength="6" placeholder="000000" />
+          <label class="field-label" style="margin-top:0;">New password</label>
+          <input type="password" class="field-input" id="forgot-new-pw" placeholder="New password" />
+          <label class="field-label">Confirm new password</label>
+          <input type="password" class="field-input" id="forgot-confirm-pw" placeholder="Confirm new password" />
+          <div class="field-error" id="forgot-reset-error" style="min-height:16px; margin:10px 0 6px;"></div>
+          <button class="login-submit" id="forgot-reset-btn">Reset password</button>
+          <a class="step-back-link" id="forgot-back-link">← Back to login</a>
         </div>
-      </div><!-- /normal-login-ui -->
 
-      <!-- ══════════════════════════════════════════════════════
-           OTP STEP — shown after a student's Student ID + password
-           check succeeds and they have an email on file.
-      ══════════════════════════════════════════════════════ -->
-      <div id="otp-step" class="hidden">
-        <h3 style="font-size:18px; color:#1e293b; margin-bottom:6px;">Enter Verification Code</h3>
-        <p style="font-size:13px; color:#64748b; margin-bottom:18px; line-height:1.6;">
-          We sent a 6-digit code to <b id="otp-target-email"></b>.
-          Enter it below to finish logging in.
-        </p>
-        <input type="text" id="otp-code-input" class="otp-code-input"
-          inputmode="numeric" maxlength="6" placeholder="000000" />
-        <div class="field-error" id="otp-error" style="min-height:16px; margin-bottom:6px;"></div>
-        <div class="step-btn-row">
-          <button class="login-submit" id="otp-verify-btn">Verify</button>
-          <button class="login-submit" id="otp-resend-btn" style="background:#64748b;">Resend</button>
-        </div>
-        <a class="step-back-link" id="otp-back-link">← Back to login</a>
-      </div><!-- /otp-step -->
-
-      <!-- ══════════════════════════════════════════════════════
-           STUDENT FORGOT-PASSWORD RESET STEP — OTP-verified.
-           Staff still use the existing email-link flow (reset-overlay
-           below), unaffected by this.
-      ══════════════════════════════════════════════════════ -->
-      <div id="forgot-reset-step" class="hidden">
-        <h3 style="font-size:18px; color:#1e293b; margin-bottom:6px;">Reset Password</h3>
-        <p style="font-size:13px; color:#64748b; margin-bottom:18px; line-height:1.6;">
-          We sent a code to <b id="forgot-target-email"></b>. Enter it along with your new password.
-        </p>
-        <input type="text" id="forgot-code-input" class="otp-code-input"
-          inputmode="numeric" maxlength="6" placeholder="000000" />
-        <label class="field-label" style="margin-top:0;">New Password</label>
-        <input type="password" class="field-input" id="forgot-new-pw" placeholder="New password" />
-        <label class="field-label">Confirm New Password</label>
-        <input type="password" class="field-input" id="forgot-confirm-pw" placeholder="Confirm new password" />
-        <div class="field-error" id="forgot-reset-error" style="min-height:16px; margin:10px 0 6px;"></div>
-        <button class="login-submit" id="forgot-reset-btn">Reset Password</button>
-        <a class="step-back-link" id="forgot-back-link">← Back to login</a>
-      </div><!-- /forgot-reset-step -->
-
+      </div>
+      </div>
     </div>
   </div>
 
-  <!-- ══════════════════════════════════════════════════════
-       PASSWORD RESET OVERLAY — staff only, unchanged.
-  ══════════════════════════════════════════════════════ -->
   <div id="reset-overlay" style="display:none; position:fixed; inset:0;
-    background:linear-gradient(135deg, #1e3a8a 0%, #1a56db 60%, #3b82f6 100%);
-    z-index:9999; min-height:100vh; display:none;
+    background:linear-gradient(155deg, #16324f 0%, #0e2338 100%);
+    z-index:9999; min-height:100vh;
     align-items:center; justify-content:center; padding:20px;">
 
-    <div style="background:white; border-radius:16px; padding:40px 36px;
-      width:100%; max-width:420px; box-shadow:0 24px 64px rgba(0,0,0,0.25);">
+    <div style="background:#fffdf9; border-radius:14px; padding:44px 38px;
+      width:100%; max-width:420px; box-shadow:0 24px 64px rgba(0,0,0,0.3);">
 
       <div style="text-align:center; margin-bottom:28px;">
-        <div style="width:64px; height:64px; background:#eff6ff; border-radius:50%;
+        <div style="width:56px; height:56px; border:1.5px solid #a9762f; border-radius:50%;
           display:flex; align-items:center; justify-content:center;
-          margin:0 auto 16px; font-size:28px;">
-          🔑
+          margin:0 auto 18px; font-family:'Source Serif 4', serif; font-size:22px; color:#a9762f;">
+          FP
         </div>
-        <h2 style="font-size:22px; font-weight:700; color:#1e293b; margin-bottom:6px;">
-          Set New Password
+        <h2 style="font-family:'Source Serif 4', serif; font-size:21px; font-weight:500; color:#1c2b3a; margin-bottom:6px;">
+          Set new password
         </h2>
-        <p style="font-size:13px; color:#64748b; line-height:1.6; margin:0;">
+        <p style="font-size:13px; color:#4a5b6c; line-height:1.6; margin:0;">
           Choose a strong password for your FacultyPulse account.
         </p>
       </div>
 
       <div id="reset-form-fields">
         <div style="margin-bottom:14px;">
-          <label style="font-size:13px; font-weight:600; color:#374151;
-            display:block; margin-bottom:6px;">New Password</label>
+          <label style="font-size:12.5px; font-weight:500; color:#4a5b6c;
+            display:block; margin-bottom:6px;">New password</label>
           <input type="password" id="reset-new-pw"
             placeholder="At least 8 characters"
             autocomplete="new-password"
-            style="width:100%; padding:11px 14px; border:1.5px solid #e2e8f0;
+            style="width:100%; padding:11px 14px; border:1.5px solid #d8dfe5;
               border-radius:8px; font-size:14px; outline:none; box-sizing:border-box;
-              transition:border-color 0.15s;"
-            onfocus="this.style.borderColor='#1a56db'"
-            onblur="this.style.borderColor='#e2e8f0'" />
+              transition:border-color 0.15s; font-family:'Inter', Arial, sans-serif;"
+            onfocus="this.style.borderColor='#16324f'"
+            onblur="this.style.borderColor='#d8dfe5'" />
         </div>
 
         <div style="margin-bottom:22px;">
-          <label style="font-size:13px; font-weight:600; color:#374151;
-            display:block; margin-bottom:6px;">Confirm Password</label>
+          <label style="font-size:12.5px; font-weight:500; color:#4a5b6c;
+            display:block; margin-bottom:6px;">Confirm password</label>
           <input type="password" id="reset-confirm-pw"
             placeholder="Re-enter new password"
             autocomplete="new-password"
-            style="width:100%; padding:11px 14px; border:1.5px solid #e2e8f0;
+            style="width:100%; padding:11px 14px; border:1.5px solid #d8dfe5;
               border-radius:8px; font-size:14px; outline:none; box-sizing:border-box;
-              transition:border-color 0.15s;"
-            onfocus="this.style.borderColor='#1a56db'"
-            onblur="this.style.borderColor='#e2e8f0'" />
+              transition:border-color 0.15s; font-family:'Inter', Arial, sans-serif;"
+            onfocus="this.style.borderColor='#16324f'"
+            onblur="this.style.borderColor='#d8dfe5'" />
         </div>
 
-        <p id="reset-error" style="font-size:13px; color:#dc2626; margin-bottom:12px;
+        <p id="reset-error" style="font-size:13px; color:#a4342a; margin-bottom:12px;
           min-height:18px; display:none;"></p>
 
         <button id="reset-save-btn"
-          style="width:100%; padding:13px; background:#1a56db; color:white;
-            border:none; border-radius:8px; font-size:15px; font-weight:600;
-            cursor:pointer; transition:background 0.2s;">
-          Update Password
+          style="width:100%; padding:13px; background:#16324f; color:white;
+            border:none; border-radius:8px; font-size:14.5px; font-weight:500;
+            cursor:pointer; transition:background 0.15s; font-family:'Inter', Arial, sans-serif;">
+          Update password
         </button>
       </div>
 
       <div id="reset-success" style="display:none; text-align:center; padding-top:8px;">
-        <div style="font-size:48px; margin-bottom:12px;">✅</div>
-        <h3 style="font-size:18px; color:#16a34a; margin-bottom:8px;">Password Updated!</h3>
-        <p style="font-size:13px; color:#64748b; margin-bottom:20px; line-height:1.6;">
+        <div style="width:56px; height:56px; border-radius:50%; background:#eef6f1;
+          display:flex; align-items:center; justify-content:center; margin:0 auto 16px;">
+          <span style="font-size:22px; color:#2f6b4f;">✓</span>
+        </div>
+        <h3 style="font-family:'Source Serif 4', serif; font-weight:500; font-size:18px; color:#2f6b4f; margin-bottom:8px;">Password updated</h3>
+        <p style="font-size:13px; color:#4a5b6c; margin-bottom:20px; line-height:1.6;">
           Your password has been changed successfully.
         </p>
         <a href="index.html"
-          style="display:inline-block; padding:11px 28px; background:#1a56db;
-            color:white; border-radius:8px; font-size:14px; font-weight:600;
-            text-decoration:none;">
-          Back to Login
+          style="display:inline-block; padding:11px 28px; background:#16324f;
+            color:white; border-radius:8px; font-size:14px; font-weight:500;
+            text-decoration:none; font-family:'Inter', Arial, sans-serif;">
+          Back to sign in
         </a>
       </div>
 
