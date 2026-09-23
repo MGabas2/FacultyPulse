@@ -57,7 +57,7 @@
       content: "";
       position: absolute;
       inset: 0;
-      background-image: url('img/bgimage2.jpg');
+      background-image: url('img/campus-building.png');
       background-size: cover;
       background-position: center 30%;
       mix-blend-mode: multiply;
@@ -82,16 +82,19 @@
     }
 
     .brand-mark .seal {
-      width: 42px;
-      height: 42px;
-      border: 1.5px solid var(--brass-lt);
+      /* Placeholder for FacultyPulse's own system logo — swap the
+         inner "FP" text for an <img> once the actual logo file exists.
+         Sized to match .school-seal so both marks read as equals. */
+      width: 72px;
+      height: 72px;
+      border: 1.5px dashed var(--brass-lt);
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
       font-family: 'Source Serif 4', serif;
       font-weight: 600;
-      font-size: 17px;
+      font-size: 22px;
       color: var(--brass-lt);
       flex-shrink: 0;
     }
@@ -102,6 +105,14 @@
       font-weight: 500;
       letter-spacing: 0.01em;
       color: #f3f0e8;
+    }
+
+    .brand-mark .school-seal {
+      width: 72px;
+      height: 72px;
+      object-fit: contain;
+      margin-left: auto;
+      flex-shrink: 0;
     }
 
     .brand-hero {
@@ -209,7 +220,7 @@
 
     .role-tab:hover:not(.active) {
       background: #f4e5e2;
-      color: #924b37;
+      color: #671408;
     }
 
     .role-tab.active {
@@ -404,6 +415,7 @@
       <div class="brand-mark">
         <div class="seal">FP</div>
         <div class="brand-word">FacultyPulse</div>
+        <img src="img/bsc-logo.png" alt="Batanes State College seal" class="school-seal" />
       </div>
 
       <div class="brand-hero">
