@@ -857,7 +857,7 @@ async function viewReport(teacherId, teacherName) {
           <tr>
             <th style="background:#fff; color:#000; padding:8px 10px; border:1px solid #000; width:40%;"></th>
             <th style="background:#fff; color:#000; padding:8px 10px; border:1px solid #000; text-align:center; font-weight:bold;">SET Rating</th>
-            <th style="background:#fff; color:#000; padding:8px 10px; border:1px solid #000; text-align:center; font-weight:bold;">*SEF Rating</th>
+            <th style="background:#fff; color:#000; padding:8px 10px; border:1px solid #000; text-align:center; font-weight:bold;">SEF Rating</th>
           </tr>
         </thead>
         <tbody>
