@@ -864,7 +864,7 @@ async function viewReport(teacherId, teacherName) {
           <tr>
             <td style="padding:10px; border:1px solid #000; font-weight:bold; color:#000;">OVERALL RATING</td>
             <td style="padding:10px; border:1px solid #000; text-align:center; font-weight:bold; font-size:15px; color:#000;">${overallSET.toFixed(2)}</td>
-            <td style="padding:10px; border:1px solid #000; text-align:center; color:#000;">${sefRating}</td>
+            <td style="padding:10px; border:1px solid #000; text-align:center; font-weight:bold; font-size:15px; color:#000;">${sefRating}</td>
           </tr>
         </tbody>
       </table>
