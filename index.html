@@ -81,30 +81,24 @@
       z-index: 1;
     }
 
-    .brand-mark .seal {
-      /* Placeholder for FacultyPulse's own system logo — swap the
-         inner "FP" text for an <img> once the actual logo file exists.
-         Sized to match .school-seal so both marks read as equals. */
-      width: 72px;
-      height: 72px;
-      border: 1.5px dashed var(--brass-lt);
-      border-radius: 50%;
+    /* FacultyPulse full logo — its wordmark is maroon, so it sits on a
+       white pill to stay readable against the maroon panel. */
+    .brand-mark .brand-logo {
+      background: #fff;
+      border-radius: 12px;
+      border-bottom: 3px solid #ffbd59;
+      padding: 12px 24px;
       display: flex;
       align-items: center;
-      justify-content: center;
-      font-family: 'Source Serif 4', serif;
-      font-weight: 600;
-      font-size: 22px;
-      color: var(--brass-lt);
-      flex-shrink: 0;
+      max-width: calc(100% - 96px);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.25);
     }
 
-    .brand-mark .brand-word {
-      font-family: 'Source Serif 4', serif;
-      font-size: 17px;
-      font-weight: 500;
-      letter-spacing: 0.01em;
-      color: #f3f0e8;
+    .brand-mark .brand-logo img {
+      height: 96px;
+      width: auto;
+      max-width: 100%;
+      display: block;
     }
 
     .brand-mark .school-seal {
@@ -397,6 +391,7 @@
       .brand-hero p { font-size: 13px; line-height: 1.6; }
       .brand-footer { display: none; }
       .brand-mark { margin-bottom: 20px; }
+      .brand-mark .brand-logo img { height: 68px; }
 
       .form-panel { padding: 32px 20px; }
       .login-card { padding: 28px 22px 24px; }
@@ -405,6 +400,9 @@
     @media (max-width: 480px) {
       .brand-hero p { display: none; }
       .brand-hero h1 { font-size: 19px; margin-bottom: 0; }
+      .brand-mark .brand-logo { padding: 8px 14px; }
+      .brand-mark .brand-logo img { height: 52px; }
+      .brand-mark .school-seal { width: 52px; height: 52px; }
     }
   </style>
 </head>
@@ -413,14 +411,15 @@
 
     <div class="brand-panel">
       <div class="brand-mark">
-        <div class="seal">FP</div>
-        <div class="brand-word">FacultyPulse</div>
+        <div class="brand-logo">
+          <img src="img/fp-logo.png" alt="FacultyPulse — Performance, Insights, Growth" />
+        </div>
         <img src="img/bsc-logo.png" alt="Batanes State College seal" class="school-seal" />
       </div>
 
       <div class="brand-hero">
         <p class="kicker">Faculty performance analytics</p>
-        <h1>A clearer view of teaching effectiveness, term after term.</h1>
+        <h1>Clear performance. Better insights.</h1>
         <p>Structured evaluation, transparent reporting, and continuous improvement — aligned with CHED CMO No. 19, s. 2025.</p>
       </div>
 
@@ -552,11 +551,8 @@
       width:100%; max-width:420px; box-shadow:0 24px 64px rgba(0,0,0,0.3);">
 
       <div style="text-align:center; margin-bottom:28px;">
-        <div style="width:56px; height:56px; border:1.5px solid #a9762f; border-radius:50%;
-          display:flex; align-items:center; justify-content:center;
-          margin:0 auto 18px; font-family:'Source Serif 4', serif; font-size:22px; color:#a9762f;">
-          FP
-        </div>
+        <img src="img/fp-logo.png" alt="FacultyPulse"
+          style="height:84px; width:auto; max-width:100%; display:block; margin:0 auto 18px;" />
         <h2 style="font-family:'Source Serif 4', serif; font-size:21px; font-weight:500; color:#1c2b3a; margin-bottom:6px;">
           Set new password
         </h2>

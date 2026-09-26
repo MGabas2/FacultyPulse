@@ -172,7 +172,7 @@ async function loadScores(semesterId) {
   Object.entries(cats).forEach(([cat, val]) => {
     const scoreEl = document.getElementById(`score-cat${cat}`);
     const barEl   = document.getElementById(`bar-cat${cat}`);
-    if (scoreEl) scoreEl.textContent = val + " / 100";
+    if (scoreEl) scoreEl.textContent = val;
     if (barEl)   { barEl.style.width = val + "%"; barEl.style.background = colors[cat]; }
   });
 
@@ -221,7 +221,7 @@ function renderClassTable(classData, totalEnrolled, totalWeighted, overallSET) {
         Overall SET = ${totalWeighted.toFixed(2)} ÷ ${totalEnrolled}
       </td>
       <td colspan="2" style="text-align:center; font-weight:bold; color:#1a56db; font-size:14px;">
-        ${overallSET} / 100
+        ${overallSET}
       </td>
     </tr>`;
 }
@@ -245,7 +245,7 @@ function renderCharts(avgA, avgB, avgC) {
         responsive: true, maintainAspectRatio: false, cutout:"65%",
         plugins: {
           legend: { position:"bottom", labels:{ font:{ size:11 }, padding:10 } },
-          tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed} / 100` } }
+          tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed}` } }
         }
       }
     });
@@ -392,7 +392,7 @@ function renderRecommendations(avgA, avgB, avgC, qAvgs) {
             Strong performance across all categories.
           </p>
           <p style="font-size:12px; color:#64748b; line-height:1.6;">
-            Your students rated you above the threshold in all three categories. 
+            Your students rated you above the threshold in all three categories.
             Keep up the excellent work and continue seeking feedback from your students each semester.
           </p>
         </div>
@@ -430,12 +430,12 @@ function renderRecommendations(avgA, avgB, avgC, qAvgs) {
             <span style="font-size:11px; font-weight:bold; padding:2px 8px; border-radius:10px;
                          background:white; border:1px solid ${border};
                          color:${catBand.color}; white-space:nowrap;">
-              ${catScore} / 100 — ${catBand.label}
+              ${catScore} — ${catBand.label}
             </span>
           </div>
           <p style="font-size:11px; color:#64748b; margin-bottom:6px;">
             Lowest-rated item: <b>${preset.short}</b>
-            <span style="color:${qBand.color}; font-weight:bold;"> (${weakestScore} / 100)</span>
+            <span style="color:${qBand.color}; font-weight:bold;"> (${weakestScore})</span>
           </p>
           <p style="font-size:12px; color:#374151; line-height:1.65; margin:0;">
             ${preset.rec}
@@ -455,12 +455,12 @@ function renderRecommendations(avgA, avgB, avgC, qAvgs) {
             <span style="font-size:11px; font-weight:bold; padding:2px 8px; border-radius:10px;
                          background:white; border:1px solid #e2e8f0;
                          color:${catBand.color}; white-space:nowrap;">
-              ${catScore} / 100 — ${catBand.label}
+              ${catScore} — ${catBand.label}
             </span>
           </div>
           <p style="font-size:11px; color:#64748b; margin-bottom:5px;">
             One item rated lower than the rest: <b>${preset.short}</b>
-            <span style="color:${qBand.color}; font-weight:bold;"> (${weakestScore} / 100)</span>
+            <span style="color:${qBand.color}; font-weight:bold;"> (${weakestScore})</span>
           </p>
           <p style="font-size:12px; color:#64748b; line-height:1.65; margin:0;">
             ${preset.rec}

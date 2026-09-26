@@ -5,202 +5,276 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>FacultyPulse – Supervisor Dashboard</title>
   <link rel="stylesheet" href="../css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
-    .faculty-cards { display:flex; flex-direction:column; gap:14px; }
+    :root {
+      --ink:      #1c2b3a;
+      --slate:    #4a5b6c;
+      --mist:     #8b98a5;
+      --hairline: #d8dfe5;
+      --panel:    #f7f5f0;
+      --navy:     #16324f;
+      --navy-deep:#0e2338;
+      --brass-lt: #c99447;
+      --maroon:   #671408;
+      --maroon-lt:#8f2f1f;
+      --maroon-bg:#fbf0ed;
+      --gold:     #ffbd59;
+      --gold-hv:  #f0aa3c;
+      --gold-bg:  #fff7e8;
+      --gold-dp:  #4a2c05;
+      --paper:    #fffdf9;
+      --error:    #a4342a;
+      --error-bg: #fbeeec;
+      --success:  #2f6b4f;
+      --success-bg:#eef6f1;
+    }
 
+    * { box-sizing: border-box; }
+
+    body { font-family: 'Inter', Arial, sans-serif; color: var(--ink); background: var(--paper); margin: 0; }
+
+    /* ── Top bar ── */
+    nav {
+      background: var(--maroon) !important;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 8px 28px;
+      position: sticky; top: 0; z-index: 20;
+      border-bottom: 3px solid var(--gold);
+    }
+    .nav-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .nav-logo { background: #fff; border-radius: 10px; padding: 6px 14px; display: flex; align-items: center; flex-shrink: 0; border-bottom: 2px solid var(--gold); }
+    .nav-logo img { height: 48px; width: auto; display: block; }
+    .nav-logo .logo-mark { display: none; height: 40px; }
+    .nav-role { font-size: 11.5px; color: var(--brass-lt); letter-spacing: 0.04em; border-left: 1px solid rgba(255,255,255,0.25); padding-left: 12px; white-space: nowrap; }
+    .nav-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    #nav-user { font-size: 12px; color: #e9dcd6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; margin-right: 6px; }
+    .nav-btn {
+      font-family: 'Inter', Arial, sans-serif; font-size: 12px; font-weight: 500; padding: 6px 12px; white-space: nowrap;
+      background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 7px; cursor: pointer; transition: background 0.15s;
+    }
+    .nav-btn:hover { background: rgba(255,255,255,0.22); }
+    nav a#logout-btn, nav a#logout-btn:visited {
+      font-size: 12px; font-weight: 500; padding: 6px 12px; border-radius: 7px;
+      background: var(--gold); color: var(--gold-dp) !important; text-decoration: none; white-space: nowrap; transition: background 0.15s;
+    }
+    nav a#logout-btn:hover { background: var(--gold-hv); }
+
+    /* ── Banner ── */
+    .hero { position: relative; overflow: hidden; background: var(--maroon); color: #f6f4ee; padding: 36px 32px 84px; }
+    .hero::before {
+      content: ""; position: absolute; inset: 0;
+      background-image: url('../img/campus-building.png'); background-size: cover; background-position: center 30%;
+      mix-blend-mode: multiply; opacity: 0.85; pointer-events: none;
+    }
+    .hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(155deg, rgba(103,20,8,0.35) 0%, rgba(30,6,3,0.75) 100%); pointer-events: none; }
+    .hero-inner { position: relative; z-index: 1; max-width: 980px; margin: 0 auto; }
+    .hero .kicker { font-size: 12.5px; color: var(--brass-lt); letter-spacing: 0.04em; margin: 0 0 10px; }
+    .hero h2 { font-family: 'Source Serif 4', serif; font-weight: 500; font-size: 30px; line-height: 1.25; margin: 0 0 10px; color: #f6f4ee; }
+    .hero p.lead { font-size: 14px; color: #d5cfc9; margin: 0 0 8px; line-height: 1.6; max-width: 640px; }
+    .hero .sem-line { font-size: 13.5px; color: #d5cfc9; margin: 0; }
+    .hero .sem-line b { color: #fff; font-weight: 600; }
+
+    /* ── Content ── */
+    .container { max-width: 980px; margin: -56px auto 0; padding: 0 32px 56px; position: relative; z-index: 2; }
+
+    /* Stat cards */
+    .cards-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 22px; }
+    .stat-card {
+      background: #fff; border-left: 1px solid var(--hairline); border-right: 1px solid var(--hairline);
+      border-top: 4px solid var(--maroon); border-bottom: 4px solid var(--gold);
+      border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); padding: 18px 20px; text-align: center;
+    }
+    .stat-card .card-label { font-size: 12.5px; color: var(--slate); margin: 0 0 6px; font-weight: 500; }
+    .stat-card .card-value { font-family: 'Source Serif 4', serif; font-size: 34px; font-weight: 600; margin: 0; line-height: 1.1; }
+
+    /* Faculty cards */
+    .faculty-cards { display: flex; flex-direction: column; gap: 14px; }
     .faculty-card {
-      background:white; border:1px solid #ddd; border-radius:10px;
-      padding:20px 24px; display:flex; align-items:center;
-      justify-content:space-between; gap:16px; flex-wrap:wrap;
+      background: #fff; border: 1px solid var(--hairline); border-left: 4px solid var(--maroon);
+      border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+      padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
     }
-    .faculty-card-info { flex:1; min-width:200px; }
-    .faculty-card-info h3 { font-size:16px; margin-bottom:4px; color:#1e293b; }
-    .faculty-card-info p  { font-size:13px; color:#64748b; margin:0; }
-    .faculty-card-score   { text-align:center; min-width:100px; }
-    .score-big { font-size:28px; font-weight:bold; line-height:1; }
-    .score-sub { font-size:11px; color:#64748b; margin-top:2px; }
-    .faculty-card-actions { display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
+    .faculty-card-info { flex: 1; min-width: 200px; }
+    .faculty-card-info h3 { font-family: 'Source Serif 4', serif; font-weight: 500; font-size: 19px; margin: 0 0 4px; color: var(--ink); }
+    .faculty-card-info p { font-size: 13px; color: var(--slate); margin: 0; }
+    .faculty-card-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .faculty-card-actions button {
+      background: var(--maroon); color: #fff; border: none; border-radius: 8px; cursor: pointer;
+      font-family: 'Inter', Arial, sans-serif; font-weight: 500; transition: background 0.15s;
+    }
+    .faculty-card-actions button:hover { background: var(--maroon-lt); }
+    .faculty-card-actions button.btn-secondary { background: #fff; color: var(--navy); border: 1px solid var(--hairline); }
+    .faculty-card-actions button.btn-secondary:hover { background: var(--panel); }
 
-    .stage-badge { display:inline-block; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:bold; }
-    .stage-forwarded { background:#dbeafe; color:#1e40af; }
-    .stage-done      { background:#d1fae5; color:#065f46; }
+    .stage-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .stage-forwarded { background: var(--gold-bg); color: #8a5a10; border: 1px solid #f1d9a6; }
+    .stage-done { background: #dcefe4; color: var(--success); border: 1px solid #b7dcc7; }
 
-    /* ── SEF MODAL ── */
-    .sef-modal-box {
-      background:white; border-radius:10px; padding:24px 28px;
-      max-width:900px; width:95vw; max-height:92vh; overflow-y:auto;
+    .empty-state {
+      text-align: center; padding: 60px 24px; color: var(--slate); background: #fff;
+      border-top: 4px solid var(--maroon); border-bottom: 4px solid var(--gold);
+      border-left: 1px solid var(--hairline); border-right: 1px solid var(--hairline);
+      border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.08);
     }
+    .empty-state .icon { font-size: 44px; margin-bottom: 12px; }
+    .empty-state h3 { font-family: 'Source Serif 4', serif; font-weight: 500; color: var(--ink); font-size: 22px; margin: 0 0 8px; }
+    .empty-state p { margin: 0 auto; max-width: 440px; line-height: 1.7; font-size: 14px; }
 
-    /* A. Faculty Information */
-    .faculty-info-box {
-      background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;
-      padding:14px 16px; margin-bottom:16px;
-    }
-    .faculty-info-box h4 {
-      font-size:12px; color:#475569; text-transform:uppercase;
-      letter-spacing:.04em; margin-bottom:10px;
-    }
-    .fi-row {
-      display:grid; grid-template-columns:210px 12px 1fr;
-      font-size:13px; color:#1e293b; padding:3px 0;
-    }
-    .fi-label { color:#475569; }
+    /* ── Modals ── */
+    .modal-box, .sef-modal-box { border-top: 4px solid var(--maroon); border-bottom: 4px solid var(--gold); font-family: 'Inter', Arial, sans-serif; }
+    .modal-box { border-radius: 12px !important; padding: 26px; }
+    .modal-box h3 { font-family: 'Source Serif 4', serif; font-weight: 500; color: var(--ink); font-size: 20px; margin: 0 0 18px; }
 
-    @media (max-width: 640px) {
-      .fi-row { grid-template-columns:150px 10px 1fr; font-size:12px; }
+    .sef-modal-box { background: #fff; border-radius: 12px; padding: 26px 30px; max-width: 920px; width: 95vw; max-height: 92vh; overflow-y: auto; }
+
+    .field-label { display: block; font-size: 12.5px; font-weight: 500; color: var(--slate); margin-bottom: 6px; }
+    .field-input, textarea {
+      width: 100%; padding: 11px 14px; border: 1.5px solid var(--hairline); border-radius: 8px;
+      font-size: 14px; font-family: 'Inter', Arial, sans-serif; background: #fff; color: var(--ink);
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
+    textarea { resize: vertical; min-height: 80px; }
+    .field-input:focus, textarea:focus { outline: none; border-color: var(--navy); box-shadow: 0 0 0 3px rgba(22,50,79,0.08); }
+    .form-group label { font-size: 12.5px; font-weight: 500; color: var(--slate); margin-bottom: 6px; display: block; }
+    .field-hint { font-size: 11.5px; color: var(--mist); margin-top: 4px; }
+    .error, #cp-error, #review-error { color: var(--error); font-size: 12.5px; min-height: 16px; }
+
+    #cp-save-btn, #submit-review-btn {
+      background: var(--gold); color: var(--gold-dp); border: none; border-radius: 8px; cursor: pointer;
+      padding: 12px; font-weight: 600; font-size: 14px; font-family: 'Inter', Arial, sans-serif; transition: background 0.15s;
+    }
+    #cp-save-btn:hover, #submit-review-btn:hover { background: var(--gold-hv); }
+    #cp-save-btn:disabled, #submit-review-btn:disabled { background: var(--mist); color: #fff; cursor: not-allowed; }
+    #cp-cancel-btn, #cancel-review-btn, #close-submitted-btn {
+      background: #fff; color: var(--navy); border: 1px solid var(--hairline); border-radius: 8px;
+      cursor: pointer; padding: 12px 20px; font-size: 14px; font-family: 'Inter', Arial, sans-serif;
+    }
+    #cp-cancel-btn:hover, #cancel-review-btn:hover, #close-submitted-btn:hover { background: var(--panel); }
+
+    /* A. Faculty information */
+    .faculty-info-box { background: var(--panel); border: 1px solid var(--hairline); border-left: 2.5px solid var(--gold); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; }
+    .faculty-info-box h4 { font-size: 12px; color: var(--slate); text-transform: uppercase; letter-spacing: .05em; margin: 0 0 10px; }
+    .fi-row { display: grid; grid-template-columns: 210px 12px 1fr; font-size: 13px; color: var(--ink); padding: 3px 0; }
+    .fi-label { color: var(--slate); }
+
+    .notice-box { background: var(--gold-bg); border: 1px solid #f1d9a6; border-left: 2.5px solid var(--gold); border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; font-size: 12.5px; color: #7a5a1f; line-height: 1.6; }
+    .notice-box b { color: var(--gold-dp); }
+
+    .rating-legend { display: flex; gap: 10px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--hairline); padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 11.5px; color: var(--slate); }
 
     /* SEF table */
-    .sef-section-header {
-      background:#1e293b; color:white; font-size:12px; font-weight:bold;
-      padding:8px 12px; border-radius:4px; margin:14px 0 6px;
-    }
+    .sef-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 4px; }
+    .sef-table th { background: var(--navy); color: #fff; padding: 9px 10px; text-align: center; border: 1px solid var(--navy-deep); font-size: 12px; font-weight: 500; }
+    .sef-table th.q-col { text-align: left; width: 38%; }
+    .sef-table th.means-col { text-align: left; width: 32%; }
+    .sef-table td { padding: 8px 10px; border: 1px solid var(--hairline); vertical-align: middle; }
+    .sef-table td.q-text { text-align: left; line-height: 1.5; color: var(--ink); }
+    .sef-table td.means-cell { text-align: left; font-size: 11.5px; color: var(--slate); vertical-align: top; }
+    .sef-table td.means-cell ul { margin: 0; padding-left: 16px; }
+    .sef-table td.means-cell li { margin-bottom: 2px; }
+    .sef-table td.r-cell { text-align: center; }
+    .sef-table input[type=radio] { width: 17px; height: 17px; cursor: pointer; accent-color: var(--maroon); }
+    .sef-table tbody tr:nth-child(even) { background: var(--panel); }
+    .sef-table tbody tr:hover { background: var(--maroon-bg); }
+    .sef-table tr.sef-unanswered td { background: var(--error-bg) !important; }
 
-    .sef-table { width:100%; border-collapse:collapse; font-size:13px; margin-bottom:4px; }
-    .sef-table th {
-      background:#1a56db; color:white; padding:8px 10px;
-      text-align:center; border:1px solid #1447b8; font-size:12px;
-    }
-    .sef-table th.q-col { text-align:left; width:38%; }
-    .sef-table th.means-col { text-align:left; width:32%; }
-    .sef-table td { padding:8px 10px; border:1px solid #e2e8f0; vertical-align:middle; }
-    .sef-table td.q-text { text-align:left; line-height:1.5; color:#1e293b; }
-    .sef-table td.means-cell { text-align:left; font-size:11.5px; color:#475569; vertical-align:top; }
-    .sef-table td.means-cell ul { margin:0; padding-left:16px; }
-    .sef-table td.means-cell li { margin-bottom:2px; }
-    .sef-table td.r-cell { text-align:center; }
-    .sef-table input[type=radio] { width:16px; height:16px; cursor:pointer; accent-color:#1a56db; }
-    .sef-table tbody tr:nth-child(even) { background:#f8fafc; }
-    .sef-table tbody tr:hover { background:#eff6ff; }
-    .sef-table tr.sef-unanswered td { background:#fef2f2 !important; }
-
-    .rating-legend {
-      display:flex; gap:8px; flex-wrap:wrap;
-      background:#f8fafc; border:1px solid #e2e8f0;
-      padding:8px 12px; border-radius:6px; margin-bottom:12px;
-      font-size:11px; color:#475569;
-    }
-
-    /* SEF computed score bar */
+    /* Live score bar */
     .sef-score-bar {
-      background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;
-      padding:12px 16px; margin:14px 0; display:flex;
-      align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;
+      background: var(--maroon-bg); border: 1px solid #e6c3bb; border-radius: 8px;
+      padding: 12px 16px; margin: 14px 0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
     }
-    .sef-score-bar .label { font-size:13px; font-weight:bold; color:#1e40af; }
-    .sef-score-bar .score { font-size:24px; font-weight:bold; color:#1a56db; }
+    .sef-score-bar .label { font-size: 13px; font-weight: 600; color: var(--maroon); }
+    .sef-score-bar .score { font-family: 'Source Serif 4', serif; font-size: 24px; font-weight: 600; color: var(--maroon); }
 
-    /* comments textarea */
-    .form-group label { font-size:13px; font-weight:bold; color:#374151; margin-bottom:6px; display:block; }
-    textarea { width:100%; padding:10px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px; font-family:Arial,sans-serif; resize:vertical; min-height:80px; }
-    textarea:focus { outline:none; border-color:#1a56db; }
-    .field-hint { font-size:11px; color:#94a3b8; margin-top:4px; }
+    .submitted-box { background: var(--success-bg); border: 1px solid #b7dcc7; border-radius: 8px; padding: 12px 14px; font-size: 13px; color: var(--success); line-height: 1.6; white-space: pre-wrap; }
 
-    /* submitted read-only */
-    .submitted-box {
-      background:#f0fdf4; border:1px solid #86efac; border-radius:8px;
-      padding:12px 14px; font-size:13px; color:#166534; line-height:1.6; white-space:pre-wrap;
-    }
+    .add-row-btn, .remove-row-btn { font-size: 12px; padding: 6px 14px; background: #fff; border-radius: 7px; cursor: pointer; font-family: 'Inter', Arial, sans-serif; }
+    .add-row-btn { color: var(--navy); border: 1px solid var(--navy); }
+    .remove-row-btn { color: var(--error); border: 1px solid var(--error); }
 
-    .empty-state { text-align:center; padding:60px 24px; color:#64748b; }
-    .empty-state .icon { font-size:48px; margin-bottom:12px; }
-    .empty-state h3 { color:#1e293b; margin-bottom:8px; }
+    /* Mobile SEF question cards */
+    .sef-mobile-cards { display: none; }
+    .sef-q-card { background: #fff; border: 1px solid var(--hairline); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; }
+    .sef-q-card.unanswered { border-color: #e3b3ac; background: var(--error-bg); }
+    .sef-q-text { font-size: 13px; color: var(--ink); margin-bottom: 8px; line-height: 1.5; }
+    .sef-q-means { font-size: 11.5px; color: var(--slate); margin-bottom: 10px; }
+    .sef-q-means ul { margin: 2px 0 0; padding-left: 16px; }
+    .sef-q-means li { margin-bottom: 2px; }
+    .sef-q-options { display: flex; gap: 6px; justify-content: space-between; }
+    .sef-q-btn { flex: 1; padding: 10px 4px; border: 1.5px solid var(--hairline); border-radius: 8px; text-align: center; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--slate); background: var(--panel); transition: all .15s; }
+    .sef-q-btn:hover { border-color: var(--maroon); background: var(--maroon-bg); }
+    .sef-q-btn.selected { background: var(--maroon); color: #fff; border-color: var(--maroon); }
+    .sef-q-btn input[type=radio] { display: none; }
 
-    /* ── RESPONSIVE ── */
-    @media (max-width: 900px) {
-      .faculty-card { flex-direction:column; align-items:flex-start; }
-      .faculty-card-actions { flex-direction:row; flex-wrap:wrap; align-items:center; width:100%; }
-      .faculty-card-score { order:-1; display:flex; align-items:center; gap:8px; }
-      .score-big { font-size:22px; }
+    /* ── Responsive ── */
+    @media (max-width: 860px) {
+      nav { padding: 8px 16px; }
+      .nav-role, #nav-user { display: none; }
+      .hero { padding: 26px 20px 76px; }
+      .hero h2 { font-size: 22px; }
+      .container { padding: 0 16px 40px; }
+      .faculty-card { flex-direction: column; align-items: flex-start; }
+      .faculty-card-actions { width: 100%; }
     }
 
     @media (max-width: 640px) {
-      .container { padding:0 12px; }
-      .cards-row { gap:8px; }
-      .card.small { min-width:0; flex:1; padding:12px 8px; }
-      .card-value { font-size:20px; }
-      .card-label { font-size:11px; }
+      .nav-logo { padding: 4px 8px; border-radius: 50%; }
+      .nav-logo .logo-full { display: none; }
+      .nav-logo .logo-mark { display: block; }
+      .nav-btn, nav a#logout-btn { padding: 5px 9px; font-size: 11.5px; }
+      .nav-actions { gap: 6px; }
 
-      /* Faculty cards — cleaner mobile stack */
-      .faculty-card { padding:14px 16px; gap:10px; }
-      .faculty-card-info h3 { font-size:15px; }
-      .faculty-card-info p { font-size:12px; }
-      .score-big { font-size:20px; }
+      .container { padding: 0 12px 32px; }
+      .cards-row { gap: 8px; }
+      .stat-card { padding: 12px 6px; }
+      .stat-card .card-value { font-size: 24px; }
+      .stat-card .card-label { font-size: 11px; }
+      .faculty-card { padding: 16px; }
+      .faculty-card-actions button { flex: 1; min-height: 40px; font-size: 13px !important; }
 
-      .faculty-card-actions {
-        flex-direction: row;
-        flex-wrap: wrap;
-        gap: 6px;
-        width: 100%;
-      }
+      .fi-row { grid-template-columns: 150px 10px 1fr; font-size: 12px; }
 
-      .faculty-card-actions button {
-        flex: 1;
-        min-height: 38px;
-        font-size: 13px !important;
-      }
-
-      /* SEF modal full screen */
-      .sef-modal-box {
-        width:100vw; max-width:100vw;
-        height:100vh; max-height:100vh;
-        border-radius:0; padding:14px 12px;
-      }
-      .sef-table { display:none; }
-      .sef-mobile-cards { display:block !important; }
-      .rating-legend { font-size:10px; gap:5px; }
-      .sef-score-bar { flex-direction:column; align-items:flex-start; gap:4px; }
+      .sef-modal-box { width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; padding: 16px 14px; }
+      .sef-table { display: none; }
+      .sef-mobile-cards { display: block !important; }
+      .rating-legend { font-size: 10.5px; gap: 6px; }
+      .sef-score-bar { flex-direction: column; align-items: flex-start; gap: 4px; }
     }
-
-    /* Mobile SEF question cards */
-    .sef-mobile-cards { display:none; }
-    .sef-q-card {
-      background:white; border:1px solid #e2e8f0; border-radius:8px;
-      padding:12px 14px; margin-bottom:8px;
-    }
-    .sef-q-card.unanswered { border-color:#fca5a5; background:#fef2f2; }
-    .sef-q-text { font-size:13px; color:#1e293b; margin-bottom:8px; line-height:1.5; }
-    .sef-q-means { font-size:11px; color:#64748b; margin-bottom:10px; }
-    .sef-q-means ul { margin:2px 0 0; padding-left:16px; }
-    .sef-q-means li { margin-bottom:2px; }
-    .sef-q-options { display:flex; gap:6px; justify-content:space-between; }
-    .sef-q-btn {
-      flex:1; padding:10px 4px; border:1.5px solid #e2e8f0;
-      border-radius:6px; text-align:center; cursor:pointer;
-      font-size:13px; font-weight:bold; color:#64748b;
-      background:white; transition:all .15s;
-    }
-    .sef-q-btn.selected { background:#1a56db; color:white; border-color:#1a56db; }
-    .sef-q-btn input[type=radio] { display:none; }
   </style>
 </head>
 <body>
   <nav>
-    <span><b>FacultyPulse</b> — Supervisor Dashboard</span>
-    <div style="display:flex; align-items:center; gap:8px; flex-wrap:nowrap;">
-      <span id="nav-user" style="font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:120px;"></span>
-      <button id="change-password-btn" style="font-size:12px; padding:4px 10px;
-        background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3);
-        color:white; border-radius:6px; cursor:pointer; white-space:nowrap;">🔑 Change Password</button>
-      <a href="../index.html" id="logout-btn" style="white-space:nowrap;">Logout</a>
+    <div class="nav-brand">
+      <div class="nav-logo">
+        <img class="logo-full" src="../img/fp-logo.png" alt="FacultyPulse — Performance, Insights, Growth" />
+        <img class="logo-mark" src="../img/fp-mark.png" alt="FacultyPulse" />
+      </div>
+      <span class="nav-role">Supervisor Dashboard</span>
+    </div>
+    <div class="nav-actions">
+      <span id="nav-user"></span>
+      <button class="nav-btn" id="change-password-btn">Change Password</button>
+      <a href="../index.html" id="logout-btn">Logout</a>
     </div>
   </nav>
 
   <!-- Change Password Modal -->
   <div id="change-password-modal" class="modal hidden">
     <div class="modal-box" style="max-width:420px; width:95vw;">
-      <h3 style="margin-bottom:16px;">🔑 Change Password</h3>
-      <div class="form-group" style="margin-bottom:12px;">
-        <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:5px;">New Password</label>
-        <input type="password" id="cp-new" placeholder="At least 8 characters"
-          style="width:100%; padding:9px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px;" />
+      <h3>Change Password</h3>
+      <div style="margin-bottom:14px;">
+        <label class="field-label">New Password</label>
+        <input type="password" id="cp-new" class="field-input" placeholder="At least 8 characters" />
       </div>
-      <div class="form-group" style="margin-bottom:16px;">
-        <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:5px;">Confirm Password</label>
-        <input type="password" id="cp-confirm" placeholder="Re-enter new password"
-          style="width:100%; padding:9px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px;" />
+      <div style="margin-bottom:16px;">
+        <label class="field-label">Confirm Password</label>
+        <input type="password" id="cp-confirm" class="field-input" placeholder="Re-enter new password" />
       </div>
-      <p id="cp-error" class="error" style="margin-bottom:10px;"></p>
+      <p id="cp-error" class="error" style="margin:0 0 10px;"></p>
       <div style="display:flex; gap:10px;">
         <button id="cp-save-btn" style="flex:1;">Save Password</button>
         <button class="btn-secondary" id="cp-cancel-btn">Cancel</button>
@@ -208,41 +282,40 @@
     </div>
   </div>
 
-  <div class="container">
-    <h2>Faculty Evaluation Review</h2>
-    <p style="color:#64748b; margin-bottom:6px;">
-      Review forwarded faculty evaluations, complete the SEF instrument, add comments, then submit back to QAO.
-    </p>
-    <p style="font-size:13px; color:#475569; margin-bottom:20px;">
-      Semester: <b id="semester-label">Loading...</b>
-    </p>
+  <header class="hero">
+    <div class="hero-inner">
+      <p class="kicker">Supervisor's evaluation of faculty</p>
+      <h2>Faculty Evaluation Review</h2>
+      <p class="lead">Review forwarded faculty evaluations, complete the SEF instrument, add comments, then submit back to QAO.</p>
+      <p class="sem-line">Semester: <b id="semester-label">Loading...</b></p>
+    </div>
+  </header>
 
-    <div class="cards-row" style="margin-bottom:20px;">
-      <div class="card small">
+  <div class="container">
+
+    <div class="cards-row">
+      <div class="stat-card">
         <p class="card-label">Pending Review</p>
-        <p class="card-value" id="count-pending" style="color:#d97706;">—</p>
+        <p class="card-value" id="count-pending" style="color:#d9922b;">—</p>
       </div>
-      <div class="card small">
+      <div class="stat-card">
         <p class="card-label">Reviewed</p>
-        <p class="card-value" id="count-done" style="color:#16a34a;">—</p>
+        <p class="card-value" id="count-done" style="color:var(--success);">—</p>
       </div>
-      <div class="card small">
+      <div class="stat-card">
         <p class="card-label">Total Forwarded</p>
-        <p class="card-value" id="count-total">—</p>
+        <p class="card-value" id="count-total" style="color:var(--maroon);">—</p>
       </div>
     </div>
 
     <div id="faculty-cards-container" class="faculty-cards">
-      <p style="color:#94a3b8; text-align:center; padding:32px 0;">Loading forwarded reports...</p>
+      <p style="color:var(--mist); text-align:center; padding:32px 0;">Loading forwarded reports...</p>
     </div>
   </div>
 
   <!-- ── SEF REVIEW MODAL ── -->
   <div id="review-modal" class="modal hidden">
     <div class="sef-modal-box">
-
-      <h3 id="modal-teacher-name" style="margin-bottom:4px;">—</h3>
-      <p id="modal-semester" style="font-size:13px; color:#64748b; margin-bottom:14px;">—</p>
 
       <!-- A. Faculty Information — 1:1 copy from Annex B -->
       <div class="faculty-info-box">
@@ -259,7 +332,7 @@
       <div id="submitted-view" style="display:none;">
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
           <span style="font-size:20px;">✅</span>
-          <strong style="color:#16a34a;">SEF already submitted for this faculty.</strong>
+          <strong style="color:var(--success);">SEF already submitted for this faculty.</strong>
         </div>
         <div class="form-group" style="margin-bottom:10px;">
           <label>SEF Rating Submitted</label>
@@ -279,9 +352,9 @@
       <!-- ── SEF FORM ── -->
       <div id="review-form">
 
-        <div style="background:#fef3c7; border:1px solid #fcd34d; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#92400e;">
-          📋 <b>Supervisor's Evaluation of Faculty (SEF) — Annex B, CMO No. 19, s. 2025</b><br/>
-          Rate the faculty member based on your overall assessment of their teaching performance this semester.
+        <div class="notice-box">
+          <b>Supervisor's Evaluation of Faculty (SEF) — Annex B, CMO No. 19, s. 2025</b><br/>
+          Rate the faculty member based on your own assessment of their teaching performance this semester.
         </div>
 
         <div class="rating-legend">
@@ -309,42 +382,33 @@
 
         <!-- Live SEF score display -->
         <div class="sef-score-bar">
-          <span class="label">📐 Computed SEF Rating</span>
+          <span class="label">Computed SEF Rating</span>
           <span class="score" id="sef-live-score">—</span>
         </div>
 
         <!-- Comments & Remarks -->
         <div class="form-group" style="margin-bottom:14px;">
           <label>Other Comments and Suggestions
-            <span style="font-weight:normal; color:#94a3b8;">(Optional — appears in IFER Section D)</span>
+            <span style="font-weight:normal; color:var(--mist);">(Optional — appears in IFER Section D)</span>
           </label>
-          <p class="field-hint" style="margin-bottom:8px;">
+          <p class="field-hint" style="margin:0 0 8px;">
             Each row becomes a numbered entry in the printed IFER report. Add rows as needed.
           </p>
 
-          <!-- Dynamic comment rows -->
           <div id="comments-rows-container" style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px;"></div>
 
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button type="button" id="add-comment-row-btn"
-              style="font-size:12px; padding:5px 12px; background:white; color:#1a56db;
-                border:1px solid #1a56db; border-radius:5px; cursor:pointer;">
-              + Add Row
-            </button>
-            <button type="button" id="remove-comment-row-btn"
-              style="font-size:12px; padding:5px 12px; background:white; color:#dc2626;
-                border:1px solid #dc2626; border-radius:5px; cursor:pointer;">
-              − Remove Row
-            </button>
+            <button type="button" id="add-comment-row-btn" class="add-row-btn">+ Add Row</button>
+            <button type="button" id="remove-comment-row-btn" class="remove-row-btn">− Remove Row</button>
           </div>
         </div>
 
         <div class="form-group" style="margin-bottom:20px;">
-          <label>Remarks <span style="font-weight:normal; color:#94a3b8;">(commendation, improvement needed, etc.)</span></label>
+          <label>Remarks <span style="font-weight:normal; color:var(--mist);">(commendation, improvement needed, etc.)</span></label>
           <textarea id="input-remarks" placeholder="Enter your overall remarks and recommended actions..."></textarea>
         </div>
 
-        <p id="review-error" class="error" style="margin-bottom:10px;"></p>
+        <p id="review-error" class="error" style="margin:0 0 10px;"></p>
 
         <div style="display:flex; gap:10px;">
           <button id="submit-review-btn" style="flex:1;">✅ Submit SEF &amp; Remarks</button>

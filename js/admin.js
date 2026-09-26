@@ -6,6 +6,16 @@
 import { supabase } from "./supabase.js";
 import { fpAlert, fpConfirm, fpLoading } from "./modal.js";
 
+// ── Lazy panels: a panel's data loads the first time its sidebar tab is
+//    opened (admin.html dispatches "fp:panel"), not all at page load. ──
+const lazyLoaders = {};
+const lazyDone    = new Set();
+function lazyPanel(panelId, fn) { lazyLoaders[panelId] = fn; }
+window.addEventListener("fp:panel", (e) => {
+  const id = e.detail;
+  if (lazyLoaders[id] && !lazyDone.has(id)) { lazyDone.add(id); lazyLoaders[id](); }
+});
+
 function escHtml(str) {
   return String(str || "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -24,7 +34,7 @@ let barChart   = null;
 let donutChart = null;
 
 // ══════════════════════════════════════════════════════════════
-//  RATING HELPERS (out of 100)
+//  RATING HELPERS
 // ══════════════════════════════════════════════════════════════
 function getRatingLabel(score) {
   if (score >= 90) return "Outstanding";
@@ -1179,6 +1189,7 @@ async function viewReport(teacherId, teacherName) {
 //  CHARTS
 // ══════════════════════════════════════════════════════════════
 function renderBarChart(ranked) {
+  if (typeof Chart === "undefined") return;
   const ctx = document.getElementById("bar-chart").getContext("2d");
   if (barChart) barChart.destroy();
 
@@ -1216,13 +1227,13 @@ function renderBarChart(ranked) {
     data          = programAverages.map(p => p.avg);
     colors        = programAverages.map(p => getRatingColor(p.avg));
     tooltipSuffix = programAverages.map(p => ` (${p.count} faculty)`);
-    chartTitle    = "Program-Level SET Rating Comparison (out of 100)";
+    chartTitle    = "Program-Level SET Rating Comparison";
   } else {
     labels        = scoped.map(t => t.name.split(",")[0]);
     data          = scoped.map(t => t.overallSET);
     colors        = scoped.map(t => getRatingColor(t.overallSET));
     tooltipSuffix = scoped.map(() => "");
-    chartTitle    = `Faculty SET Rating Comparison — ${progFilter} (out of 100)`;
+    chartTitle    = `Faculty SET Rating Comparison — ${progFilter}`;
   }
 
   const headingEl = document.querySelector("#bar-chart").closest(".chart-card")?.querySelector("h3");
@@ -1260,6 +1271,7 @@ function renderBarChart(ranked) {
 }
 
 function renderDonutChart(ranked) {
+  if (typeof Chart === "undefined") return;
   const ctx = document.getElementById("donut-chart").getContext("2d");
   if (donutChart) donutChart.destroy();
 
@@ -1653,6 +1665,15 @@ document.getElementById("pdf-btn").addEventListener("click", async () => {
   btn.textContent = "Generating...";
   btn.disabled    = true;
 
+  try {
+    await window.fpLoadScript("../js/vendor/html2pdf.bundle.min.js");
+  } catch (err) {
+    btn.textContent = "💾 Save as PDF";
+    btn.disabled    = false;
+    await fpAlert("Couldn't load the PDF tool. Check your connection and try again.", "error");
+    return;
+  }
+
   const noPrint = element.querySelectorAll(".no-print");
   noPrint.forEach(el => el.setAttribute("data-pdf-hidden", el.style.display));
   noPrint.forEach(el => el.style.display = "none");
@@ -1874,7 +1895,7 @@ if (historySearchEl) historySearchEl.addEventListener("input", () => { historyPa
 const historySemFilterEl = document.getElementById("history-semester-filter");
 if (historySemFilterEl) historySemFilterEl.addEventListener("change", () => { historyPage = 1; renderHistoryTable(); });
 
-loadPrintHistory();
+lazyPanel("panel-history", loadPrintHistory);
 
 // ══════════════════════════════════════════════════════════════
 //  EMAIL CHANGE REQUESTS PANEL
@@ -2318,7 +2339,7 @@ function updateSemPreview() {
 document.getElementById("create-semester-btn")?.addEventListener("click", createSemester);
 document.getElementById("refresh-btn-semesters")?.addEventListener("click", loadSemesters);
 
-loadSemesters();
+lazyPanel("panel-semesters", loadSemesters);
 
 // ══════════════════════════════════════════════════════════════
 //  SUBJECT → TEACHER ASSIGNMENT
@@ -2643,9 +2664,11 @@ document.getElementById("subject-unassign-btn")?.addEventListener("click", async
   await loadSubjectsForAssignment();
 });
 
-loadDepartmentsForAssignment();
-loadTeachersForAssignment(""); // "" = All Departments, the new default — loads every active teacher
-loadSubjectsForAssignment();
+lazyPanel("panel-subjects", () => {
+  loadDepartmentsForAssignment();
+  loadTeachersForAssignment(""); // "" = All Departments
+  loadSubjectsForAssignment();
+});
 
 // ══════════════════════════════════════════════════════════════
 //  FACULTY TRENDS — a faculty's Overall SET Rating across every past
@@ -2779,6 +2802,7 @@ async function loadFacultyTrend(teacherId, teacherName) {
 }
 
 function renderTrendChart(points) {
+  if (typeof Chart === "undefined") return;
   const canvas = document.getElementById("trend-chart");
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
@@ -2833,7 +2857,7 @@ document.getElementById("refresh-btn-trends")?.addEventListener("click", async (
   }
 });
 
-loadTrendFacultyOptions();
+lazyPanel("panel-trends", loadTrendFacultyOptions);
 
 // ── Init ──
 // Shows the loading popup for the very first thing the admin sees —

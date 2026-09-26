@@ -5,485 +5,379 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>FacultyPulse – Student Dashboard</title>
   <link rel="stylesheet" href="../css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --ink:      #1c2b3a;
+      --slate:    #4a5b6c;
+      --mist:     #8b98a5;
+      --hairline: #d8dfe5;
+      --panel:    #f7f5f0;
+      --navy:     #16324f;
+      --navy-deep:#0e2338;
+      --brass-lt: #c99447;
+      --maroon:   #671408;
+      --maroon-lt:#8f2f1f;
+      --maroon-bg:#fbf0ed;
+      --gold:     #ffbd59;
+      --gold-hv:  #f0aa3c;
+      --gold-dp:  #4a2c05;
+      --paper:    #fffdf9;
+      --error:    #a4342a;
+      --error-bg: #fbeeec;
+      --success:  #2f6b4f;
+      --success-bg:#eef6f1;
+    }
 
-    /* ── PROGRESS ── */
-    .progress-section {
-      background: white;
-      border: 1px solid #e2e8f0;
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', Arial, sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      margin: 0;
+    }
+
+    /* ── Top bar (mirrors login brand-mark) ── */
+    nav {
+      background: var(--maroon) !important;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 28px;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      border-bottom: 3px solid var(--gold);
+    }
+    .nav-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+        .nav-logo {
+      background: #fff; border-radius: 10px; padding: 6px 14px;
+      display: flex; align-items: center; flex-shrink: 0;
+      border-bottom: 2px solid var(--gold);
+    }
+    .nav-logo img { height: 48px; width: auto; display: block; }
+    .nav-logo .logo-mark { display: none; height: 40px; }
+    .nav-role {
+      font-size: 11.5px; color: var(--brass-lt); letter-spacing: 0.04em;
+      border-left: 1px solid rgba(255,255,255,0.25); padding-left: 12px; white-space: nowrap;
+    }
+    .nav-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    #nav-user {
+      font-size: 12px; color: #e9dcd6; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; max-width: 170px; margin-right: 6px;
+    }
+    .nav-btn {
+      font-family: 'Inter', Arial, sans-serif;
+      font-size: 12px; font-weight: 500; padding: 6px 12px; white-space: nowrap;
+      background: rgba(255,255,255,0.12); color: #fff;
+      border: 1px solid rgba(255,255,255,0.3); border-radius: 7px; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .nav-btn:hover { background: rgba(255,255,255,0.22); }
+    nav a#logout-btn, nav a#logout-btn:visited {
+      font-size: 12px; font-weight: 500; padding: 6px 12px; border-radius: 7px;
+      background: var(--gold); color: var(--gold-dp) !important; text-decoration: none;
+      transition: background 0.15s;
+    }
+    nav a#logout-btn:hover { background: var(--gold-hv); }
+
+    /* ── Hero banner (campus photo multiplied into maroon, like login brand panel) ── */
+    .hero {
+      position: relative; overflow: hidden;
+      background: var(--maroon); color: #f6f4ee;
+      padding: 40px 28px 64px;
+    }
+    .hero::before {
+      content: ""; position: absolute; inset: 0;
+      background-image: url('../img/campus-building.png');
+      background-size: cover; background-position: center 30%;
+      mix-blend-mode: multiply; opacity: 0.85; pointer-events: none;
+    }
+    .hero::after {
+      content: ""; position: absolute; inset: 0;
+      background: linear-gradient(155deg, rgba(103,20,8,0.35) 0%, rgba(30,6,3,0.75) 100%);
+      pointer-events: none;
+    }
+    .hero-inner { position: relative; z-index: 1; max-width: 880px; margin: 0 auto; }
+    .hero .kicker { font-size: 12.5px; color: var(--brass-lt); letter-spacing: 0.04em; margin: 0 0 12px; }
+    .hero h2 {
+      font-family: 'Source Serif 4', serif; font-weight: 500;
+      font-size: 30px; line-height: 1.25; margin: 0 0 12px; color: #f6f4ee;
+    }
+    .hero .sem-line { font-size: 13.5px; color: #d5cfc9; margin: 0; }
+    .hero .sem-line b { color: #fff; font-weight: 600; }
+
+    /* ── Content column ── */
+    .container { max-width: 880px; margin: -40px auto 0; padding: 0 20px 56px; position: relative; z-index: 2; }
+
+    /* Shared card look = login card (maroon top, gold bottom) */
+    .progress-section, .all-done-section, .submit-all-section {
+      background: #fff;
+      border-left: 1px solid var(--hairline);
+      border-right: 1px solid var(--hairline);
+      border-top: 4px solid var(--maroon);
+      border-bottom: 4px solid var(--gold);
       border-radius: 12px;
-      padding: 20px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      padding: 26px 28px;
       margin-bottom: 20px;
     }
 
-    .progress-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 10px;
-    }
+    .progress-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; gap: 10px; }
+    .progress-header h3 { font-family: 'Source Serif 4', serif; font-weight: 500; font-size: 20px; color: var(--ink); margin: 0; }
+    .progress-count { font-size: 13px; color: var(--slate); font-weight: 500; }
 
-    .progress-header h3 { font-size: 15px; color: #1e293b; margin: 0; }
-    .progress-count { font-size: 13px; color: #64748b; }
+    .progress-bar-wrap { background: var(--panel); border: 1px solid var(--hairline); border-radius: 99px; height: 10px; overflow: hidden; margin-bottom: 22px; }
+    .progress-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--maroon), var(--maroon-lt)); border-radius: 99px; transition: width 0.5s ease; }
+    .progress-bar-fill.complete { background: linear-gradient(90deg, var(--success), #4ade80); }
 
-    .progress-bar-wrap {
-      background: #e2e8f0;
-      border-radius: 99px;
-      height: 10px;
-      overflow: hidden;
-      margin-bottom: 14px;
-    }
-
-    .progress-bar-fill {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, #1a56db, #60a5fa);
-      border-radius: 99px;
-      transition: width 0.5s ease;
-    }
-
-    .progress-bar-fill.complete {
-      background: linear-gradient(90deg, #16a34a, #4ade80);
-    }
-
-    /* ── SUBJECT STEPS ── */
-    .subject-steps {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
+    .subject-steps { display: flex; flex-direction: column; gap: 10px; }
     .subject-step {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 16px;
-      border: 1.5px solid #e2e8f0;
-      border-radius: 10px;
-      background: white;
-      transition: all 0.2s;
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 16px; border: 1.5px solid var(--hairline); border-radius: 10px;
+      background: #fff; transition: border-color 0.15s, background 0.15s;
     }
-
-    .subject-step.active {
-      border-color: #1a56db;
-      background: #eff6ff;
-    }
-
-    .subject-step.done {
-      border-color: #86efac;
-      background: #f0fdf4;
-    }
+    .subject-step:hover { border-color: #c9b5af; }
+    .subject-step.active { border-color: var(--maroon); background: var(--maroon-bg); }
+    .subject-step.done   { border-color: #b7dcc7; background: var(--success-bg); }
 
     .step-num {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 13px;
-      font-weight: 700;
-      flex-shrink: 0;
-      background: #f1f5f9;
-      color: #64748b;
+      width: 34px; height: 34px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 600; flex-shrink: 0;
+      background: var(--panel); color: var(--slate); border: 1px solid var(--hairline);
     }
+    .subject-step.active .step-num { background: var(--maroon); color: #fff; border-color: var(--maroon); }
+    .subject-step.done .step-num   { background: var(--success); color: #fff; border-color: var(--success); }
 
-    .subject-step.active .step-num {
-      background: #1a56db;
-      color: white;
-    }
+    .step-info { flex: 1; min-width: 0; }
+    .step-name { font-size: 14px; font-weight: 600; color: var(--ink); }
+    .step-teacher { font-size: 12.5px; color: var(--slate); margin-top: 2px; }
 
-    .subject-step.done .step-num {
-      background: #16a34a;
-      color: white;
-    }
-
-    .step-info { flex: 1; }
-    .step-name { font-size: 14px; font-weight: 600; color: #1e293b; }
-    .step-teacher { font-size: 12px; color: #64748b; margin-top: 2px; }
-
-    .step-badge {
-      font-size: 11px;
-      font-weight: 700;
-      padding: 3px 10px;
-      border-radius: 20px;
-      flex-shrink: 0;
-    }
-
-    .step-badge.pending { background: #f1f5f9; color: #64748b; }
-    .step-badge.active  { background: #dbeafe; color: #1d4ed8; }
-    .step-badge.draft   { background: #fffbeb; color: #92400e; }
-    .step-badge.done    { background: #dcfce7; color: #166534; }
+    .step-badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; flex-shrink: 0; white-space: nowrap; }
+    .step-badge.pending { background: var(--panel); color: var(--slate); border: 1px solid var(--hairline); }
+    .step-badge.active  { background: #fbe2d9; color: var(--maroon); }
+    .step-badge.draft   { background: #fdf3da; color: #8a5a10; }
+    .step-badge.done    { background: #dcefe4; color: var(--success); }
 
     .step-action { flex-shrink: 0; }
-
-    /* ── SUBMIT ALL ── */
-    .submit-all-section {
-      display: none;
-      background: #f0fdf4;
-      border: 2px solid #86efac;
-      border-radius: 12px;
-      padding: 20px;
-      text-align: center;
-      margin-top: 16px;
+    .step-action button {
+      background: var(--maroon); color: #fff; border: none; border-radius: 8px; cursor: pointer;
+      font-family: 'Inter', Arial, sans-serif; font-weight: 500; transition: background 0.15s;
     }
+    .step-action button:hover { background: var(--maroon-lt); }
+    .step-action .btn-secondary { background: #fff; color: var(--navy); border: 1px solid var(--hairline); }
+    .step-action .btn-secondary:hover { background: var(--panel); }
 
+    .submit-all-section { display: none; text-align: center; background: var(--success-bg); border-top-color: var(--success); }
     .submit-all-section.visible { display: block; }
-
-    .submit-all-section h3 {
-      color: #166534;
-      margin-bottom: 8px;
-      font-size: 16px;
-    }
-
-    .submit-all-section p {
-      font-size: 13px;
-      color: #4b5563;
-      margin-bottom: 16px;
-    }
-
+    .submit-all-section h3 { font-family: 'Source Serif 4', serif; font-weight: 500; color: var(--success); margin: 0 0 8px; font-size: 20px; }
+    .submit-all-section p { font-size: 13px; color: var(--slate); margin: 0 0 18px; line-height: 1.6; }
     #submit-all-btn {
-      background: #16a34a;
-      font-size: 15px;
-      padding: 12px 32px;
-      border-radius: 8px;
-      width: 100%;
-      max-width: 320px;
+      background: var(--gold); color: var(--gold-dp); border: none; font-weight: 600; font-size: 14.5px;
+      padding: 12px 32px; border-radius: 8px; width: 100%; max-width: 320px; cursor: pointer;
+      transition: background 0.15s; font-family: 'Inter', Arial, sans-serif;
     }
+    #submit-all-btn:hover { background: var(--gold-hv); }
+    #submit-all-btn:disabled { background: var(--mist); color: #fff; cursor: not-allowed; }
 
-    #submit-all-btn:hover { background: #15803d; }
-
-    /* ── ALL DONE SCREEN ── */
-    .all-done-section {
-      display: none;
-      text-align: center;
-      padding: 48px 24px;
-      background: white;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-    }
-
+    .all-done-section { display: none; text-align: center; padding: 48px 24px; }
     .all-done-section.visible { display: block; }
-    .all-done-section .done-icon { font-size: 64px; margin-bottom: 16px; }
-    .all-done-section h2 { color: #166534; margin-bottom: 8px; }
-    .all-done-section p  { font-size: 14px; color: #64748b; max-width: 400px; margin: 0 auto; line-height: 1.7; }
-
-    /* ── EVAL MODAL ── */
-    #eval-modal .modal-box {
-      max-width: 720px;
-      width: 95vw;
-      padding: 20px;
+    .all-done-section .done-icon {
+      width: 64px; height: 64px; border-radius: 50%; background: var(--success-bg); color: var(--success);
+      display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 16px;
     }
+    .all-done-section h2 { font-family: 'Source Serif 4', serif; font-weight: 500; color: var(--success); margin: 0 0 8px; }
+    .all-done-section p  { font-size: 14px; color: var(--slate); max-width: 420px; margin: 0 auto; line-height: 1.7; }
 
-    /* ── EVAL TABLE — desktop ── */
-    .eval-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-      margin-bottom: 16px;
+    /* Banners injected by student.js (email nudge / rejection) live in .container */
+    #email-nudge-banner, #email-rejection-banner { border-radius: 10px !important; }
+    #email-nudge-banner button, #email-rejection-ack-btn { border-radius: 7px !important; cursor: pointer; }
+    #email-nudge-add-btn { background: var(--navy); color: #fff; border: none; }
+
+    /* ── Modals ── */
+    .modal-box {
+      border-top: 4px solid var(--maroon);
+      border-bottom: 4px solid var(--gold);
+      border-radius: 12px !important;
+      font-family: 'Inter', Arial, sans-serif;
     }
+    .modal-box h3 { font-family: 'Source Serif 4', serif; font-weight: 500; color: var(--ink); font-size: 20px; }
 
-    .eval-table th {
-      background: #1a56db;
-      color: white;
-      padding: 10px 12px;
-      text-align: center;
-      border: 1px solid #1447b8;
-      font-size: 12px;
-    }
+    #eval-modal .modal-box { max-width: 760px; width: 95vw; padding: 24px; }
 
-    .eval-table th.question-col { text-align: left; width: 55%; }
-
-    .eval-table td {
-      padding: 10px 12px;
-      border: 1px solid #e2e8f0;
-      vertical-align: middle;
-    }
-
-    .eval-table td.question-text { text-align: left; line-height: 1.5; color: #1e293b; }
-    .eval-table td.rating-cell   { text-align: center; padding: 8px 4px; }
-    .eval-table input[type="radio"] { width: 18px; height: 18px; cursor: pointer; accent-color: #1a56db; margin: 0; }
-    .eval-table tbody tr:nth-child(even) { background: #f8fafc; }
-    .eval-table tbody tr:hover           { background: #eff6ff; }
-    .eval-table .category-row td { background: #334155; color: white; font-weight: bold; font-size: 12px; padding: 8px 12px; border-color: #1e293b; }
-    .eval-table tr.unanswered td { background: #fef2f2 !important; }
-
-    /* ── MOBILE CARD QUESTIONS ── */
-    .question-card {
-      background: white;
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      padding: 14px 16px;
-      margin-bottom: 10px;
-    }
-
-    .question-card.unanswered { border-color: #fca5a5; background: #fef2f2; }
-    .question-card .q-text { font-size: 13px; color: #1e293b; line-height: 1.5; margin-bottom: 12px; }
-
-    .q-ratings { display: flex; justify-content: space-between; gap: 6px; }
-
-    .q-rating-btn {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      background: #f8fafc;
-      border: 1.5px solid #e2e8f0;
-      border-radius: 8px;
-      padding: 8px 4px;
-      cursor: pointer;
-      transition: all 0.15s;
-      font-size: 11px;
-      color: #64748b;
-      font-family: Arial, sans-serif;
-    }
-
-    .q-rating-btn .num { font-size: 16px; font-weight: 700; color: #1e293b; }
-    .q-rating-btn input[type="radio"] { display: none; }
-
-    .q-rating-btn.selected { background: #1a56db; border-color: #1a56db; color: white; }
-    .q-rating-btn.selected .num { color: white; }
-    .q-rating-btn:hover { border-color: #1a56db; background: #eff6ff; }
-    .q-rating-btn.selected:hover { background: #1447b8; }
-
-    .category-divider {
-      background: #334155;
-      color: white;
-      font-size: 12px;
-      font-weight: 700;
-      padding: 8px 14px;
-      border-radius: 6px;
-      margin: 14px 0 8px;
-    }
-
-    /* ── ANONYMITY NOTICE ── */
     .anon-notice {
-      background: #f0fdf4;
-      border: 1px solid #86efac;
-      border-radius: 6px;
-      padding: 10px 14px;
-      font-size: 12px;
-      color: #166534;
-      margin-bottom: 14px;
+      background: var(--success-bg); border: 1px solid #b7dcc7; border-left: 2.5px solid var(--success);
+      border-radius: 6px; padding: 10px 14px; font-size: 12.5px; color: var(--success); margin-bottom: 16px;
     }
 
-    /* ── COMMENT BOX ── */
-    .comment-section { margin-top: 20px; padding-top: 16px; border-top: 2px solid #e2e8f0; }
-    .comment-section label { font-size: 13px; font-weight: 600; color: #444; display: block; margin-bottom: 6px; }
+    .eval-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; }
+    .eval-table th { background: var(--navy); color: #fff; padding: 10px 12px; text-align: center; border: 1px solid var(--navy-deep); font-size: 12px; font-weight: 500; }
+    .eval-table th.question-col { text-align: left; width: 55%; }
+    .eval-table td { padding: 10px 12px; border: 1px solid var(--hairline); vertical-align: middle; }
+    .eval-table td.question-text { text-align: left; line-height: 1.5; color: var(--ink); }
+    .eval-table td.rating-cell { text-align: center; padding: 8px 4px; }
+    .eval-table input[type="radio"] { width: 18px; height: 18px; cursor: pointer; accent-color: var(--maroon); margin: 0; }
+    .eval-table tbody tr:nth-child(even) { background: var(--panel); }
+    .eval-table tbody tr:hover { background: var(--maroon-bg); }
+    .eval-table .category-row td { background: var(--navy-deep); color: #fff; font-weight: 600; font-size: 12px; padding: 8px 12px; border-color: var(--navy-deep); }
+
+    .question-card { background: #fff; border: 1px solid var(--hairline); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+    .question-card .q-text { font-size: 13px; color: var(--ink); line-height: 1.5; margin-bottom: 12px; }
+    .q-ratings { display: flex; justify-content: space-between; gap: 6px; }
+    .q-rating-btn {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+      background: var(--panel); border: 1.5px solid var(--hairline); border-radius: 8px; padding: 8px 4px;
+      cursor: pointer; transition: all 0.15s; font-size: 11px; color: var(--slate); font-family: 'Inter', Arial, sans-serif;
+    }
+    .q-rating-btn .num { font-size: 16px; font-weight: 600; color: var(--ink); }
+    .q-rating-btn input[type="radio"] { display: none; }
+    .q-rating-btn.selected { background: var(--maroon); border-color: var(--maroon); color: #fff; }
+    .q-rating-btn.selected .num { color: #fff; }
+    .q-rating-btn:hover { border-color: var(--maroon); background: var(--maroon-bg); }
+    .q-rating-btn.selected:hover { background: var(--maroon-lt); }
+
+    .category-divider { background: var(--navy-deep); color: #fff; font-size: 12px; font-weight: 600; padding: 8px 14px; border-radius: 6px; margin: 14px 0 8px; }
+
+    .comment-section { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--hairline); }
+    .comment-section label { font-size: 12.5px; font-weight: 500; color: var(--slate); display: block; margin-bottom: 6px; }
     .comment-section textarea {
-      width: 100%; padding: 10px 12px;
-      border: 1.5px solid #ddd; border-radius: 6px;
-      font-size: 13px; font-family: Arial, sans-serif;
-      resize: vertical; min-height: 80px;
+      width: 100%; padding: 11px 14px; border: 1.5px solid var(--hairline); border-radius: 8px;
+      font-size: 13.5px; font-family: 'Inter', Arial, sans-serif; resize: vertical; min-height: 80px; color: var(--ink);
     }
-    .comment-section textarea:focus { outline: none; border-color: #1a56db; }
-    .comment-note { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+    .comment-section textarea:focus { outline: none; border-color: var(--navy); box-shadow: 0 0 0 3px rgba(22,50,79,0.08); }
+    .comment-note { font-size: 11.5px; color: var(--mist); margin-top: 4px; }
 
-    /* ── REVIEW MODAL ── */
-    #review-modal .modal-box { max-width: 720px; width: 95vw; }
-    .review-answer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 8px 0;
-      border-bottom: 1px solid #f1f5f9;
-      font-size: 13px;
+    #eval-modal-footer { display: flex; gap: 10px; margin-top: 18px; }
+    #next-btn {
+      background: var(--gold); color: var(--gold-dp); border: none; border-radius: 8px;
+      font-weight: 600; font-size: 14px; padding: 11px 24px; cursor: pointer; font-family: 'Inter', Arial, sans-serif;
+      transition: background 0.15s;
     }
+    #next-btn:hover { background: var(--gold-hv); }
+    #cancel-btn.btn-secondary, #review-close-btn.btn-secondary, #ce-cancel-btn, #cp-cancel-btn {
+      background: #fff; color: var(--navy); border: 1px solid var(--hairline); border-radius: 8px;
+      cursor: pointer; font-family: 'Inter', Arial, sans-serif; padding: 11px 20px; font-size: 14px;
+    }
+    #cancel-btn.btn-secondary:hover, #review-close-btn.btn-secondary:hover, #ce-cancel-btn:hover, #cp-cancel-btn:hover { background: var(--panel); }
+
+    #review-modal .modal-box { max-width: 720px; width: 95vw; padding: 24px; }
+    .review-answer { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--panel); font-size: 13px; }
     .review-answer:last-child { border-bottom: none; }
-    .review-score {
-      font-weight: 700;
-      font-size: 16px;
-      color: #1a56db;
-      flex-shrink: 0;
-      margin-left: 12px;
-    }
-    .review-category {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      color: #64748b;
-      letter-spacing: 0.05em;
-      margin: 12px 0 6px;
-    }
+    .review-score { font-weight: 600; font-size: 16px; color: var(--maroon); flex-shrink: 0; margin-left: 12px; }
+    .review-category { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--slate); letter-spacing: 0.05em; margin: 12px 0 6px; }
+    #review-edit-btn { background: var(--navy); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-family: 'Inter', Arial, sans-serif; padding: 11px 20px; font-size: 14px; }
+    #review-edit-btn:hover { background: var(--navy-deep); }
 
-    /* ── RESPONSIVE ── */
+    #change-email-modal .modal-box, #change-password-modal .modal-box { padding: 26px; }
+    .field-label { display: block; font-size: 12.5px; font-weight: 500; color: var(--slate); margin-bottom: 6px; }
+    .field-input, .field-textarea {
+      width: 100%; padding: 11px 14px; border: 1.5px solid var(--hairline); border-radius: 8px;
+      font-size: 14px; font-family: 'Inter', Arial, sans-serif; background: #fff; color: var(--ink);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .field-textarea { min-height: 84px; resize: vertical; }
+    .field-input:focus, .field-textarea:focus { outline: none; border-color: var(--navy); box-shadow: 0 0 0 3px rgba(22,50,79,0.08); }
+    .field-hint { font-size: 11.5px; color: var(--mist); margin-top: 4px; }
+    .modal-lead { font-size: 12.5px; color: var(--slate); margin: 0 0 16px; line-height: 1.6; }
+    .modal-success {
+      display: none; background: var(--success-bg); border: 1px solid #b7dcc7; border-radius: 6px;
+      padding: 10px 12px; font-size: 13px; color: var(--success); margin-bottom: 10px;
+    }
+    #ce-error, #cp-error { color: var(--error); font-size: 12.5px; min-height: 16px; margin: 0 0 10px; }
+    #ce-submit-btn, #cp-submit-btn {
+      background: var(--gold); color: var(--gold-dp); border: none; border-radius: 8px; cursor: pointer;
+      padding: 11px; font-weight: 600; font-size: 14px; font-family: 'Inter', Arial, sans-serif; transition: background 0.15s;
+    }
+    #ce-submit-btn:hover, #cp-submit-btn:hover { background: var(--gold-hv); }
+    #ce-submit-btn:disabled, #cp-submit-btn:disabled { background: var(--mist); color: #fff; cursor: not-allowed; }
+
     .mobile-questions { display: none; }
     .desktop-questions { display: block; }
 
+    /* ── Responsive ── */
+    @media (max-width: 860px) {
+      nav { padding: 10px 16px; }
+      .nav-role, #nav-user { display: none; }
+      .hero { padding: 28px 20px 56px; }
+      .hero h2 { font-size: 22px; }
+    }
+
     @media (max-width: 640px) {
       .desktop-questions { display: none; }
-      .mobile-questions  { display: block; }
+      .mobile-questions { display: block; }
 
-      /* Better touch targets for mobile rating buttons */
-      .q-rating-btn {
-        min-height: 44px;
-        font-size: 15px;
-      }
+      .nav-logo { padding: 4px 8px; border-radius: 50%; }
+      .nav-logo .logo-full { display: none; }
+      .nav-logo .logo-mark { display: block; }
+      .nav-btn, nav a#logout-btn { padding: 5px 9px; font-size: 11.5px; }
+      .nav-actions { gap: 6px; }
 
-      /* Progress section */
-      .container { padding: 0 14px; }
-      .container h2 { font-size: 20px; }
+      .container { padding: 0 14px 40px; }
+      .progress-section, .all-done-section, .submit-all-section { padding: 20px 16px; }
+      .subject-step { flex-wrap: wrap; padding: 12px; }
+      .step-info { flex-basis: calc(100% - 60px); }
+      .step-badge { margin-left: 48px; }
+      .step-action { margin-left: auto; }
 
-      /* Subject step cards */
-      .step-card { padding: 14px 16px; }
+      .q-rating-btn { min-height: 44px; font-size: 15px; }
 
-      #eval-modal {
-        align-items: flex-start !important;
-      }
-
+      #eval-modal { align-items: flex-start !important; }
       #eval-modal .modal-box {
-        width: 100vw !important;
-        max-width: 100vw !important;
-        height: 100svh !important;
-        max-height: 100svh !important;
-        border-radius: 0 !important;
-        padding: 0 !important;
-        overflow-y: auto !important;
-        overflow-x: hidden !important;
-        display: block !important;
+        width: 100vw !important; max-width: 100vw !important;
+        height: 100svh !important; max-height: 100svh !important;
+        border-radius: 0 !important; padding: 0 !important;
+        overflow-y: auto !important; overflow-x: hidden !important; display: block !important;
       }
-
-      /* No longer flex/sticky — just normal padding, scrolls with the page */
-      #eval-modal-scroll {
-        padding: 16px 14px;
-        padding-top: max(16px, calc(env(safe-area-inset-top, 0px) + 16px));
-      }
-
-      /* Buttons now sit in normal flow at the end of the scrollable content —
-         not pinned/sticky. This avoids inconsistent browser-chrome overlap
-         issues across different phones and browsers (Chrome, Brave, etc).
-         The tradeoff: you scroll down to reach them, but they're never clipped. */
+      #eval-modal-scroll { padding: 16px 14px; padding-top: max(16px, calc(env(safe-area-inset-top, 0px) + 16px)); }
       #eval-modal-footer {
-        display: flex;
-        gap: 10px;
-        padding: 16px 0;
-        padding-bottom: max(24px, env(safe-area-inset-bottom, 24px));
-        border-top: 1px solid #e2e8f0;
-        margin-top: 16px;
+        padding: 16px 0; padding-bottom: max(24px, env(safe-area-inset-bottom, 24px));
+        border-top: 1px solid var(--hairline); margin-top: 16px;
       }
-
-      #eval-modal-footer button {
-        flex: 1;
-        min-height: 46px;
-        font-size: 15px;
-        padding: 12px;
-      }
+      #eval-modal-footer button { flex: 1; min-height: 46px; font-size: 15px; padding: 12px; }
 
       #review-modal .modal-box {
-        width: 100vw !important;
-        max-width: 100vw !important;
-        height: 100svh !important;
-        max-height: 100svh !important;
-        border-radius: 0 !important;
-        padding: 16px 14px !important;
+        width: 100vw !important; max-width: 100vw !important;
+        height: 100svh !important; max-height: 100svh !important;
+        border-radius: 0 !important; padding: 16px 14px !important;
         padding-top: max(16px, calc(env(safe-area-inset-top, 0px) + 16px)) !important;
         padding-bottom: max(20px, env(safe-area-inset-bottom, 20px)) !important;
         overflow-y: auto !important;
       }
-
-      #submit-all-btn {
-        width: 100%; padding: 14px;
-        font-size: 16px; min-height: 50px;
-      }
-
-      /* Success/pending state */
-      .submitted-state { padding: 40px 20px; }
-      .submitted-state .icon { font-size: 56px; }
+      #submit-all-btn { padding: 14px; font-size: 16px; min-height: 50px; }
     }
   </style>
 </head>
 <body>
   <nav>
-    <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex-shrink:1;"><b>FacultyPulse</b> — Student</span>
-    <div style="display:flex; align-items:center; gap:8px; flex-wrap:nowrap; flex-shrink:0;">
-      <span id="nav-user" style="font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100px;"></span>
-      <button id="change-password-btn" style="font-size:12px; padding:4px 10px;
-        background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3);
-        color:white; border-radius:6px; cursor:pointer; white-space:nowrap;">🔒 Password</button>
-      <button id="change-email-btn" style="font-size:12px; padding:4px 10px;
-        background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3);
-        color:white; border-radius:6px; cursor:pointer; white-space:nowrap;">✉️ Change Email</button>
-      <a href="../index.html" id="logout-btn" style="white-space:nowrap;">Logout</a>
+    <div class="nav-brand">
+      <div class="nav-logo">
+        <img class="logo-full" src="../img/fp-logo.png" alt="FacultyPulse — Performance, Insights, Growth" />
+        <img class="logo-mark" src="../img/fp-mark.png" alt="FacultyPulse" />
+      </div>
+      <span class="nav-role">Student</span>
+    </div>
+    <div class="nav-actions">
+      <span id="nav-user"></span>
+      <button class="nav-btn" id="change-password-btn">Password</button>
+      <button class="nav-btn" id="change-email-btn">Change Email</button>
+      <a href="../index.html" id="logout-btn">Logout</a>
     </div>
   </nav>
 
-  <!-- Change Email Modal -->
-  <div id="change-email-modal" class="modal hidden">
-    <div class="modal-box" style="max-width:460px; width:95vw;">
-      <h3 style="margin-bottom:6px;">✉️ Request Email Change</h3>
-      <p style="font-size:12px; color:#64748b; margin-bottom:16px; line-height:1.6;">
-        Email changes require QA Office approval. You will be notified once your request is reviewed.
-      </p>
-
-      <div class="form-group" style="margin-bottom:12px;">
-        <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:5px;">New Email Address</label>
-        <input type="email" id="ce-email" placeholder="e.g. juandelacruz@gmail.com"
-          style="width:100%; padding:9px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px;" />
-        <p style="font-size:11px; color:#94a3b8; margin-top:4px;">
-          Use a real-name email (e.g. yourname@gmail.com). Generic emails will be rejected.
-        </p>
-      </div>
-
-      <div class="form-group" style="margin-bottom:16px;">
-        <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:5px;">Reason for Change</label>
-        <textarea id="ce-reason" placeholder="e.g. My old email is no longer accessible..."
-          style="width:100%; padding:9px 12px; border:1px solid #ccc; border-radius:6px;
-          font-size:14px; min-height:80px; font-family:inherit; resize:vertical;"></textarea>
-      </div>
-
-      <p id="ce-error" class="error" style="margin-bottom:10px;"></p>
-      <div id="ce-success" style="display:none; background:#f0fdf4; border:1px solid #86efac;
-        border-radius:6px; padding:10px 12px; font-size:13px; color:#166534; margin-bottom:10px;">
-        ✅ Request submitted. The QA Office will review your request.
-      </div>
-
-      <div style="display:flex; gap:10px;">
-        <button id="ce-submit-btn" style="flex:1;">Submit Request</button>
-        <button class="btn-secondary" id="ce-cancel-btn">← Go Back</button>
-      </div>
+  <header class="hero">
+    <div class="hero-inner">
+      <p class="kicker">Student evaluation of teachers</p>
+      <h2>Welcome, <span id="welcome-name"></span></h2>
+      <p class="sem-line">Semester: <b id="semester-label">Loading...</b></p>
     </div>
-  </div>
-
-  <!-- Change Password Modal -->
-  <div id="change-password-modal" class="modal hidden">
-    <div class="modal-box" style="max-width:420px; width:95vw;">
-      <h3 style="margin-bottom:16px;">🔒 Change Password</h3>
-
-      <div class="form-group" style="margin-bottom:12px;">
-        <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:5px;">Current Password</label>
-        <input type="password" id="cp-old-pw"
-          style="width:100%; padding:9px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px;" />
-      </div>
-      <div class="form-group" style="margin-bottom:12px;">
-        <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:5px;">New Password</label>
-        <input type="password" id="cp-new-pw"
-          style="width:100%; padding:9px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px;" />
-      </div>
-      <div class="form-group" style="margin-bottom:16px;">
-        <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:5px;">Confirm New Password</label>
-        <input type="password" id="cp-confirm-pw"
-          style="width:100%; padding:9px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px;" />
-      </div>
-
-      <p id="cp-error" class="error" style="margin-bottom:10px;"></p>
-      <div id="cp-success" style="display:none; background:#f0fdf4; border:1px solid #86efac;
-        border-radius:6px; padding:10px 12px; font-size:13px; color:#166534; margin-bottom:10px;">
-        ✅ Password changed successfully.
-      </div>
-
-      <div style="display:flex; gap:10px;">
-        <button id="cp-submit-btn" style="flex:1;">Change Password</button>
-        <button class="btn-secondary" id="cp-cancel-btn">Cancel</button>
-      </div>
-    </div>
-  </div>
+  </header>
 
   <div class="container">
-    <h2>Welcome, <span id="welcome-name"></span></h2>
-    <p style="font-size:13px; color:#666; margin-bottom:16px;">
-      Semester: <b id="semester-label">Loading...</b>
-    </p>
 
     <!-- Progress -->
     <div class="progress-section" id="progress-section" style="display:none;">
@@ -499,45 +393,93 @@
 
     <!-- Submit All -->
     <div class="submit-all-section" id="submit-all-section">
-      <h3>🎉 All Subjects Evaluated!</h3>
+      <h3>All Subjects Evaluated</h3>
       <p>You have completed evaluations for all your subjects this semester. Click below to submit all your responses.</p>
       <button id="submit-all-btn">Submit All Evaluations</button>
     </div>
 
     <!-- All Done -->
     <div class="all-done-section" id="all-done-section">
-      <div class="done-icon">✅</div>
-      <h2>Evaluations Submitted!</h2>
+      <div class="done-icon">✓</div>
+      <h2>Evaluations Submitted</h2>
       <p>Thank you for completing your faculty evaluations. Your responses have been recorded anonymously and will help improve teaching quality at your institution.</p>
     </div>
 
   </div>
 
+  <!-- Change Email Modal -->
+  <div id="change-email-modal" class="modal hidden">
+    <div class="modal-box" style="max-width:460px; width:95vw;">
+      <h3 style="margin:0 0 6px;">Request Email Change</h3>
+      <p class="modal-lead">Email changes require QA Office approval. You will be notified once your request is reviewed.</p>
+
+      <div style="margin-bottom:14px;">
+        <label class="field-label">New Email Address</label>
+        <input type="email" id="ce-email" class="field-input" placeholder="e.g. juandelacruz@gmail.com" />
+        <p class="field-hint">Use a real-name email (e.g. yourname@gmail.com). Generic emails will be rejected.</p>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <label class="field-label">Reason for Change</label>
+        <textarea id="ce-reason" class="field-textarea" placeholder="e.g. My old email is no longer accessible..."></textarea>
+      </div>
+
+      <p id="ce-error" class="error"></p>
+      <div id="ce-success" class="modal-success">Request submitted. The QA Office will review your request.</div>
+
+      <div style="display:flex; gap:10px;">
+        <button id="ce-submit-btn" style="flex:1;">Submit Request</button>
+        <button class="btn-secondary" id="ce-cancel-btn">← Go Back</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Change Password Modal -->
+  <div id="change-password-modal" class="modal hidden">
+    <div class="modal-box" style="max-width:420px; width:95vw;">
+      <h3 style="margin:0 0 18px;">Change Password</h3>
+
+      <div style="margin-bottom:14px;">
+        <label class="field-label">Current Password</label>
+        <input type="password" id="cp-old-pw" class="field-input" />
+      </div>
+      <div style="margin-bottom:14px;">
+        <label class="field-label">New Password</label>
+        <input type="password" id="cp-new-pw" class="field-input" />
+      </div>
+      <div style="margin-bottom:16px;">
+        <label class="field-label">Confirm New Password</label>
+        <input type="password" id="cp-confirm-pw" class="field-input" />
+      </div>
+
+      <p id="cp-error" class="error"></p>
+      <div id="cp-success" class="modal-success">Password changed successfully.</div>
+
+      <div style="display:flex; gap:10px;">
+        <button id="cp-submit-btn" style="flex:1;">Change Password</button>
+        <button class="btn-secondary" id="cp-cancel-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Evaluation Modal ── -->
   <div id="eval-modal" class="modal hidden">
     <div class="modal-box">
-
-      <!-- Scrollable content area -->
       <div id="eval-modal-scroll">
 
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; flex-wrap:wrap; gap:8px;">
           <h3 style="margin:0;">Student Evaluation of Teachers (SET)</h3>
-          <span id="modal-step-badge" style="font-size:12px; color:#64748b;"></span>
+          <span id="modal-step-badge" class="step-badge pending"></span>
         </div>
-        <p style="font-size:13px; color:#666; margin-bottom:2px;">Teacher: <b id="modal-teacher"></b></p>
-        <p id="modal-subject" style="font-size:13px; color:#666; margin-bottom:12px;"></p>
+        <p style="font-size:13px; color:var(--slate); margin:6px 0 2px;">Teacher: <b id="modal-teacher"></b></p>
+        <p id="modal-subject" style="font-size:13px; color:var(--slate); margin:0 0 14px;"></p>
 
         <div class="anon-notice">
-          🔒 Your evaluation is <b>completely anonymous</b>. Your identity cannot be traced back to you.
+          Your evaluation is <b>completely anonymous</b>. Your identity cannot be traced back to you.
         </div>
 
-        <!-- A. Faculty Information — filled in by openEval() per subject -->
         <div id="eval-section-a"></div>
-
-        <!-- B. Rating Scale — full table, filled in by openEval() -->
         <div id="eval-section-b"></div>
-
-        <!-- C. Instruction — filled in by openEval() -->
         <div id="eval-instruction"></div>
 
         <!-- DESKTOP -->
@@ -556,36 +498,32 @@
         <!-- MOBILE -->
         <div class="mobile-questions" id="mobile-questions-container"></div>
 
-        <!-- Comment -->
         <div class="comment-section">
-          <label>Other Comments and Suggestions <span style="color:#94a3b8; font-weight:400;">(Optional)</span></label>
+          <label>Other Comments and Suggestions <span style="color:var(--mist); font-weight:400;">(Optional)</span></label>
           <textarea id="eval-comment" placeholder="Share any additional feedback about your teacher..."></textarea>
-          <p class="comment-note">⚠️ Do not include your name or any personal information.</p>
+          <p class="comment-note">Do not include your name or any personal information.</p>
         </div>
 
-        <!-- Buttons now scroll with the content — not pinned/sticky.
-             Scroll down to reach them; avoids browser-chrome clipping issues. -->
         <div id="eval-modal-footer">
           <button id="next-btn">Next →</button>
-          <button class="btn-secondary" id="cancel-btn">Save & Close</button>
+          <button class="btn-secondary" id="cancel-btn">Save &amp; Close</button>
         </div>
 
-      </div><!-- /eval-modal-scroll -->
-
+      </div>
     </div>
   </div>
 
   <!-- ── Review Modal ── -->
   <div id="review-modal" class="modal hidden">
     <div class="modal-box">
-      <h3 style="margin-bottom:4px;">Review Evaluation</h3>
-      <p style="font-size:13px; color:#666; margin-bottom:4px;">Teacher: <b id="review-teacher"></b></p>
-      <p id="review-subject" style="font-size:13px; color:#666; margin-bottom:16px;"></p>
+      <h3 style="margin:0 0 6px;">Review Evaluation</h3>
+      <p style="font-size:13px; color:var(--slate); margin:0 0 2px;">Teacher: <b id="review-teacher"></b></p>
+      <p id="review-subject" style="font-size:13px; color:var(--slate); margin:0 0 16px;"></p>
 
       <div id="review-content"></div>
 
       <div style="margin-top:20px; display:flex; gap:10px; flex-wrap:wrap;">
-        <button id="review-edit-btn">✏️ Edit Answers</button>
+        <button id="review-edit-btn">Edit Answers</button>
         <button class="btn-secondary" id="review-close-btn">Close</button>
       </div>
     </div>

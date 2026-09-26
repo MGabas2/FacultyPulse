@@ -5,120 +5,210 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>FacultyPulse – Admin Portal</title>
   <link rel="stylesheet" href="../css/style.css" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- Chart.js is self-hosted (no CDN dependency) and deferred so it never blocks first paint -->
+  <script defer src="../js/vendor/chart.umd.js"></script>
   <style>
+    :root {
+      --ink:      #1c2b3a;
+      --slate:    #4a5b6c;
+      --mist:     #8b98a5;
+      --hairline: #d8dfe5;
+      --panel:    #f7f5f0;
+      --navy:     #16324f;
+      --navy-deep:#0e2338;
+      --brass-lt: #c99447;
+      --maroon:   #671408;
+      --maroon-lt:#8f2f1f;
+      --maroon-bg:#fbf0ed;
+      --gold:     #ffbd59;
+      --gold-hv:  #f0aa3c;
+      --gold-bg:  #fff7e8;
+      --gold-dp:  #4a2c05;
+      --paper:    #fffdf9;
+      --error:    #a4342a;
+      --success:  #2f6b4f;
+    }
+
+    * { box-sizing: border-box; }
+
     /* ── LAYOUT ── */
     html, body { height: 100%; margin: 0; }
-    body { display: flex; flex-direction: column; overflow: hidden; }
-    nav { position: sticky; top: 0; z-index: 50; flex: none; }
+    body { display: flex; flex-direction: column; overflow: hidden; font-family: 'Inter', Arial, sans-serif; color: var(--ink); background: var(--paper); }
+
+    nav {
+      position: sticky; top: 0; z-index: 50; flex: none;
+      background: var(--maroon) !important;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 8px 24px; border-bottom: 3px solid var(--gold);
+    }
+    .nav-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .nav-logo { background: #fff; border-radius: 10px; padding: 5px 12px; display: flex; align-items: center; flex-shrink: 0; border-bottom: 2px solid var(--gold); }
+    .nav-logo img { height: 42px; width: auto; display: block; }
+    .nav-role { font-size: 11.5px; color: var(--brass-lt); letter-spacing: 0.04em; border-left: 1px solid rgba(255,255,255,0.25); padding-left: 12px; white-space: nowrap; }
+    .nav-actions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    #nav-user { font-size: 12px; color: #e9dcd6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+    nav a#logout-btn, nav a#logout-btn:visited {
+      font-size: 12px; font-weight: 500; padding: 6px 14px; border-radius: 7px; margin-left: 0 !important;
+      background: var(--gold); color: var(--gold-dp) !important; text-decoration: none; transition: background 0.15s;
+    }
+    nav a#logout-btn:hover { background: var(--gold-hv); }
+
     .admin-shell { display: flex; flex: 1; min-height: 0; }
+
     .sidebar {
-      width: 230px; flex: none; background: #1e293b;
-      display: flex; flex-direction: column; padding-top: 8px; overflow-y: auto;
+      width: 236px; flex: none; background: var(--navy-deep);
+      display: flex; flex-direction: column; padding-top: 10px; overflow-y: auto;
     }
     .sidebar-nav-item {
       display: flex; align-items: center; gap: 10px; padding: 12px 20px;
-      color: #94a3b8; cursor: pointer; font-size: 14px; border: none;
-      background: none; width: 100%; text-align: left;
-      border-left: 3px solid transparent; transition: background 0.15s, color 0.15s;
-      white-space: nowrap;
+      color: #a9b7c6; cursor: pointer; font-size: 13.5px; font-family: 'Inter', Arial, sans-serif;
+      border: none; background: none; width: 100%; text-align: left;
+      border-left: 3px solid transparent; transition: background 0.15s, color 0.15s; white-space: nowrap;
     }
-    .sidebar-nav-item:hover { background: #273447; color: #e2e8f0; }
-    .sidebar-nav-item.active {
-      background: #273447; color: #ffffff; border-left-color: #671408; font-weight: bold;
-    }
+    .sidebar-nav-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+    .sidebar-nav-item.active { background: rgba(255,189,89,0.12); color: #fff; border-left-color: var(--gold); font-weight: 600; }
     .sidebar-nav-item .nav-icon { font-size: 15px; }
-    .sidebar-divider { border: none; border-top: 1px solid #334155; margin: 8px 16px; }
-    .main-content {
-      flex: 1; min-height: 0; overflow: hidden; background: #f4f6f8;
-      display: flex; flex-direction: column;
-    }
+    .sidebar-divider { border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 8px 16px; }
+
+    .main-content { flex: 1; min-height: 0; overflow: hidden; background: var(--panel); display: flex; flex-direction: column; }
     .panel { display: none; }
     .panel.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
     .panel.active:not(#panel-dashboard) { overflow-y: auto; }
     #panel-dashboard { flex: 1; min-height: 0; overflow-y: auto; }
-    .dash-wrap {
-      min-height: 100%; display: flex; flex-direction: column; padding: 10px 14px;
-      box-sizing: border-box; gap: 8px;
+
+    /* Shared card look */
+    .section, .chart-card, .rankings-full, .icon-stat, .monitor-card {
+      background: #fff; border: 1px solid var(--hairline);
+      border-top: 3px solid var(--maroon); border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.05);
     }
-    .dash-title { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: bold; flex: none; }
-    .icon-stats-row { display: flex; gap: 8px; flex: none; }
-    .icon-stat {
-      flex: 1; background: white; border: 1px solid #e2e8f0; border-radius: 8px;
-      padding: 8px 12px; display: flex; align-items: center; gap: 10px;
-    }
+    .section { padding: 18px 20px; margin-bottom: 16px; }
+
+    .container { max-width: 1040px; margin: 0 auto; padding: 22px 24px 40px; width: 100%; }
+    .container h2 { font-family: 'Source Serif 4', serif; font-weight: 500; font-size: 26px; color: var(--ink); margin: 0 0 6px; }
+    .container h3 { font-family: 'Source Serif 4', serif; font-weight: 500; color: var(--ink); }
+
+    /* ── DASHBOARD ── */
+    .dash-wrap { min-height: 100%; display: flex; flex-direction: column; padding: 14px 18px; gap: 10px; }
+    .dash-title { display: flex; align-items: center; gap: 10px; font-family: 'Source Serif 4', serif; font-size: 24px; font-weight: 500; flex: none; }
+    .icon-stats-row { display: flex; gap: 10px; flex: none; }
+    .icon-stat { flex: 1; padding: 10px 14px; display: flex; align-items: center; gap: 12px; }
     .icon-stat .icon-circle {
-      width: 36px; height: 36px; border-radius: 50%; display: flex;
-      align-items: center; justify-content: center; font-size: 18px;
-      background: #fdf0ee; color: #671408; flex-shrink: 0;
+      width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-size: 19px; background: var(--maroon-bg); color: var(--maroon); flex-shrink: 0;
     }
-    .icon-stat .icon-circle.green  { background: #f0fdf4; color: #16a34a; }
-    .icon-stat .icon-circle.purple { background: #faf5ff; color: #7c3aed; }
+    .icon-stat .icon-circle.green  { background: #eef6f1; color: var(--success); }
+    .icon-stat .icon-circle.purple { background: #e8eef5; color: var(--navy); }
     .icon-stat-text { display: flex; flex-direction: column; }
-    .icon-stat .icon-value { font-size: 20px; font-weight: 800; color: #1e293b; line-height: 1; }
-    .icon-stat .icon-label { font-size: 10px; color: #64748b; font-weight: 500; margin-top: 2px; }
+    .icon-stat .icon-value { font-family: 'Source Serif 4', serif; font-size: 24px; font-weight: 600; color: var(--ink); line-height: 1; }
+    .icon-stat .icon-label { font-size: 11px; color: var(--slate); font-weight: 500; margin-top: 3px; }
     .icon-stat-divider { display: none; }
-    .dash-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; }
-    .dash-left { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+
+    .dash-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; }
+    .dash-left { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
     .dash-filter-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: none; }
-    .dash-filter-bar span { font-size: 11px; color: #64748b; font-weight: 600; }
-    .dash-filter-bar select { font-size: 11px; padding: 4px 8px; width: auto; min-width: 130px; }
-    .charts-stack { flex: 1; min-height: 420px; display: grid; grid-template-rows: 1fr 1fr; gap: 8px; }
-    .chart-card {
-      background: white; border: 1px solid #ddd; border-radius: 8px; padding: 10px 12px;
-      display: flex; flex-direction: column; min-height: 200px;
-    }
-    .chart-card h3 { margin: 0 0 6px; font-size: 11px; color: #374151; font-weight: 600; flex: none; }
+    .dash-filter-bar span { font-size: 11.5px; color: var(--slate); font-weight: 600; }
+    .dash-filter-bar select { font-size: 12px; padding: 5px 8px; width: auto; min-width: 130px; }
+    .charts-stack { flex: 1; min-height: 420px; display: grid; grid-template-rows: 1fr 1fr; gap: 10px; }
+    .chart-card { padding: 12px 14px; display: flex; flex-direction: column; min-height: 200px; }
+    .chart-card h3 { margin: 0 0 6px; font-family: 'Inter', Arial, sans-serif; font-size: 12px; color: var(--slate); font-weight: 600; flex: none; }
     .chart-wrapper { position: relative; flex: 1; min-height: 180px; }
-    .dash-right { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
-    .rankings-full {
-      flex: 1; min-height: 320px; background: white; border: 1px solid #ddd; border-radius: 8px;
-      padding: 10px 12px; display: flex; flex-direction: column; overflow: hidden;
-    }
-    .rankings-full h3 { font-size: 12px; margin: 0 0 6px; flex: none; font-weight: 600; }
-    .rankings-controls-row {
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 8px; flex-wrap: wrap; flex: none; margin-bottom: 6px;
-      padding-bottom: 6px; border-bottom: 1px solid #f1f5f9;
-    }
-    /* Visual break between the rankings list (browse/compare) and IFER
-       generation (a distinct action) — a divider plus slightly different
-       background instead of both cards reading as one continuous block. */
+
+    .dash-right { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+    .rankings-full { flex: 1; min-height: 320px; padding: 12px 14px; display: flex; flex-direction: column; overflow: hidden; }
+    .rankings-full h3 { font-family: 'Source Serif 4', serif; font-size: 16px; margin: 0 0 8px; flex: none; font-weight: 500; }
+    .rankings-controls-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; flex: none; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--panel); }
     .ifer-row {
-      border-top: 3px solid #e2e8f0; padding-top: 8px; margin-top: 2px;
+      background: var(--gold-bg); border: 1px solid #f1d9a6; border-left: 3px solid var(--gold);
+      border-radius: 10px; padding: 12px 14px;
     }
+    .ifer-row h3 { font-family: 'Source Serif 4', serif; font-weight: 500; font-size: 16px; margin: 0 0 4px; }
+    .ifer-row p { font-size: 12px; color: #7a5a1f; margin: 0 0 10px; line-height: 1.5; }
     .rankings-scroll { flex: 1; overflow-y: auto; min-height: 140px; }
-    .rankings-full table { font-size: 11px; width: 100%; }
-    .rankings-full th, .rankings-full td { padding: 5px 7px; }
-    .rankings-footer {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-top: 6px; flex-wrap: wrap; gap: 4px; flex: none;
-    }
-    .rankings-col table { font-size: 11px; }
+    .rankings-full table { font-size: 12px; width: 100%; }
+    .rankings-full th, .rankings-full td { padding: 6px 8px; }
+    .rankings-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; flex-wrap: wrap; gap: 4px; flex: none; }
+    .rankings-col table { font-size: 12px; }
     .rankings-col th, .rankings-col td { padding: 5px 7px; }
+
     @media (max-width: 900px) {
       .dash-body { grid-template-columns: 1fr; }
       .charts-stack { grid-template-rows: auto auto; min-height: 0; }
       .chart-wrapper { height: 180px; min-height: 180px; }
     }
+    @media (max-width: 760px) {
+      body { overflow: auto; }
+      .admin-shell { flex-direction: column; }
+      .sidebar { width: 100%; flex-direction: row; overflow-x: auto; padding-top: 0; }
+      .sidebar-nav-item { width: auto; border-left: none; border-bottom: 3px solid transparent; padding: 12px 14px; }
+      .sidebar-nav-item.active { border-bottom-color: var(--gold); }
+      .sidebar-divider { display: none; }
+      #nav-user, .nav-role { display: none; }
+      .nav-logo img { height: 34px; }
+    }
     @media (max-width: 600px) {
       .icon-stats-row { flex-direction: column; }
-      .icon-stat { padding: 6px 10px; }
+      .icon-stat { padding: 8px 12px; }
       .dash-filter-bar select { min-width: 100px; }
     }
-    .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
-    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
-    .toolbar input[type="text"] { width: 200px; }
-    .toolbar select { width: auto; }
-    .sort-btn {
-      background: white; color: #671408; border: 1px solid #671408;
-      padding: 7px 14px; border-radius: 5px; cursor: pointer; font-size: 13px;
+
+    /* ── Generic controls (scoped so the printable IFER keeps its own inline styles) ── */
+    .main-content table, .modal-box table.plain { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .main-content th { background: var(--navy); color: #fff; padding: 9px 12px; text-align: left; font-weight: 500; font-size: 12px; border: 1px solid var(--navy-deep); }
+    .main-content td { padding: 9px 12px; border: 1px solid var(--hairline); vertical-align: middle; }
+    .main-content tbody tr:nth-child(even) { background: var(--panel); }
+    .main-content tbody tr:hover { background: var(--maroon-bg); }
+
+    .main-content button:not(.page-btn):not(.view-tab):not(.sort-btn):not(.btn-secondary),
+    .modal-box button:not(.btn-secondary):not(.page-btn) {
+      background: var(--maroon); color: #fff; border: none; border-radius: 8px; padding: 8px 14px;
+      font-family: 'Inter', Arial, sans-serif; font-weight: 500; font-size: 13px; cursor: pointer; transition: filter 0.15s;
     }
-    .sort-btn.active { background: #671408; color: white; }
-    .sort-arrow { font-size: 11px; margin-left: 4px; }
-    .modal-box h3 { margin-bottom: 16px; }
+    .main-content button:not(.page-btn):not(.view-tab):not(.sort-btn):not(.btn-secondary):hover:not(:disabled),
+    .modal-box button:not(.btn-secondary):not(.page-btn):hover:not(:disabled) { filter: brightness(1.12); }
+    .main-content button:disabled, .modal-box button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { background: #fff !important; color: var(--navy) !important; border: 1px solid var(--hairline) !important; border-radius: 8px; padding: 8px 14px; font-family: 'Inter', Arial, sans-serif; font-size: 13px; cursor: pointer; }
+    .btn-secondary:hover { background: var(--panel) !important; }
+
+    .main-content input[type="text"], .main-content input[type="email"], .main-content input[type="password"], .main-content select, .main-content textarea,
+    .modal-box input[type="text"], .modal-box input[type="email"], .modal-box input[type="password"], .modal-box select, .modal-box textarea {
+      padding: 9px 12px; border: 1.5px solid var(--hairline); border-radius: 8px; font-size: 13.5px;
+      font-family: 'Inter', Arial, sans-serif; background: #fff; color: var(--ink);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .main-content input:focus, .main-content select:focus, .main-content textarea:focus,
+    .modal-box input:focus, .modal-box select:focus, .modal-box textarea:focus { outline: none; border-color: var(--navy); box-shadow: 0 0 0 3px rgba(22,50,79,0.08); }
+    .main-content input[type="checkbox"], .modal-box input[type="checkbox"] { accent-color: var(--maroon); }
+    .modal-box .form-group input, .modal-box .form-group select, .modal-box .form-group textarea { width: 100%; }
+    .form-group label { font-size: 12.5px; font-weight: 500; color: var(--slate); }
+    .field-hint { font-size: 11.5px; color: var(--mist); }
+    .error { color: var(--error); font-size: 12.5px; }
+    .empty-state { text-align: center; padding: 50px 24px; color: var(--slate); background: #fff; border: 1px solid var(--hairline); border-top: 3px solid var(--maroon); border-radius: 12px; margin-bottom: 16px; }
+    .empty-state .icon { font-size: 42px; margin-bottom: 10px; }
+    .empty-state h3 { font-family: 'Source Serif 4', serif; font-weight: 500; color: var(--ink); margin: 0 0 6px; }
+    .empty-state p { margin: 0; font-size: 13.5px; }
+
+    .modal-box { border-top: 4px solid var(--maroon); border-bottom: 4px solid var(--gold); border-radius: 12px !important; font-family: 'Inter', Arial, sans-serif; }
+    .modal-box h3 { font-family: 'Source Serif 4', serif; font-weight: 500; color: var(--ink); font-size: 20px; margin-bottom: 16px; }
     .role-fields { margin-top: 8px; }
-    .filter-bar { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
+
+    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+    .toolbar input[type="text"] { width: 220px; }
+    .toolbar select { width: auto; }
+    .toolbar #row-count, .toolbar #comments-count { margin-left: auto; flex: none; }
+    .search-row { margin-bottom: 10px; }
+    .search-row input[type="text"] { width: 100%; max-width: 340px; }
+
+    .sort-btn { background: #fff; color: var(--maroon); border: 1px solid var(--maroon); padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; font-family: 'Inter', Arial, sans-serif; }
+    .sort-btn.active { background: var(--maroon); color: #fff; }
+    .sort-arrow { font-size: 11px; margin-left: 4px; }
+    .sort-group { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+    .sort-group .sort-label { font-size: 11px; color: var(--mist); white-space: nowrap; }
+
+    .filter-bar { background: var(--panel); border: 1px solid var(--hairline); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
     .filter-bar-search { margin-bottom: 10px; }
     .filter-bar-search input[type="text"] { width: 100%; }
     .filter-bar-grid { display: grid; grid-template-columns: repeat(5, 1fr) auto; gap: 8px; align-items: center; }
@@ -127,79 +217,56 @@
     @media (max-width: 950px) { .filter-bar-grid { grid-template-columns: repeat(3, 1fr); } }
     @media (max-width: 600px) { .filter-bar-grid { grid-template-columns: repeat(2, 1fr); } }
     @media (max-width: 420px) { .filter-bar-grid { grid-template-columns: 1fr; } }
-    .sort-group { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
-    .sort-group .sort-label { font-size: 11px; color: #94a3b8; white-space: nowrap; }
-    .search-row { margin-bottom: 10px; }
-    .search-row input[type="text"] { width: 100%; max-width: 320px; }
-    .toolbar #row-count, .toolbar #comments-count { margin-left: auto; flex: none; }
-    .badge.submitted   { background:#d1fae5; color:#065f46; }
-    .badge.not-submitted { background:#fef3c7; color:#92400e; }
-    .badge.never-login { background:#fee2e2; color:#991b1b; }
-    .monitor-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-    .monitor-card {
-      flex: 1; min-width: 130px; background: white; border: 1px solid #ddd;
-      border-radius: 8px; padding: 12px; text-align: center;
-    }
-    .monitor-card .num { font-size: 22px; font-weight: bold; }
-    .monitor-card .lbl { font-size: 12px; color: #64748b; margin-top: 4px; }
-    .progress-bar { height: 6px; background: #e2e8f0; border-radius: 4px; overflow: hidden; margin-top: 6px; }
-    .progress-fill { height: 100%; background: #16a34a; transition: width 0.3s; }
-    .last-login-cell { font-size: 12px; color: #475569; }
-    .view-tabs { display: flex; gap: 8px; margin: 12px 0 16px; border-bottom: 2px solid #e2e8f0; }
-    .view-tab {
-      padding: 8px 16px; border: none; background: none; cursor: pointer;
-      font-size: 14px; font-weight: 600; color: #64748b;
-      border-bottom: 3px solid transparent; margin-bottom: -2px;
-    }
-    .view-tab.active { color: #671408; border-bottom-color: #671408; }
-    .view-tab:hover:not(.active) { color: #1e293b; }
-    .faculty-group { margin-bottom: 24px; }
-    .faculty-group > h3 {
-      font-size: 15px; color: #1e293b; margin: 0 0 6px; padding: 8px 12px;
-      background: #f1f5f9; border-left: 4px solid #671408; border-radius: 4px;
-    }
-    .subject-group { margin: 12px 0 12px 8px; }
-    .subject-group > h4 { font-size: 13px; color: #475569; margin: 0 0 6px; padding-bottom: 4px; border-bottom: 1px solid #e2e8f0; }
-    .comment-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
-    .comment-card .c-text { font-size: 13px; color: #334155; line-height: 1.5; }
-    .page-btn {
-      min-width: 32px; padding: 5px 9px; border: 1px solid #d1d5db; background: white;
-      color: #374151; border-radius: 6px; cursor: pointer; font-size: 13px; font-family: Arial, sans-serif;
-    }
-    .page-btn:hover:not(:disabled) { border-color: #671408; color: #671408; }
-    .page-btn.active { background: #671408; border-color: #671408; color: white; font-weight: bold; }
-    .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    #subject-assign-btn:disabled, #subject-unassign-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-    #subject-assign-btn-wrap:has(button:disabled),
-    #subject-unassign-btn-wrap:has(button:disabled) { cursor: not-allowed; }
 
-    /* Subject Assignment: scope row (Department/Year/Semester) visually
-       grouped and set apart from the refine row (search/checkbox) below
-       it — these answer two different questions ("what set am I looking
-       at" vs "narrow what's visible") and shouldn't read as one flat list
-       of five equal-weight controls. */
-    /* Shared "scope row" treatment — used wherever a panel has filters that
-       answer "which subset am I working with" (as opposed to a search box
-       or action buttons). Visually separates that decision from everything
-       else instead of five+ equal-weight controls sitting in one flat row. */
-    .admin-scope-row {
+    .badge.submitted     { background: #dcefe4; color: var(--success); }
+    .badge.not-submitted { background: var(--gold-bg); color: #8a5a10; }
+    .badge.never-login   { background: var(--maroon-bg); color: var(--maroon); }
+
+    .monitor-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+    .monitor-card { flex: 1; min-width: 130px; padding: 14px; text-align: center; }
+    .monitor-card .num { font-family: 'Source Serif 4', serif; font-size: 26px; font-weight: 600; }
+    .monitor-card .lbl { font-size: 12px; color: var(--slate); margin-top: 4px; }
+    .progress-bar { height: 6px; background: var(--panel); border: 1px solid var(--hairline); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+    .progress-fill { height: 100%; background: var(--success); transition: width 0.3s; }
+    .last-login-cell { font-size: 12px; color: var(--slate); }
+
+    .view-tabs { display: flex; gap: 8px; margin: 12px 0 16px; border-bottom: 2px solid var(--hairline); }
+    .view-tab { padding: 8px 16px; border: none; background: none; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--slate); border-bottom: 3px solid transparent; margin-bottom: -2px; font-family: 'Inter', Arial, sans-serif; }
+    .view-tab.active { color: var(--maroon); border-bottom-color: var(--maroon); }
+    .view-tab:hover:not(.active) { color: var(--ink); }
+
+    .faculty-group { margin-bottom: 24px; }
+    .faculty-group > h3 { font-size: 16px; color: var(--ink); margin: 0 0 6px; padding: 8px 12px; background: var(--panel); border-left: 4px solid var(--maroon); border-radius: 4px; }
+    .subject-group { margin: 12px 0 12px 8px; }
+    .subject-group > h4 { font-size: 13px; color: var(--slate); margin: 0 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--hairline); }
+    .comment-card { background: #fff; border: 1px solid var(--hairline); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+    .comment-card .c-text { font-size: 13px; color: var(--ink); line-height: 1.5; }
+
+    .page-btn { min-width: 32px; padding: 5px 9px; border: 1px solid var(--hairline); background: #fff; color: var(--ink); border-radius: 6px; cursor: pointer; font-size: 13px; font-family: 'Inter', Arial, sans-serif; }
+    .page-btn:hover:not(:disabled) { border-color: var(--maroon); color: var(--maroon); }
+    .page-btn.active { background: var(--maroon); border-color: var(--maroon); color: #fff; font-weight: 600; }
+    .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    #subject-assign-btn:disabled, #subject-unassign-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    #subject-assign-btn-wrap:has(button:disabled), #subject-unassign-btn-wrap:has(button:disabled) { cursor: not-allowed; }
+
+    .admin-scope-row, .subject-assign-scope-row {
       display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap;
-      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+      background: var(--panel); border: 1px solid var(--hairline); border-radius: 10px;
       padding: 12px 16px; margin-bottom: 12px;
     }
     .admin-scope-row .form-group { margin: 0; }
-    .admin-scope-row label { font-size: 12px; margin-bottom: 4px; display: block; color: #475569; }
-
-    .subject-assign-scope-row {
-      display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap;
-      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
-      padding: 12px 16px; margin-bottom: 12px;
-    }
-    .subject-assign-row:hover { background: #f8fafc; }
-    .subject-assign-row:has(.subject-assign-checkbox:checked) { background: #eff6ff; }
+    .admin-scope-row label { font-size: 12px; margin-bottom: 4px; display: block; color: var(--slate); }
+    .subject-assign-row:hover { background: var(--panel); }
+    .subject-assign-row:has(.subject-assign-checkbox:checked) { background: var(--maroon-bg); }
     #subject-assign-teacher[disabled] { cursor: not-allowed; }
+    #subject-assign-bulkbar { background: var(--gold-bg) !important; border-color: #f1d9a6 !important; }
+    #subject-assign-bulkbar span { color: var(--gold-dp) !important; }
+
     #report-modal .modal-box { scrollbar-width: none; -ms-overflow-style: none; }
     #report-modal .modal-box::-webkit-scrollbar { display: none; }
+
+    /* ── PRINT (IFER Annex C / D) — unchanged behavior ── */
     @media print {
       @page { margin: 15mm; }
       #report-content, #report-content * {
@@ -237,15 +304,19 @@
     }
     #report-content, #report-content td, #report-content p, #report-content tr { color: #1e293b; }
   </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
   <nav>
-    <span><b>FacultyPulse</b> — Admin Portal</span>
-    <div>
+    <div class="nav-brand">
+      <div class="nav-logo">
+        <img src="../img/fp-logo.png" alt="FacultyPulse — Performance, Insights, Growth" />
+      </div>
+      <span class="nav-role">Admin Portal</span>
+    </div>
+    <div class="nav-actions">
       <span id="nav-user"></span>
-      <a href="../index.html" id="logout-btn" style="margin-left:16px;">Logout</a>
+      <a href="../index.html" id="logout-btn">Logout</a>
     </div>
   </nav>
 
@@ -327,7 +398,7 @@
 
               <div class="charts-stack">
                 <div class="chart-card">
-                  <h3>📊 Faculty SET Rating Comparison (out of 100)</h3>
+                  <h3>📊 Faculty SET Rating Comparison</h3>
                   <div class="chart-wrapper">
                     <canvas id="bar-chart"></canvas>
                   </div>
@@ -345,11 +416,11 @@
               <div class="rankings-full">
                 <h3>Faculty Rankings — Active Semester</h3>
                 <div class="rankings-controls-row">
-                  <label style="display:flex; align-items:center; gap:5px; font-size:11px; font-weight:500; color:#475569; cursor:pointer;">
+                  <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; font-weight:500; color:var(--slate); cursor:pointer;">
                     <input type="checkbox" id="rank-group-toggle" checked style="cursor:pointer; margin:0;" />
                     Group by employment type
                   </label>
-                  <button id="sync-enrolled-btn" style="font-size:10px; padding:3px 9px; background:#0e7490; color:white; border:none; border-radius:5px; cursor:pointer;" title="Recompute enrolled counts from actual students in each section — run before generating IFERs">
+                  <button id="sync-enrolled-btn" style="font-size:10.5px; padding:4px 10px; background:var(--navy);" title="Recompute enrolled counts from actual students in each section — run before generating IFERs">
                     🔢 Sync Enrolled
                   </button>
                 </div>
@@ -369,14 +440,14 @@
                   </table>
                 </div>
                 <div class="rankings-footer">
-                  <span id="rank-page-info" style="font-size:10px; color:#64748b;"></span>
+                  <span id="rank-page-info" style="font-size:11px; color:var(--slate);"></span>
                   <div id="rank-page-buttons" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
                 </div>
               </div>
 
               <div class="ifer-row" id="ifer-section">
-                <h3>📄 Generate IFER</h3>
-                <p>Individual Faculty Evaluation Report per CMO No. 19, s. 2025 (Annex C). <b>Student identities encrypted.</b></p>
+                <h3>Generate IFER</h3>
+                <p>Individual Faculty Evaluation Report per CMO No. 19, s. 2025 (Annex C). <b>Student responses are anonymous.</b></p>
                 <div class="ifer-controls" style="display:flex; flex-wrap:nowrap; gap:6px; align-items:center;">
                   <input type="text" id="report-faculty-filter" placeholder="🔍 Search..."
                     autocomplete="off"
@@ -386,7 +457,7 @@
                     <option value="">— select faculty —</option>
                   </select>
                   <button id="generate-report-btn"
-                    style="flex:0 0 auto; white-space:nowrap; font-size:12px; padding:6px 12px;">
+                    style="flex:0 0 auto; white-space:nowrap; font-size:12px; padding:6px 12px; background:var(--gold); color:var(--gold-dp);">
                     Generate IFER
                   </button>
                 </div>
@@ -400,7 +471,7 @@
       <div id="panel-users" class="panel">
         <div class="container">
           <h2>User Management</h2>
-          <p style="color:#666; margin-bottom:16px;">Add, view, and manage all system users.</p>
+          <p style="color:var(--slate); margin:0 0 16px;">Add, view, and manage all system users.</p>
 
           <div class="section">
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
@@ -411,7 +482,7 @@
                 📥 Import Students
               </button>
               <input type="file" id="import-file-input" accept=".xlsx" style="display:none;" />
-              <button id="add-user-btn" style="flex:none; white-space:nowrap;">+ Add User</button>
+              <button id="add-user-btn" style="flex:none; white-space:nowrap; background:var(--gold); color:var(--gold-dp);">+ Add User</button>
             </div>
             <div class="admin-scope-row">
               <div class="form-group">
@@ -446,7 +517,7 @@
                 </select>
               </div>
             </div>
-            <p id="user-count" style="font-size:12px; color:#64748b; margin-bottom:12px;"></p>
+            <p id="user-count" style="font-size:12px; color:var(--slate); margin:0 0 12px;"></p>
 
             <table>
               <thead id="users-thead">
@@ -464,7 +535,7 @@
               </tbody>
             </table>
             <div style="display:flex; align-items:center; justify-content:space-between; margin-top:12px; flex-wrap:wrap; gap:8px;">
-              <span id="users-page-info" style="font-size:12px; color:#64748b;"></span>
+              <span id="users-page-info" style="font-size:12px; color:var(--slate);"></span>
               <div id="users-page-buttons" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
             </div>
           </div>
@@ -474,7 +545,7 @@
       <div id="import-modal" class="modal hidden">
         <div class="modal-box" style="max-width:520px;">
           <h3>📥 Import Students</h3>
-          <p style="font-size:12px; color:#64748b; margin-bottom:10px;">
+          <p style="font-size:12.5px; color:var(--slate); margin-bottom:10px; line-height:1.6;">
             Imports students, sections, and course subjects. Subjects are created
             without a teacher assigned — the registrar can't supply that data, so
             it has to be set manually afterward.
@@ -483,7 +554,7 @@
           <div id="import-picker">
             <div class="form-group">
               <label>Semester</label>
-              <select id="import-semester">
+              <select id="import-semester" style="width:100%;">
                 <option value="">— select semester —</option>
               </select>
               <p class="field-hint">
@@ -495,7 +566,7 @@
             <button id="import-choose-file-btn" style="margin-top:8px;">Choose File…</button>
           </div>
 
-          <p id="import-status" style="font-size:13px; color:#475569; min-height:18px;"></p>
+          <p id="import-status" style="font-size:13px; color:var(--slate); min-height:18px;"></p>
           <div id="import-summary"></div>
           <div style="display:flex; gap:10px; margin-top:20px;">
             <button class="btn-secondary" id="close-import-btn">Close</button>
@@ -510,7 +581,7 @@
             Submission Monitoring
             <button id="refresh-btn-mon" style="font-size:12px; padding:5px 10px;">🔄 Refresh</button>
           </h2>
-          <p style="color:#666; margin-bottom:4px;">Track who has submitted evaluations, who hasn't, and login activity.</p>
+          <p style="color:var(--slate); margin:0 0 4px;">Track who has submitted evaluations, who hasn't, and login activity.</p>
 
           <div class="view-tabs">
             <button class="view-tab active" id="tab-monitoring">📋 Submission Status</button>
@@ -520,19 +591,19 @@
           <div id="view-monitoring">
             <div class="monitor-cards">
               <div class="monitor-card">
-                <div class="num" id="card-total" style="color:#671408;">—</div>
+                <div class="num" id="card-total" style="color:var(--maroon);">—</div>
                 <div class="lbl">Total Students</div>
               </div>
               <div class="monitor-card">
-                <div class="num" id="card-submitted" style="color:#16a34a;">—</div>
+                <div class="num" id="card-submitted" style="color:var(--success);">—</div>
                 <div class="lbl">Submitted</div>
               </div>
               <div class="monitor-card">
-                <div class="num" id="card-pending" style="color:#d97706;">—</div>
+                <div class="num" id="card-pending" style="color:#d9922b;">—</div>
                 <div class="lbl">Not Yet</div>
               </div>
               <div class="monitor-card">
-                <div class="num" id="card-rate" style="color:#7c3aed;">—</div>
+                <div class="num" id="card-rate" style="color:var(--navy);">—</div>
                 <div class="lbl">Completion Rate</div>
                 <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%;"></div></div>
               </div>
@@ -563,7 +634,7 @@
                 <button id="reset-filters" class="btn-secondary" style="padding:7px 14px; white-space:nowrap;">↺ Reset</button>
               </div>
               <div class="filter-bar-footer">
-                <span style="font-size:12px; color:#666;" id="row-count"></span>
+                <span style="font-size:12px; color:var(--slate);" id="row-count"></span>
               </div>
             </div>
             <div class="section">
@@ -583,7 +654,7 @@
                 </tbody>
               </table>
               <div style="display:flex; align-items:center; justify-content:space-between; margin-top:10px; flex-wrap:wrap; gap:8px;">
-                <span id="monitor-page-info" style="font-size:12px; color:#64748b;"></span>
+                <span id="monitor-page-info" style="font-size:12px; color:var(--slate);"></span>
                 <div id="monitor-page-buttons" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
               </div>
             </div>
@@ -601,10 +672,10 @@
                   <option value="">All Subjects</option>
                 </select>
                 <button id="comments-reset" class="btn-secondary" style="flex:none; padding:5px 10px; white-space:nowrap;">↺ Reset</button>
-                <span style="font-size:12px; color:#666;" id="comments-count"></span>
+                <span style="font-size:12px; color:var(--slate);" id="comments-count"></span>
               </div>
               <div id="comments-container">
-                <p style="color:#94a3b8; padding:20px 0;">Loading...</p>
+                <p style="color:var(--mist); padding:20px 0;">Loading...</p>
               </div>
             </div>
           </div><!-- /view-comments -->
@@ -614,11 +685,11 @@
 
       <div id="panel-history" class="panel">
         <div class="container">
-          <h2 style="display:flex; align-items:center; gap:10px; margin-top:24px;">
-            🖨️ Print History
+          <h2 style="display:flex; align-items:center; gap:10px;">
+            Print History
             <button id="refresh-btn-history" style="font-size:12px; padding:5px 10px;">🔄 Refresh</button>
           </h2>
-          <p style="color:#666; margin-bottom:16px;">
+          <p style="color:var(--slate); margin:0 0 16px;">
             Audit log of all finalized IFER reports released to faculty, for accountability and recordkeeping (CMO No. 19, s. 2025 §6.9).
           </p>
 
@@ -628,7 +699,7 @@
               <select id="history-semester-filter">
                 <option value="">All Semesters</option>
               </select>
-              <span style="font-size:12px; color:#666; margin-left:auto;" id="history-count"></span>
+              <span style="font-size:12px; color:var(--slate); margin-left:auto;" id="history-count"></span>
             </div>
             <table>
               <thead>
@@ -645,7 +716,7 @@
               </tbody>
             </table>
             <div style="display:flex; align-items:center; justify-content:space-between; margin-top:12px; flex-wrap:wrap; gap:8px;">
-              <span id="history-page-info" style="font-size:12px; color:#64748b;"></span>
+              <span id="history-page-info" style="font-size:12px; color:var(--slate);"></span>
               <div id="history-page-buttons" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
             </div>
           </div>
@@ -654,11 +725,11 @@
 
       <div id="panel-email-requests" class="panel">
         <div class="container">
-          <h2 style="display:flex; align-items:center; gap:10px; margin-top:24px;">
-            ✉️ Student Email Change Requests
+          <h2 style="display:flex; align-items:center; gap:10px;">
+            Student Email Change Requests
             <button id="refresh-email-req-btn" style="font-size:12px; padding:5px 10px;">🔄 Refresh</button>
           </h2>
-          <p style="color:#666; margin-bottom:16px; font-size:13px;">
+          <p style="color:var(--slate); margin:0 0 16px; font-size:13px;">
             Review and approve or reject student email change requests.
             Approved requests immediately update the student's email on record.
           </p>
@@ -671,7 +742,7 @@
                 <option value="rejected">Rejected</option>
                 <option value="">All</option>
               </select>
-              <span style="font-size:12px; color:#666; margin-left:auto;" id="email-req-count"></span>
+              <span style="font-size:12px; color:var(--slate); margin-left:auto;" id="email-req-count"></span>
             </div>
             <table>
               <thead>
@@ -686,7 +757,7 @@
                 </tr>
               </thead>
               <tbody id="email-req-tbody">
-                <tr><td colspan="7" style="text-align:center; padding:20px; color:#94a3b8;">Loading...</td></tr>
+                <tr><td colspan="7" style="text-align:center; padding:20px; color:var(--mist);">Loading...</td></tr>
               </tbody>
             </table>
           </div>
@@ -695,22 +766,22 @@
 
       <div id="panel-semesters" class="panel">
         <div class="container">
-          <h2 style="display:flex; align-items:center; gap:10px; margin-top:24px;">
-            🗓️ Semester Management
+          <h2 style="display:flex; align-items:center; gap:10px;">
+            Semester Management
             <button id="refresh-btn-semesters" style="font-size:12px; padding:5px 10px;">🔄 Refresh</button>
           </h2>
-          <p style="color:#666; margin-bottom:16px; font-size:13px;">
+          <p style="color:var(--slate); margin:0 0 16px; font-size:13px; line-height:1.6;">
             Create and manage evaluation semesters. Only one semester can be active at a time.
             Activating a new semester deactivates the previous one — its data is preserved, not locked.
             Use Pause/Resume on the active semester to temporarily block new student submissions
             (e.g. while correcting data) without deactivating it.
           </p>
 
-          <div class="section" style="margin-bottom:20px;">
-            <h3 style="font-size:14px; margin-bottom:12px;">➕ Create New Semester</h3>
+          <div class="section">
+            <h3 style="font-size:16px; margin:0 0 12px;">Create New Semester</h3>
             <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
               <div class="form-group" style="margin:0; flex:none;">
-                <label style="font-size:12px; margin-bottom:4px; display:block;">Semester</label>
+                <label style="margin-bottom:4px; display:block;">Semester</label>
                 <select id="new-sem-term" style="min-width:140px;">
                   <option value="1st Semester">1st Semester</option>
                   <option value="2nd Semester">2nd Semester</option>
@@ -718,15 +789,15 @@
                 </select>
               </div>
               <div class="form-group" style="margin:0; flex:none;">
-                <label style="font-size:12px; margin-bottom:4px; display:block;">Academic Year</label>
+                <label style="margin-bottom:4px; display:block;">Academic Year</label>
                 <input type="text" id="new-sem-year" placeholder="e.g. 2025-2026"
                   style="width:130px;" maxlength="9" />
               </div>
               <div style="flex:none;">
-                <p style="font-size:11px; color:#64748b; margin:0 0 4px;">Preview</p>
-                <p id="new-sem-preview" style="font-size:13px; font-weight:600; color:#671408; margin:0; padding:7px 0;">—</p>
+                <p style="font-size:11px; color:var(--slate); margin:0 0 4px;">Preview</p>
+                <p id="new-sem-preview" style="font-size:13px; font-weight:600; color:var(--maroon); margin:0; padding:7px 0;">—</p>
               </div>
-              <button id="create-semester-btn" style="flex:none; padding:7px 16px;">
+              <button id="create-semester-btn" style="flex:none; padding:8px 16px; background:var(--gold); color:var(--gold-dp);">
                 Create Semester
               </button>
             </div>
@@ -734,7 +805,7 @@
           </div>
 
           <div class="section">
-            <h3 style="font-size:14px; margin-bottom:12px;">All Semesters</h3>
+            <h3 style="font-size:16px; margin:0 0 12px;">All Semesters</h3>
             <table>
               <thead>
                 <tr>
@@ -753,11 +824,11 @@
 
       <div id="panel-subjects" class="panel">
         <div class="container">
-          <h2 style="display:flex; align-items:center; gap:10px; margin-top:24px;">
-            🎓 Subject Assignment
+          <h2 style="display:flex; align-items:center; gap:10px;">
+            Subject Assignment
             <button id="refresh-btn-subjects" style="font-size:12px; padding:5px 10px;">🔄 Refresh</button>
           </h2>
-          <p style="color:#666; margin-bottom:16px; font-size:13px;">
+          <p style="color:var(--slate); margin:0 0 16px; font-size:13px; line-height:1.6;">
             Pick a department first — the teacher list and subject table below only
             populate once a department is selected. The registrar can't supply teacher
             data, so every subject created by import starts unassigned; this has to be
@@ -767,19 +838,19 @@
           <div class="section">
             <div class="subject-assign-scope-row">
               <div class="form-group" style="margin:0;">
-                <label style="font-size:12px; margin-bottom:4px; display:block;">Department</label>
+                <label style="margin-bottom:4px; display:block;">Department</label>
                 <select id="subject-assign-department" style="min-width:200px;">
                   <option value="">All Departments</option>
                 </select>
               </div>
               <div class="form-group" style="margin:0;">
-                <label style="font-size:12px; margin-bottom:4px; display:block;">Year Level</label>
+                <label style="margin-bottom:4px; display:block;">Year Level</label>
                 <select id="subject-assign-yearlevel" style="min-width:140px;">
                   <option value="">All Year Levels</option>
                 </select>
               </div>
               <div class="form-group" style="margin:0;">
-                <label style="font-size:12px; margin-bottom:4px; display:block;">Semester</label>
+                <label style="margin-bottom:4px; display:block;">Semester</label>
                 <select id="subject-assign-semester-filter" style="min-width:200px;">
                   <option value="">All Semesters</option>
                 </select>
@@ -790,22 +861,22 @@
                 <input type="text" id="subject-assign-search" placeholder="🔍 Search course... e.g. GE 01, ITC 101" style="width:100%;" />
               </div>
               <label style="display:flex; align-items:center; gap:6px; font-size:13px; white-space:nowrap;">
-                <input type="checkbox" id="subject-assign-unassigned-only" unchecked />
+                <input type="checkbox" id="subject-assign-unassigned-only" />
                 Unassigned only
               </label>
             </div>
-            <p id="subject-assign-count" style="font-size:12px; color:#64748b; margin-bottom:10px;"></p>
+            <p id="subject-assign-count" style="font-size:12px; color:var(--slate); margin:0 0 10px;"></p>
 
             <div id="subject-assign-bulkbar" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-              background:#eff6ff; border:1px solid #93c5fd; border-radius:8px; padding:10px 14px; margin-bottom:12px;">
-              <span style="font-size:13px; color:#1e40af;">
+              background:var(--gold-bg); border:1px solid #f1d9a6; border-radius:10px; padding:10px 14px; margin-bottom:12px;">
+              <span style="font-size:13px;">
                 <b id="subject-assign-selected-count">0</b> selected
               </span>
               <select id="subject-assign-teacher" style="min-width:220px;">
                 <option value="">— select teacher —</option>
               </select>
               <span id="subject-assign-btn-wrap" title="Check at least one subject below">
-                <button id="subject-assign-btn" style="font-size:12px; padding:6px 14px;">Assign to Selected</button>
+                <button id="subject-assign-btn" style="font-size:12px; padding:6px 14px; background:var(--gold); color:var(--gold-dp);">Assign to Selected</button>
               </span>
               <span id="subject-unassign-btn-wrap" title="Check at least one subject below">
                 <button id="subject-unassign-btn" class="btn-secondary" style="font-size:12px; padding:6px 14px;">Clear Teacher</button>
@@ -824,7 +895,7 @@
               </thead>
               <tbody id="subjects-assign-tbody">
                 <tr>
-                  <td colspan="5" style="text-align:center; padding:32px 12px; color:#94a3b8;">Loading...</td>
+                  <td colspan="5" style="text-align:center; padding:32px 12px; color:var(--mist);">Loading...</td>
                 </tr>
               </tbody>
             </table>
@@ -837,11 +908,11 @@
 
       <div id="panel-trends" class="panel">
         <div class="container">
-          <h2 style="display:flex; align-items:center; gap:10px; margin-top:24px;">
-            📈 Faculty Trends
+          <h2 style="display:flex; align-items:center; gap:10px;">
+            Faculty Trends
             <button id="refresh-btn-trends" style="font-size:12px; padding:5px 10px;">🔄 Refresh</button>
           </h2>
-          <p style="color:#666; margin-bottom:16px; font-size:13px;">
+          <p style="color:var(--slate); margin:0 0 16px; font-size:13px; line-height:1.6;">
             A faculty member's Overall SET Rating across the last 5 academic years
             of semesters with evaluation data — not just the active one. Older
             history isn't deleted, just excluded from this view. Semesters with
@@ -905,14 +976,14 @@
 
       <div class="no-print" style="
         padding:14px 20px;
-        border-top:1px solid #e2e8f0;
+        border-top:1px solid var(--hairline);
         background:white;
         display:flex; gap:10px; flex-wrap:wrap; align-items:center;
         flex-shrink:0;">
         <button id="release-btn" style="background:#16a34a;">📤 Release to Faculty</button>
         <button id="print-both-btn" style="background:#475569;">🖨 Print Both</button>
         <button id="print-annexc-btn" style="background:#0e7490;">Print Annex C</button>
-        <button id="print-annexd-btn" style="background:#7c3aed;">Print Annex D</button>
+        <button id="print-annexd-btn" style="background:var(--navy);">Print Annex D</button>
         <button id="pdf-btn" style="background:#0f172a;">💾 Save as PDF</button>
         <button class="btn-secondary" id="close-report-btn">Close</button>
       </div>
@@ -980,7 +1051,7 @@
       </div>
       <p id="add-error" class="error"></p>
       <div style="display:flex; gap:10px; margin-top:16px;">
-        <button id="save-user-btn">Save User</button>
+        <button id="save-user-btn" style="background:var(--gold); color:var(--gold-dp);">Save User</button>
         <button class="btn-secondary" id="cancel-add-btn">Cancel</button>
       </div>
     </div>
@@ -988,7 +1059,7 @@
 
   <div id="edit-modal" class="modal hidden">
     <div class="modal-box" style="max-width:480px;">
-      <h3>Edit User — <span id="edit-role-display" style="color:#671408;"></span></h3>
+      <h3>Edit User — <span id="edit-role-display" style="color:var(--maroon);"></span></h3>
 
       <div class="form-group" id="edit-name-row">
         <label>Full Name</label>
@@ -1035,7 +1106,7 @@
 
       <p id="edit-error" class="error" style="margin-bottom:10px;"></p>
       <div style="display:flex; gap:10px; margin-top:16px; flex-wrap:wrap;">
-        <button id="save-edit-btn">Save Changes</button>
+        <button id="save-edit-btn" style="background:var(--gold); color:var(--gold-dp);">Save Changes</button>
         <button class="btn-secondary" id="cancel-edit-btn">Cancel</button>
       </div>
     </div>
@@ -1045,7 +1116,7 @@
     <div class="modal-box">
       <h3>📦 Archive User</h3>
       <p>Archive <b id="archive-name"></b>?</p>
-      <p style="color:#475569; font-size:13px; margin-top:8px; line-height:1.6;">
+      <p style="color:var(--slate); font-size:13px; margin-top:8px; line-height:1.6;">
         The user will be set to <b>Inactive</b> and can no longer log in.
         All their evaluation data and history are <b>preserved</b>.
         You can restore them at any time via the Edit button.
@@ -1060,7 +1131,7 @@
   <div id="reject-email-modal" class="modal hidden">
     <div class="modal-box">
       <h3>❌ Reject Email Request</h3>
-      <p style="color:#475569; font-size:13px; margin-bottom:12px;">
+      <p style="color:var(--slate); font-size:13px; margin-bottom:12px;">
         The student will see this reason. Be specific enough that they know what to fix
         if they want to resubmit.
       </p>
@@ -1078,6 +1149,24 @@
 
 
   <script>
+    // ── On-demand script loader (cached per src). Used for the two heavy
+    //    libraries that most sessions never need: SheetJS (only for the
+    //    student import) and html2pdf (only when saving an IFER as PDF). ──
+    window.fpLoadScript = (function () {
+      const cache = {};
+      return function (src) {
+        if (cache[src]) return cache[src];
+        cache[src] = new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = src;
+          s.onload = resolve;
+          s.onerror = () => { delete cache[src]; reject(new Error("Failed to load " + src)); };
+          document.head.appendChild(s);
+        });
+        return cache[src];
+      };
+    })();
+
     const loaded = { dashboard: true, users: false, monitoring: false };
 
     function injectScript(src) {
@@ -1097,12 +1186,19 @@
 
       if (targetPanelId === "panel-users" && !loaded.users) {
         loaded.users = true;
-        injectScript("../js/admin-users.js");
+        // SheetJS is ~880 KB — only fetch it once User Management is opened.
+        window.fpLoadScript("../js/vendor/xlsx.full.min.js")
+          .catch(err => console.error(err))
+          .then(() => injectScript("../js/admin-users.js"));
       }
       if (targetPanelId === "panel-monitoring" && !loaded.monitoring) {
         loaded.monitoring = true;
         injectScript("../js/admin-monitoring.js");
       }
+
+      // Tell admin.js which panel just opened so it can load that panel's
+      // data on first visit instead of everything at page load.
+      window.dispatchEvent(new CustomEvent("fp:panel", { detail: targetPanelId }));
     }
 
     document.getElementById("nav-dashboard").addEventListener("click", () => switchPanel("panel-dashboard"));
@@ -1115,7 +1211,6 @@
     document.getElementById("nav-trends").addEventListener("click", () => switchPanel("panel-trends"));
   </script>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script type="module" src="../js/admin.js"></script>
 
 </body>

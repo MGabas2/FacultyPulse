@@ -3,6 +3,11 @@
 //  SEF (Supervisor's Evaluation of Faculty) — Annex B
 //  CMO No. 19, s. 2025
 //  15 Annex B questions (differ from SET Annex A), formula: (score/75) x 100
+//
+//  NOTE: the supervisor deliberately does NOT see the students' SET
+//  score anywhere on this page. The SEF must be an independent
+//  assessment; showing the SET result would anchor the supervisor's
+//  ratings to it.
 // ============================================================
 
 import { supabase } from "./supabase.js";
@@ -124,53 +129,6 @@ function computeSEFFromInputs() {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  WEIGHTED SET COMPUTATION
-//  (still used for the "Student SET" badge on the faculty list
-//   cards — that badge was NOT crossed out, only the in-modal
-//   reference box and improvement-areas panel were removed.)
-// ══════════════════════════════════════════════════════════════
-async function computeWeightedSET(teacherId, semesterId) {
-  const { data: subjects } = await supabase
-    .from("subjects")
-    .select("id, name, enrolled_count, sections(name)")
-    .eq("teacher_id", teacherId)
-    .eq("semester_id", semesterId);
-
-  if (!subjects || subjects.length === 0) return null;
-
-  let totalWeighted = 0, totalEnrolled = 0, totalRespondents = 0;
-
-  for (const subject of subjects) {
-    const { data: evals } = await supabase
-      .from("evaluation_scores")
-      .select("scores")
-      .eq("subject_id", subject.id)
-      .eq("semester_id", semesterId);
-
-    if (!evals || evals.length === 0) continue;
-
-    let sumRatings = 0;
-    evals.forEach(e => {
-      const totalScore = Object.values(e.scores).reduce((s,v) => s+v, 0);
-      sumRatings += (totalScore / 75) * 100;
-    });
-
-    const respondents = evals.length;
-    let enrolled = subject.enrolled_count || 0;
-    if (enrolled < respondents) enrolled = respondents;
-    totalWeighted    += enrolled * (sumRatings / respondents);
-    totalEnrolled    += enrolled;
-    totalRespondents += respondents;
-  }
-
-  if (totalRespondents === 0) return null;
-
-  return {
-    overallSET: parseFloat((totalWeighted / totalEnrolled).toFixed(2)),
-  };
-}
-
-// ══════════════════════════════════════════════════════════════
 //  LOAD FORWARDED REPORTS
 // ══════════════════════════════════════════════════════════════
 async function loadForwardedReports() {
@@ -243,14 +201,11 @@ async function loadForwardedReports() {
     const card = document.createElement("div");
     card.className = "faculty-card";
     card.id = `card-${safeId}`;
+    // No SET score is shown here on purpose — see header note.
     card.innerHTML = `
       <div class="faculty-card-info">
         <h3>${escapeHtml(teacherName)}</h3>
-        <p>${release.users?.academic_rank || "Faculty"}</p>
-      </div>
-      <div class="faculty-card-score">
-        <div class="score-big" id="score-${safeId}" style="color:#94a3b8;">—</div>
-        <div class="score-sub">Student SET</div>
+        <p>${escapeHtml(teacherRank || "Faculty")}</p>
       </div>
       <div class="faculty-card-actions">
         <span class="stage-badge ${isDone ? "stage-done" : "stage-forwarded"}">
@@ -265,14 +220,6 @@ async function loadForwardedReports() {
       </div>
     `;
     container.appendChild(card);
-
-    // Load SET score async (list-card badge only — unaffected by this update)
-    computeWeightedSET(release.teacher_id, semester.id).then(result => {
-      const el = document.getElementById(`score-${release.teacher_id}`);
-      if (!el || !result) return;
-      el.textContent = result.overallSET + " / 100";
-      el.style.color = getRatingColor(result.overallSET);
-    });
   }
 }
 
@@ -307,11 +254,9 @@ async function populateCourseTitle(teacherId) {
 async function openReview(teacherId, teacherName, isDone, academicRank, department) {
   currentTeacherId = teacherId;
 
-  document.getElementById("modal-teacher-name").textContent = teacherName;
-  document.getElementById("modal-semester").textContent     = `Semester: ${activeSemester?.label || "—"}`;
   document.getElementById("review-error").textContent       = "";
   document.getElementById("sef-live-score").textContent     = "—";
-  document.getElementById("sef-live-score").style.color     = "#1a56db";
+  document.getElementById("sef-live-score").style.color     = "#671408";
 
   // ── A. Faculty Information (1:1 copy from Annex B) ──
   document.getElementById("fi-name").textContent     = teacherName;
@@ -339,7 +284,7 @@ async function openReview(teacherId, teacherName, isDone, academicRank, departme
     const sefScore = existing?.sef_score;
     document.getElementById("submitted-sef-score").textContent =
       sefScore
-        ? `${sefScore} / 100 — ${getRatingLabel(sefScore)}`
+        ? `${sefScore} — ${getRatingLabel(sefScore)}`
         : "Not recorded";
     document.getElementById("submitted-comments").textContent =
       existing?.comments || "(no comments recorded)";
@@ -367,7 +312,7 @@ function buildSEFTable() {
       currentCat = q.cat;
       const catRow = document.createElement("tr");
       catRow.innerHTML = `
-        <td colspan="7" style="background:#334155; color:white; font-weight:bold; font-size:12px; padding:8px 12px; border-color:#1e293b;">
+        <td colspan="7" style="background:#0e2338; color:white; font-weight:bold; font-size:12px; padding:8px 12px; border-color:#0e2338;">
           ${CAT_LABELS[q.cat]}
         </td>`;
       tbody.appendChild(catRow);
@@ -400,7 +345,7 @@ function buildSEFMobileCards() {
     if (q.cat !== currentCat) {
       currentCat = q.cat;
       const header = document.createElement("div");
-      header.style.cssText = "background:#334155; color:white; font-weight:bold; font-size:12px; padding:8px 12px; border-radius:4px; margin:12px 0 6px;";
+      header.style.cssText = "background:#0e2338; color:white; font-weight:bold; font-size:12px; padding:8px 12px; border-radius:6px; margin:12px 0 6px;";
       header.textContent = CAT_LABELS[q.cat];
       container.appendChild(header);
     }
@@ -451,9 +396,9 @@ function onSEFChange() {
   const el    = document.getElementById("sef-live-score");
   if (score === null) {
     el.textContent = "—";
-    el.style.color = "#1a56db";
+    el.style.color = "#671408";
   } else {
-    el.textContent = `${score} / 100 — ${getRatingLabel(score)}`;
+    el.textContent = `${score} — ${getRatingLabel(score)}`;
     el.style.color = getRatingColor(score);
   }
 }
@@ -527,7 +472,7 @@ async function submitReview() {
 
     closeReviewModal();
     await fpAlert(
-      `SEF submitted successfully!\n\nSEF Rating: ${sefScore} / 100 — ${getRatingLabel(sefScore)}\n\nThe QAO can now do the Final Release. Your comments will automatically appear in the printed IFER.`,
+      `SEF submitted successfully!\n\nSEF Rating: ${sefScore} — ${getRatingLabel(sefScore)}\n\nThe QAO can now do the Final Release. Your comments will automatically appear in the printed IFER.`,
       "success"
     );
     await loadForwardedReports();
