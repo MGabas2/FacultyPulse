@@ -180,6 +180,81 @@ usernameInput.addEventListener("input", () => {
 });
 
 // ══════════════════════════════════════════════════════════════
+//  OTP SEND COOLDOWN
+//  Client-side throttle only — see note in login() / requestOtpThrottled.
+//  Persisted in localStorage (per email) so a page reload can't reset it.
+// ══════════════════════════════════════════════════════════════
+const OTP_COOLDOWN_MS    = 5 * 60 * 1000; // 5 minutes
+const OTP_COOLDOWN_PREFIX = "fp_otp_last_sent:";
+
+function otpCooldownKey(email) {
+  return OTP_COOLDOWN_PREFIX + String(email).trim().toLowerCase();
+}
+
+function otpCooldownRemainingMs(email) {
+  if (!email) return 0;
+  const last = Number(localStorage.getItem(otpCooldownKey(email)) || 0);
+  const remaining = OTP_COOLDOWN_MS - (Date.now() - last);
+  return remaining > 0 ? remaining : 0;
+}
+
+function markOtpSent(email) {
+  if (!email) return;
+  localStorage.setItem(otpCooldownKey(email), String(Date.now()));
+}
+
+function formatMMSS(ms) {
+  const secs = Math.max(0, Math.ceil(ms / 1000));
+  const mm = String(Math.floor(secs / 60)).padStart(2, "0");
+  const ss = String(secs % 60).padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
+let otpCooldownInterval = null;
+
+// Disables + labels whichever "resend" button is passed (OTP step or
+// forgot-password step share this same cooldown state per email).
+function startOtpCooldownCountdown(email, btn) {
+  clearInterval(otpCooldownInterval);
+  if (!btn) return;
+
+  function tick() {
+    const remaining = otpCooldownRemainingMs(email);
+    if (remaining <= 0) {
+      btn.disabled    = false;
+      btn.textContent = btn.dataset.idleLabel || "Resend code";
+      clearInterval(otpCooldownInterval);
+      return;
+    }
+    btn.disabled    = true;
+    btn.textContent = `Resend in ${formatMMSS(remaining)}`;
+  }
+
+  if (!btn.dataset.idleLabel) btn.dataset.idleLabel = btn.textContent;
+  tick();
+  otpCooldownInterval = setInterval(tick, 1000);
+}
+
+// Wraps the raw requestOtp() call with the cooldown check. Returns
+// { throttled: true, remainingMs } if a send is blocked client-side,
+// or { throttled: false, error } after actually attempting the send.
+//
+// IMPORTANT: this only stops someone using THIS form. It does nothing
+// against a script calling supabase.auth.signInWithOtp directly against
+// the Supabase REST endpoint — that requires Supabase's own project-level
+// Auth rate limits (Dashboard → Authentication → Rate Limits), which is
+// the real backstop for the email quota.
+async function requestOtpThrottled(email) {
+  const remaining = otpCooldownRemainingMs(email);
+  if (remaining > 0) {
+    return { throttled: true, remainingMs: remaining };
+  }
+  const error = await requestOtp(email);
+  if (!error) markOtpSent(email);
+  return { throttled: false, error };
+}
+
+// ══════════════════════════════════════════════════════════════
 //  OTP STEP
 // ══════════════════════════════════════════════════════════════
 let pendingStudentRow = null;
@@ -239,12 +314,24 @@ document.getElementById("otp-verify-btn")?.addEventListener("click", async () =>
 document.getElementById("otp-resend-btn")?.addEventListener("click", async () => {
   if (!pendingStudentRow?.email) return;
   const btn = document.getElementById("otp-resend-btn");
+  const otpError = document.getElementById("otp-error");
+
+  // Guard in case the button wasn't disabled in time (e.g. stale UI state).
+  if (otpCooldownRemainingMs(pendingStudentRow.email) > 0) {
+    startOtpCooldownCountdown(pendingStudentRow.email, btn);
+    return;
+  }
+
   btn.textContent = "Sending..."; btn.disabled = true;
-  await requestOtp(pendingStudentRow.email);
-  btn.textContent = "Resend code"; btn.disabled = false;
+  const result = await requestOtpThrottled(pendingStudentRow.email);
+  if (result.error && otpError) {
+    otpError.textContent = "Couldn't resend code: " + result.error.message;
+  }
+  startOtpCooldownCountdown(pendingStudentRow.email, btn);
 });
 
 document.getElementById("otp-back-link")?.addEventListener("click", () => {
+  clearInterval(otpCooldownInterval);
   document.getElementById("otp-step")?.classList.add("hidden");
   document.getElementById("normal-login-ui")?.classList.remove("hidden");
   document.getElementById("otp-error").textContent = "";
@@ -252,6 +339,7 @@ document.getElementById("otp-back-link")?.addEventListener("click", () => {
 });
 
 document.getElementById("forgot-back-link")?.addEventListener("click", () => {
+  clearInterval(otpCooldownInterval);
   document.getElementById("forgot-reset-step")?.classList.add("hidden");
   document.getElementById("normal-login-ui")?.classList.remove("hidden");
   document.getElementById("forgot-reset-error").textContent = "";
@@ -336,12 +424,32 @@ async function login() {
         }
       }
 
-      const otpError = await requestOtp(userRow.email);
-      if (otpError) {
-        errorMsg.textContent = "Couldn't send verification code: " + otpError.message;
+      // Cooldown check happens BEFORE we call Supabase at all — this is the
+      // path a bot would hit by repeatedly resubmitting a valid password,
+      // so it has to be throttled here too, not just on the resend button.
+      const otpResult = await requestOtpThrottled(userRow.email);
+
+      if (otpResult.throttled) {
+        // A code was already sent recently for this email — don't send
+        // another, just drop the student back into the "enter code" step
+        // (the earlier code, if still unexpired, still works) and show
+        // them the countdown instead of a raw error.
+        showOtpStep(userRow.email);
+        const otpError = document.getElementById("otp-error");
+        if (otpError) {
+          otpError.textContent = `A code was already sent to this address. You can request a new one in ${formatMMSS(otpResult.remainingMs)}.`;
+        }
+        startOtpCooldownCountdown(userRow.email, document.getElementById("otp-resend-btn"));
         return;
       }
+
+      if (otpResult.error) {
+        errorMsg.textContent = "Couldn't send verification code: " + otpResult.error.message;
+        return;
+      }
+
       showOtpStep(userRow.email);
+      startOtpCooldownCountdown(userRow.email, document.getElementById("otp-resend-btn"));
 
     } else {
       const { error: authError } = await supabase.auth.signInWithPassword({
@@ -428,17 +536,31 @@ if (forgotLink) {
       return;
     }
 
-    const otpError = await requestOtp(emailRow.email);
-    if (otpError) {
-      errorMsg.textContent = "Couldn't send reset code: " + otpError.message;
-      return;
-    }
+    // Same per-email cooldown as the login-OTP path — the forgot-password
+    // flow is just as easy for a bot to hammer (it doesn't even need a
+    // valid password), so it needs the same throttle.
+    const otpResult = await requestOtpThrottled(emailRow.email);
 
     pendingStudentRow = { student_id: studentId, email: emailRow.email };
     document.getElementById("normal-login-ui")?.classList.add("hidden");
     document.getElementById("forgot-reset-step")?.classList.remove("hidden");
     const target = document.getElementById("forgot-target-email");
     if (target) target.textContent = maskEmail(emailRow.email);
+
+    const forgotErrEl = document.getElementById("forgot-reset-error");
+
+    if (otpResult.throttled) {
+      if (forgotErrEl) {
+        forgotErrEl.textContent = `A code was already sent to this address. You can request a new one in ${formatMMSS(otpResult.remainingMs)}.`;
+      }
+    } else if (otpResult.error) {
+      if (forgotErrEl) forgotErrEl.textContent = "Couldn't send reset code: " + otpResult.error.message;
+    }
+
+    // If your forgot-password markup has its own resend button, give it
+    // the same id pattern ("otp-resend-btn") or wire it here explicitly —
+    // startOtpCooldownCountdown works with any button element.
+    startOtpCooldownCountdown(emailRow.email, document.getElementById("forgot-resend-btn"));
   });
 }
 
