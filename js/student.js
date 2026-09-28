@@ -472,17 +472,23 @@ function openEval(idx) {
   updateTotalScoreDisplay();
   document.getElementById("eval-modal").classList.remove("hidden");
 
-  // Reset scroll position. #eval-modal-scroll is the same DOM node reused
-  // for every subject, and it's the scrollable element (the footer with
-  // Next/Save & Close lives outside it, as a non-scrolling flex sibling
-  // inside .modal-box, so it always stays visible without needing sticky
-  // positioning or negative margins). Without this reset, opening the
-  // next subject's eval kept whatever scrollTop the previous one left.
+  // Reset scroll position. On desktop #eval-modal-scroll is the scrollable
+  // element (the footer sits outside it as a non-scrolling flex sibling).
+  // On mobile the footer isn't pinned at all — the whole .modal-box scrolls
+  // as one normal page instead, to avoid Android Chrome/Brave's bottom
+  // toolbar covering a fixed-to-edge footer — so .modal-box is what needs
+  // resetting there. Reset both; only one actually has a scroll position
+  // at any given breakpoint, so this is harmless either way. Without this,
+  // opening the next subject's eval kept whatever scroll position the
+  // previous one was left at.
   const scrollBox = document.getElementById("eval-modal-scroll");
-  if (scrollBox) {
-    scrollBox.scrollTop = 0;
-    requestAnimationFrame(() => { scrollBox.scrollTop = 0; });
-  }
+  const modalBox  = document.querySelector("#eval-modal .modal-box");
+  if (scrollBox) scrollBox.scrollTop = 0;
+  if (modalBox)  modalBox.scrollTop  = 0;
+  requestAnimationFrame(() => {
+    if (scrollBox) scrollBox.scrollTop = 0;
+    if (modalBox)  modalBox.scrollTop  = 0;
+  });
 }
 
 // Recompute and display the running total score (max 75) — mirrors the
