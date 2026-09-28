@@ -364,7 +364,13 @@
         overflow: visible !important;
       }
       #eval-modal-footer {
-        padding: 14px 14px; padding-bottom: max(32px, calc(env(safe-area-inset-bottom, 0px) + 32px));
+        /* 72px is a fixed floor, not tied to env(safe-area-inset-bottom) —
+           some phones' gesture nav bar overlaps the page without ever
+           reporting a safe-area inset at all, which is why this looked
+           like a 50/50 coin flip (it wasn't random — it was "does this
+           specific phone report the inset or not"). A flat floor doesn't
+           depend on that being reported correctly. */
+        padding: 14px 14px; padding-bottom: max(72px, calc(env(safe-area-inset-bottom, 0px) + 40px));
         border-top: 1px solid var(--hairline); margin-top: 8px;
       }
       #eval-modal-footer button { flex: 1; min-height: 46px; font-size: 15px; padding: 12px; }
