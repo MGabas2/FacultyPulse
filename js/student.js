@@ -471,6 +471,18 @@ function openEval(idx) {
 
   updateTotalScoreDisplay();
   document.getElementById("eval-modal").classList.remove("hidden");
+
+  // Reset scroll position. #eval-modal-scroll is the same DOM node reused
+  // for every subject, and it's the scrollable element (the footer with
+  // Next/Save & Close lives outside it, as a non-scrolling flex sibling
+  // inside .modal-box, so it always stays visible without needing sticky
+  // positioning or negative margins). Without this reset, opening the
+  // next subject's eval kept whatever scrollTop the previous one left.
+  const scrollBox = document.getElementById("eval-modal-scroll");
+  if (scrollBox) {
+    scrollBox.scrollTop = 0;
+    requestAnimationFrame(() => { scrollBox.scrollTop = 0; });
+  }
 }
 
 // Recompute and display the running total score (max 75) — mirrors the
@@ -651,6 +663,12 @@ function openReview(idx) {
 
   content.innerHTML = html;
   document.getElementById("review-modal").classList.remove("hidden");
+
+  // Same scroll-reset fix as the eval modal — reused DOM node. This
+  // modal's structure wasn't changed (footer is still inside .modal-box,
+  // not a separate scroll region), so .modal-box itself is what scrolls.
+  const modalBox = document.querySelector("#review-modal .modal-box");
+  if (modalBox) modalBox.scrollTop = 0;
 }
 
 function closeReviewModal() {
@@ -979,11 +997,6 @@ document.getElementById("cancel-btn").addEventListener("click", () => {
 document.getElementById("submit-all-btn").addEventListener("click", submitAll);
 document.getElementById("logout-btn").addEventListener("click", async (e) => {
   e.preventDefault();
-  // Note: the "remember me" device-trust token is deliberately left alone
-  // here. It's meant to survive normal logout — "skip the code for a
-  // while" means across multiple day-to-day login sessions, not just
-  // until the next logout. Password is still required every time either
-  // way; this only ever affects whether OTP gets skipped afterward.
   await supabase.auth.signOut();
   sessionStorage.clear();
   window.location.href = "../index.html";

@@ -200,9 +200,15 @@ const RANK_SIZE  = 8;
 const EMPLOYMENT_GROUP_ORDER = { "Full-time": 0, "Part-time": 1 };
 let rankGroupByEmployment = true;
 
-async function loadRankings() {
+// `opts.preserve === true` is passed by the auto-refresh timer below: it
+// re-fetches and re-renders with fresh data WITHOUT resetting the page
+// number or the faculty/program filter selections an admin may be mid-
+// using. A manual click of "🔄 Refresh" (opts omitted) still resets to
+// page 1 like before — that's an explicit action, not a background tick.
+async function loadRankings(opts = {}) {
+  const preserve = opts.preserve === true;
   const tbody = document.getElementById("rankings-tbody");
-  tbody.innerHTML = `<tr><td colspan="4">Loading...</td></tr>`;
+  if (!preserve) tbody.innerHTML = `<tr><td colspan="4">Loading...</td></tr>`;
 
   const { data: semester } = await supabase
     .from("semesters").select("id").eq("is_active", true).maybeSingle();
@@ -305,7 +311,7 @@ async function loadRankings() {
     programs.forEach(p => { progFilter.innerHTML += `<option value="${p}">${p}</option>`; });
   }
 
-  rankPage = 1;
+  if (!preserve) rankPage = 1;
   renderRankingsPage();
   populateDashFacultyFilter();
 
@@ -1746,9 +1752,15 @@ if (rankGroupToggleEl) {
   });
 }
 
+// Preserves the current selection across re-population — needed now that
+// loadRankings() can be called silently by the auto-refresh timer below.
+// Without this, every auto-refresh tick would reset an admin's active
+// "filter by faculty" choice back to "All Faculty" out from under them.
 function populateDashFacultyFilter() {
   const facultySel = document.getElementById("dash-faculty-filter");
   if (!facultySel) return;
+
+  const currentValue = facultySel.value;
 
   const progFilter = document.getElementById("dash-program-filter")?.value || "";
   const pool = progFilter
@@ -1757,7 +1769,82 @@ function populateDashFacultyFilter() {
 
   facultySel.innerHTML = `<option value="">All Faculty</option>` +
     pool.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
+
+  if ([...facultySel.options].some(o => o.value === currentValue)) {
+    facultySel.value = currentValue;
+  }
 }
+
+// ══════════════════════════════════════════════════════════════
+//  AUTO-REFRESH
+//
+//  - Dashboard numbers (loadSummary + loadRankings) refresh every 30s.
+//    Read-only, cheap (4 bulk queries, no per-row round trips), and safe
+//    to run in the background — see loadRankings(opts.preserve) above,
+//    which keeps the admin's current page/filter selections intact
+//    instead of yanking them back to page 1 / "All Faculty" every tick.
+//
+//  - "Sync Enrolled" is NOT run on the same 30s cadence. That RPC does a
+//    write (UPDATE) across every subject row, and enrolled counts only
+//    change when students are added/dropped — something that happens
+//    rarely, not every 30 seconds. Auto-running a bulk write that often
+//    is just DB load with no benefit, and risks racing with an admin who
+//    is mid-edit on the Subject Assignment panel. It's synced instead on
+//    a much longer 5-minute cadence, silently, and only refreshes the
+//    rankings table afterward if rows actually changed.
+//
+//  Both timers only fire while the Dashboard panel is the visible one
+//  and the browser tab itself is visible (document.hidden) — no point
+//  hitting Supabase every 30s for a tab the admin isn't looking at.
+// ══════════════════════════════════════════════════════════════
+const AUTO_REFRESH_MS       = 30 * 1000;       // dashboard numbers — change to 60_000 for 1 min
+const AUTO_SYNC_ENROLLED_MS = 5  * 60 * 1000;  // enrolled-count sync (write RPC — see note above)
+
+let autoRefreshTimer = null;
+let autoSyncTimer     = null;
+
+function isDashboardPanelActive() {
+  return document.getElementById("panel-dashboard")?.classList.contains("active");
+}
+
+async function silentDashboardRefresh() {
+  if (document.hidden || !isDashboardPanelActive()) return;
+  try {
+    await Promise.all([loadSummary(), loadRankings({ preserve: true })]);
+  } catch (err) {
+    console.error("Auto-refresh failed:", err);
+  }
+}
+
+async function silentEnrolledSync() {
+  if (document.hidden || !isDashboardPanelActive()) return;
+  try {
+    const { data, error } = await supabase.rpc("sync_enrolled_counts");
+    if (error) { console.error("Auto-sync enrolled counts failed:", error.message); return; }
+    if (data?.updated > 0) {
+      // Something actually changed — refresh the numbers derived from it.
+      await loadRankings({ preserve: true });
+    }
+  } catch (err) {
+    console.error("Auto-sync enrolled counts failed:", err);
+  }
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  autoRefreshTimer = setInterval(silentDashboardRefresh, AUTO_REFRESH_MS);
+  autoSyncTimer     = setInterval(silentEnrolledSync, AUTO_SYNC_ENROLLED_MS);
+}
+
+function stopAutoRefresh() {
+  if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+  if (autoSyncTimer)     clearInterval(autoSyncTimer);
+  autoRefreshTimer = null;
+  autoSyncTimer     = null;
+}
+
+startAutoRefresh();
+window.addEventListener("beforeunload", stopAutoRefresh);
 
 // ══════════════════════════════════════════════════════════════
 //  PRINT HISTORY
@@ -1778,7 +1865,7 @@ async function loadPrintHistory() {
     .order("released_at", { ascending: false });
 
   if (error) {
-    tbody.innerHTML = `<tr><td colspan="5">Error loading history: ${error.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4">Error loading history: ${error.message}</td></tr>`;
     return;
   }
 
@@ -1825,7 +1912,7 @@ function renderHistoryTable() {
   if (!tbody) return;
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:20px; color:#94a3b8;">No reports have been released yet.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:20px; color:#94a3b8;">No reports have been released yet.</td></tr>`;
     renderHistoryPagination(0);
     return;
   }
@@ -1839,7 +1926,6 @@ function renderHistoryTable() {
       <tr>
         <td>${teacherName}</td>
         <td>${h.semesters?.label || "—"}</td>
-        <td>${h.released_by || "—"}</td>
         <td>${releasedDate}</td>
         <td>
           <button style="font-size:12px; padding:5px 12px;"
@@ -2071,7 +2157,8 @@ document.getElementById("email-req-filter")?.addEventListener("change", loadEmai
 loadEmailRequests();
 
 // ══════════════════════════════════════════════════════════════
-//  SYNC ENROLLED COUNTS
+//  SYNC ENROLLED COUNTS (manual button — unchanged; auto-sync above
+//  is a separate, lower-frequency path that reuses this same RPC)
 // ══════════════════════════════════════════════════════════════
 const syncEnrolledBtn = document.getElementById("sync-enrolled-btn");
 if (syncEnrolledBtn) {

@@ -208,7 +208,17 @@
     }
     .modal-box h3 { font-family: 'Source Serif 4', serif; font-weight: 500; color: var(--ink); font-size: 20px; }
 
-    #eval-modal .modal-box { max-width: 760px; width: 95vw; padding: 24px; }
+    /* The eval modal's footer (Next / Save & Close) is a sibling of the
+       scrollable content region, not a child of it, and the box itself is
+       a flex column — that's what keeps the footer always visible and
+       always clickable without resorting to position:sticky + negative
+       margins (which briefly placed the footer outside the visible
+       scrollport and made clicks land on the overlay behind it instead). */
+    #eval-modal .modal-box {
+      max-width: 760px; width: 95vw; max-height: 85vh;
+      padding: 0; display: flex; flex-direction: column; overflow: hidden;
+    }
+    #eval-modal-scroll { overflow-y: auto; flex: 1 1 auto; min-height: 0; padding: 24px; }
 
     .anon-notice {
       background: var(--success-bg); border: 1px solid #b7dcc7; border-left: 2.5px solid var(--success);
@@ -252,7 +262,12 @@
     .comment-section textarea:focus { outline: none; border-color: var(--navy); box-shadow: 0 0 0 3px rgba(22,50,79,0.08); }
     .comment-note { font-size: 11.5px; color: var(--mist); margin-top: 4px; }
 
-    #eval-modal-footer { display: flex; gap: 10px; margin-top: 18px; }
+    #eval-modal-footer {
+      display: flex; gap: 10px; flex-shrink: 0;
+      padding: 14px 24px 20px;
+      background: #fff;
+      border-top: 1px solid var(--hairline);
+    }
     #next-btn {
       background: var(--gold); color: var(--gold-dp); border: none; border-radius: 8px;
       font-weight: 600; font-size: 14px; padding: 11px 24px; cursor: pointer; font-family: 'Inter', Arial, sans-serif;
@@ -331,12 +346,15 @@
         width: 100vw !important; max-width: 100vw !important;
         height: 100svh !important; max-height: 100svh !important;
         border-radius: 0 !important; padding: 0 !important;
-        overflow-y: auto !important; overflow-x: hidden !important; display: block !important;
+        overflow: hidden !important; display: flex !important; flex-direction: column !important;
       }
-      #eval-modal-scroll { padding: 16px 14px; padding-top: max(16px, calc(env(safe-area-inset-top, 0px) + 16px)); }
+      #eval-modal-scroll {
+        padding: 16px 14px; padding-top: max(16px, calc(env(safe-area-inset-top, 0px) + 16px));
+        overflow-y: auto !important; overflow-x: hidden !important; flex: 1 1 auto; min-height: 0;
+      }
       #eval-modal-footer {
-        padding: 16px 0; padding-bottom: max(24px, env(safe-area-inset-bottom, 24px));
-        border-top: 1px solid var(--hairline); margin-top: 16px;
+        padding: 14px 0; padding-bottom: max(20px, env(safe-area-inset-bottom, 20px));
+        border-top: 1px solid var(--hairline); flex-shrink: 0; margin: 0 14px;
       }
       #eval-modal-footer button { flex: 1; min-height: 46px; font-size: 15px; padding: 12px; }
 
@@ -504,12 +522,13 @@
           <p class="comment-note">Do not include your name or any personal information.</p>
         </div>
 
-        <div id="eval-modal-footer">
-          <button id="next-btn">Next →</button>
-          <button class="btn-secondary" id="cancel-btn">Save &amp; Close</button>
-        </div>
-
       </div>
+
+      <div id="eval-modal-footer">
+        <button id="next-btn">Next →</button>
+        <button class="btn-secondary" id="cancel-btn">Save &amp; Close</button>
+      </div>
+
     </div>
   </div>
 

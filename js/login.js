@@ -2,7 +2,6 @@
 //  FacultyPulse — Login
 //  Student: Student ID + password (RPC-verified, hashed server-side)
 //    -> email OTP as second factor (skipped if no email on file)
-//    -> optional "remember me" (auto-login on return visits)
 //  Teacher/Admin/Supervisor: unchanged — Supabase Auth
 // ============================================================
 
@@ -84,7 +83,6 @@ supabase.auth.onAuthStateChange((event, session) => {
 })();
 
 const STUDENT_ID_FORMAT = /^\d{4}-\d{4}-[A-Z]{2}$/;
-const REMEMBER_TOKEN_KEY = "fp_remember_token";
 
 const tabs          = document.querySelectorAll(".role-tab");
 const usernameInput = document.getElementById("username");
@@ -97,8 +95,8 @@ const formatError   = document.getElementById("format-error");
 
 let activeRole = "student";
 
-// ── Finalize a successful student login (shared by password+OTP path,
-//    no-email path, and remember-token auto-login) ──
+// ── Finalize a successful student login (shared by the password+OTP path
+//    and the no-email path) ──
 function finalizeStudentLogin(userRow, studentId) {
   sessionStorage.setItem("role",      "student");
   sessionStorage.setItem("studentId", studentId);
@@ -116,10 +114,6 @@ function finalizeStudentLogin(userRow, studentId) {
 
   window.location.href = "pages/student.html";
 }
-
-// (No page-load auto-login. "Remember me" only lets a trusted device skip
-// the OTP step after password verification — see login() below — it never
-// bypasses entering a Student ID and password.)
 
 // ── Tab switching ──
 tabs.forEach(tab => {
@@ -278,19 +272,12 @@ async function requestOtp(email) {
   return error;
 }
 
-async function verifyOtpAndLogin(code, rememberMe) {
+async function verifyOtpAndLogin(code) {
   const email = pendingStudentRow?.email;
   if (!email || !pendingStudentRow) return "Session expired — please log in again.";
 
   const { error } = await supabase.auth.verifyOtp({ email, token: code, type: "email" });
   if (error) return "Incorrect or expired code.";
-
-  if (rememberMe) {
-    const { data: token } = await supabase.rpc("issue_remember_token", {
-      p_student_id: pendingStudentRow.student_id,
-    });
-    if (token) localStorage.setItem(REMEMBER_TOKEN_KEY, token);
-  }
 
   finalizeStudentLogin(pendingStudentRow, pendingStudentRow.student_id);
   return null;
@@ -299,13 +286,12 @@ async function verifyOtpAndLogin(code, rememberMe) {
 document.getElementById("otp-verify-btn")?.addEventListener("click", async () => {
   const btn  = document.getElementById("otp-verify-btn");
   const code = document.getElementById("otp-code-input")?.value.trim();
-  const rememberMe = document.getElementById("remember-me-checkbox")?.checked;
   const otpError = document.getElementById("otp-error");
 
   if (!code) { if (otpError) otpError.textContent = "Enter the code from your email."; return; }
 
   btn.textContent = "Verifying..."; btn.disabled = true;
-  const err = await verifyOtpAndLogin(code, rememberMe);
+  const err = await verifyOtpAndLogin(code);
   btn.textContent = "Verify"; btn.disabled = false;
 
   if (err && otpError) otpError.textContent = err;
@@ -397,33 +383,12 @@ async function login() {
         return;
       }
 
-      // Password just succeeded. Now check whether THIS device already
-      // passed OTP recently for THIS student — if so, skip the code step.
-      // Password is still required every time regardless; this only ever
-      // shortcuts the second factor, never the first.
-      const rememberToken = localStorage.getItem(REMEMBER_TOKEN_KEY);
-      if (rememberToken) {
-        const { data: trusted, error: trustError } = await supabase.rpc("check_remember_token", {
-          p_student_id: username,
-          p_token: rememberToken,
-        });
-
-        if (trustError) {
-          // Couldn't even ask the question (missing function, network
-          // issue, etc). Don't punish the user for our own infrastructure
-          // problem — leave the token alone and just fall through to a
-          // normal OTP challenge this one time.
-          console.error("check_remember_token failed:", trustError.message);
-        } else if (trusted) {
-          finalizeStudentLogin(userRow, username);
-          return;
-        } else {
-          // RPC ran fine and explicitly said this token is invalid/expired
-          // for this student — safe to clean it up.
-          localStorage.removeItem(REMEMBER_TOKEN_KEY);
-        }
-      }
-
+      // Every login always challenges with a fresh OTP — no "remember this
+      // device" shortcut. Students only use this system for a short window
+      // each semester, so a trusted-device skip isn't worth the extra state
+      // (and it was calling a check_remember_token RPC that never actually
+      // existed in the database, so it always silently failed anyway).
+      //
       // Cooldown check happens BEFORE we call Supabase at all — this is the
       // path a bot would hit by repeatedly resubmitting a valid password,
       // so it has to be throttled here too, not just on the resend button.

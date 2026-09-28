@@ -54,7 +54,10 @@ async function loadDepartments() {
 
   departments = [...new Set((data || []).map(r => r.department).filter(Boolean))].sort();
 
-  ["new-department", "edit-department"].forEach(id => {
+  // new-student-department is the Add-User student form's department
+  // filter (narrows the Section list below it) — same canonical list as
+  // the staff department dropdowns, so it's populated the same way here.
+  ["new-department", "edit-department", "new-student-department"].forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
     const current = sel.value;
@@ -68,7 +71,9 @@ async function loadDepartments() {
 //  LOAD SECTIONS
 // ══════════════════════════════════════════════════════════════
 async function loadSections() {
-  const { data } = await supabase.from("sections").select("id, name").order("name");
+  // department is selected here too — the student Add-User form filters
+  // its Section list by the department picked above it.
+  const { data } = await supabase.from("sections").select("id, name, department").order("name");
   sections = data || [];
 
   const filterSection = document.getElementById("filter-section");
@@ -99,6 +104,27 @@ async function loadSections() {
     }
   });
 }
+
+// Narrows the student-add Section dropdown to the chosen department (or
+// shows every section again when cleared). Purely a UI filter — students
+// don't have their own department column, department lives on the
+// section they're assigned to.
+function onNewStudentDepartmentChange() {
+  const dept = document.getElementById("new-student-department")?.value || "";
+  const sel  = document.getElementById("new-section-id");
+  if (!sel) return;
+
+  const currentValue = sel.value;
+  const pool = dept ? sections.filter(s => s.department === dept) : sections;
+
+  sel.innerHTML = `<option value="">-- Select Section --</option>` +
+    pool.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join("");
+
+  if ([...sel.options].some(o => o.value === currentValue)) {
+    sel.value = currentValue;
+  }
+}
+window.onNewStudentDepartmentChange = onNewStudentDepartmentChange;
 
 // ══════════════════════════════════════════════════════════════
 //  LOAD USERS
@@ -418,9 +444,14 @@ async function saveUser() {
 
   try {
     if (role === "student") {
-      const studentId = document.getElementById("new-student-id").value.trim();
-      const sectionId = document.getElementById("new-section-id").value;
+      // Name + Department are additions on top of the original form:
+      // Department is a pure UI filter for narrowing Section (students
+      // don't have their own department column — see onNewStudentDepartmentChange).
+      const name       = document.getElementById("new-student-name")?.value.trim() || "";
+      const studentId  = document.getElementById("new-student-id").value.trim();
+      const sectionId  = document.getElementById("new-section-id").value;
 
+      if (!name)      { errorEl.textContent = "Full name is required."; return; }
       if (!studentId) { errorEl.textContent = "Student ID is required."; return; }
       if (!STUDENT_ID_FORMAT.test(studentId)) {
         errorEl.textContent = "Invalid format. Use: 2023-1154-AB"; return;
@@ -428,7 +459,7 @@ async function saveUser() {
       if (!sectionId) { errorEl.textContent = "Please select a section."; return; }
 
       const { error } = await supabase.from("users").insert({
-        student_id: studentId, role: "student", section_id: sectionId,
+        name, student_id: studentId, role: "student", section_id: sectionId,
       });
       if (error) {
         errorEl.textContent = error.code === "23505"
@@ -542,6 +573,10 @@ async function saveUser() {
 function openAddModal() {
   document.getElementById("new-role").value      = "";
   document.getElementById("new-student-id").value = "";
+  if (document.getElementById("new-student-name"))
+    document.getElementById("new-student-name").value = "";
+  if (document.getElementById("new-student-department"))
+    document.getElementById("new-student-department").value = "";
   document.getElementById("new-name").value      = "";
   document.getElementById("new-email").value     = "";
   document.getElementById("new-password").value  = "";
@@ -554,6 +589,7 @@ function openAddModal() {
     document.getElementById("new-department-group").style.display = "none";
   if (document.getElementById("new-department"))
     document.getElementById("new-department").value = "";
+  onNewStudentDepartmentChange(); // resets the section list to unfiltered
   document.getElementById("add-modal").classList.remove("hidden");
 }
 
