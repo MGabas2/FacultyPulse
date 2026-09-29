@@ -1,6 +1,6 @@
 # Supabase / API credentials — local only, never commit
-js/supabase_config.js
-supabase_config.js
+js/supabase.config.js
+supabase.config.js
 .env
 .env.local
 .env.*.local
