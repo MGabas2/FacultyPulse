@@ -545,7 +545,11 @@
       <div id="import-modal" class="modal hidden">
         <div class="modal-box" style="max-width:520px;">
           <h3>📥 Import Students</h3>
-          
+          <p style="font-size:12.5px; color:var(--slate); margin-bottom:10px; line-height:1.6;">
+            Imports students, sections, and course subjects. Subjects are created
+            without a teacher assigned — the registrar can't supply that data, so
+            it has to be set manually afterward.
+          </p>
 
           <div id="import-picker">
             <div class="form-group">
@@ -823,7 +827,12 @@
             Subject Assignment
             <button id="refresh-btn-subjects" style="font-size:12px; padding:5px 10px;">🔄 Refresh</button>
           </h2>
-          
+          <p style="color:var(--slate); margin:0 0 16px; font-size:13px; line-height:1.6;">
+            Pick a department first — the teacher list and subject table below only
+            populate once a department is selected. The registrar can't supply teacher
+            data, so every subject created by import starts unassigned; this has to be
+            done here manually. Select multiple rows to assign them all at once.
+          </p>
 
           <div class="section">
             <div class="subject-assign-scope-row">
@@ -1012,7 +1021,14 @@
         </div>
         <div class="form-group">
           <label>Section</label>
-          <select id="new-section-id"><option value="">-- Select Section --</option></select>
+          <select id="new-section-id" onchange="onNewSectionChange()"><option value="">-- Select Section --</option></select>
+        </div>
+        <div class="form-group">
+          <label>Subjects</label>
+          <div id="new-student-subjects-list" style="border:1px solid var(--hairline); border-radius:6px; padding:8px 10px; max-height:160px; overflow-y:auto; font-size:13px;">
+            <p style="color:#888; margin:0;">Select a section first.</p>
+          </div>
+          <p class="field-hint">Subjects offered to this section this semester. Leave all unchecked to enroll them later.</p>
         </div>
       </div>
       <div id="staff-fields" class="role-fields hidden">

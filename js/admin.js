@@ -328,16 +328,20 @@ async function loadRankings(opts = {}) {
   }
 
   if (!preserve) rankPage = 1;
-  renderRankingsPage();
+  // renderRankingsPage() already renders the bar chart (filtered by the
+  // current program/faculty selection) — a second renderBarChart(ranked)
+  // call right after it was pure redundant work, double-triggering the
+  // chart's entrance animation on every load. Only the donut chart still
+  // needs its own call since renderRankingsPage() doesn't touch it.
+  renderRankingsPage(preserve);
   populateDashFacultyFilter();
 
   populateReportFacultySelect(ranked);
 
-  renderBarChart(ranked);
-  renderDonutChart(ranked);
+  renderDonutChart(ranked, { silent: preserve });
 }
 
-function renderRankingsPage() {
+function renderRankingsPage(silent = false) {
   const tbody = document.getElementById("rankings-tbody");
 
   const progFilter = document.getElementById("dash-program-filter")?.value || "";
@@ -362,7 +366,7 @@ function renderRankingsPage() {
     filtered.sort((a, b) => b.overallSET - a.overallSET);
   }
 
-  renderBarChart(filtered);
+  renderBarChart(filtered, { silent });
 
   if (filtered.length === 0) {
     tbody.innerHTML = `<tr><td colspan="4">No evaluation data ${progFilter ? "for this program" : "yet"}.</td></tr>`;
@@ -1210,10 +1214,15 @@ async function viewReport(teacherId, teacherName) {
 // ══════════════════════════════════════════════════════════════
 //  CHARTS
 // ══════════════════════════════════════════════════════════════
-function renderBarChart(ranked) {
+// `silent` is set by the 30s background auto-refresh: it updates the
+// existing chart's data in place and applies it with no animation,
+// instead of destroy()-ing and creating a new Chart every tick (which
+// forces Chart.js to replay its full entrance animation each time —
+// that's the "loading" flicker replaying every 30s). Manual refresh and
+// filter changes are user-initiated, so they keep the normal animation.
+function renderBarChart(ranked, { silent = false } = {}) {
   if (typeof Chart === "undefined") return;
   const ctx = document.getElementById("bar-chart").getContext("2d");
-  if (barChart) barChart.destroy();
 
   const progFilter = document.getElementById("dash-program-filter")?.value || "";
   const facFilter  = document.getElementById("dash-faculty-filter")?.value || "";
@@ -1261,6 +1270,20 @@ function renderBarChart(ranked) {
   const headingEl = document.querySelector("#bar-chart").closest(".chart-card")?.querySelector("h3");
   if (headingEl) headingEl.textContent = `📊 ${chartTitle}`;
 
+  // tooltipSuffix varies per dataset shape (per-program vs per-faculty), so
+  // it's stashed on the chart instance itself for the tooltip callback below
+  // to read — that callback is defined once at creation time either way.
+  if (silent && barChart) {
+    barChart.data.labels            = labels;
+    barChart.data.datasets[0].data  = data;
+    barChart.data.datasets[0].backgroundColor = colors;
+    barChart._tooltipSuffix = tooltipSuffix;
+    barChart.update("none"); // no animation — this is a background data refresh
+    return;
+  }
+
+  if (barChart) barChart.destroy();
+
   barChart = new Chart(ctx, {
     type: "bar",
     data: {
@@ -1280,7 +1303,7 @@ function renderBarChart(ranked) {
         tooltip: {
           callbacks: {
             label: ctx =>
-              ` ${ctx.parsed.y.toFixed(2)} — ${getRatingLabel(ctx.parsed.y)}${tooltipSuffix[ctx.dataIndex] || ""}`
+              ` ${ctx.parsed.y.toFixed(2)} — ${getRatingLabel(ctx.parsed.y)}${(barChart._tooltipSuffix || [])[ctx.dataIndex] || ""}`
           }
         }
       },
@@ -1290,12 +1313,12 @@ function renderBarChart(ranked) {
       }
     }
   });
+  barChart._tooltipSuffix = tooltipSuffix;
 }
 
-function renderDonutChart(ranked) {
+function renderDonutChart(ranked, { silent = false } = {}) {
   if (typeof Chart === "undefined") return;
   const ctx = document.getElementById("donut-chart").getContext("2d");
-  if (donutChart) donutChart.destroy();
 
   const progFilter = document.getElementById("dash-program-filter")?.value || "";
   const facFilter  = document.getElementById("dash-faculty-filter")?.value || "";
@@ -1319,6 +1342,16 @@ function renderDonutChart(ranked) {
   const labels = Object.keys(buckets).filter(k => buckets[k].count > 0);
   const data   = labels.map(k => buckets[k].count);
   const colors = labels.map(k => buckets[k].color);
+
+  if (silent && donutChart) {
+    donutChart.data.labels                     = labels;
+    donutChart.data.datasets[0].data           = data;
+    donutChart.data.datasets[0].backgroundColor = colors;
+    donutChart.update("none"); // no animation — background data refresh
+    return;
+  }
+
+  if (donutChart) donutChart.destroy();
 
   donutChart = new Chart(ctx, {
     type: "doughnut",
@@ -1742,8 +1775,7 @@ if (dashProgramFilterEl) {
     rankPage = 1;
     populateDashFacultyFilter();
     document.getElementById("dash-faculty-filter").value = "";
-    renderRankingsPage();
-    renderBarChart(allRanked);
+    renderRankingsPage(); // already re-renders the bar chart — no need to call it again
     renderDonutChart(allRanked);
   });
 }
@@ -1752,8 +1784,7 @@ const dashFacultyFilterEl = document.getElementById("dash-faculty-filter");
 if (dashFacultyFilterEl) {
   dashFacultyFilterEl.addEventListener("change", () => {
     rankPage = 1;
-    renderRankingsPage();
-    renderBarChart(allRanked);
+    renderRankingsPage(); // already re-renders the bar chart — no need to call it again
     renderDonutChart(allRanked);
   });
 }

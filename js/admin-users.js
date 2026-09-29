@@ -123,8 +123,64 @@ function onNewStudentDepartmentChange() {
   if ([...sel.options].some(o => o.value === currentValue)) {
     sel.value = currentValue;
   }
+
+  // Section may have just reset (department changed to one that doesn't
+  // contain the previously-picked section) — keep the Subjects list in
+  // sync rather than leaving it showing a stale section's subjects.
+  onNewSectionChange();
 }
 window.onNewStudentDepartmentChange = onNewStudentDepartmentChange;
+
+// Subjects are scoped to a specific section + semester (see student_subjects
+// design elsewhere in this codebase — two sections in the same department
+// can offer different subjects), so the Subjects checklist in the Add
+// Student form loads from the chosen SECTION, not the department filter
+// above it, once a section is actually picked.
+async function onNewSectionChange() {
+  const sectionId = document.getElementById("new-section-id")?.value || "";
+  const container  = document.getElementById("new-student-subjects-list");
+  if (!container) return;
+
+  if (!sectionId) {
+    container.innerHTML = `<p style="color:#888; margin:0;">Select a section first.</p>`;
+    return;
+  }
+
+  container.innerHTML = `<p style="color:#888; margin:0;">Loading subjects…</p>`;
+
+  const { data: sem } = await supabase
+    .from("semesters").select("id, label").eq("is_active", true).maybeSingle();
+
+  if (!sem) {
+    container.innerHTML = `<p style="color:#b91c1c; margin:0;">No active semester — set one in Semester Management first.</p>`;
+    return;
+  }
+
+  const { data: subs, error } = await supabase
+    .from("subjects")
+    .select("id, name")
+    .eq("section_id", sectionId)
+    .eq("semester_id", sem.id)
+    .order("name");
+
+  if (error) {
+    container.innerHTML = `<p style="color:#b91c1c; margin:0;">Failed to load subjects: ${escHtml(error.message)}</p>`;
+    return;
+  }
+
+  if (!subs || subs.length === 0) {
+    container.innerHTML = `<p style="color:#888; margin:0;">No subjects offered to this section yet for ${escHtml(sem.label)}.</p>`;
+    return;
+  }
+
+  container.innerHTML = subs.map(s => `
+    <label style="display:flex; align-items:center; gap:6px; padding:3px 0; cursor:pointer;">
+      <input type="checkbox" class="new-student-subject-cb" value="${s.id}" />
+      ${escHtml(s.name)}
+    </label>
+  `).join("");
+}
+window.onNewSectionChange = onNewSectionChange;
 
 // ══════════════════════════════════════════════════════════════
 //  LOAD USERS
@@ -467,6 +523,45 @@ async function saveUser() {
         return;
       }
 
+      // ── Enroll into whichever subjects were checked ──
+      // Optional: an admin can save the student with nothing checked and
+      // enroll them later. Failure to enroll should NOT undo the user
+      // creation that already succeeded above — it's reported as a
+      // separate warning instead, same pattern as the Auth-account
+      // creation fallback below for staff.
+      const checkedSubjectIds = [...document.querySelectorAll(".new-student-subject-cb:checked")]
+        .map(cb => cb.value);
+
+      if (checkedSubjectIds.length > 0) {
+        const { data: sem } = await supabase
+          .from("semesters").select("id").eq("is_active", true).maybeSingle();
+
+        if (!sem) {
+          await fpAlert(
+            `Student "${name}" added, but couldn't enroll them in subjects — no active semester found. Enroll them manually once a semester is active.`,
+            "warning"
+          );
+        } else {
+          const { error: enrollError } = await supabase
+            .from("student_subjects")
+            .insert(checkedSubjectIds.map(subjectId => ({
+              student_id: studentId,
+              subject_id: subjectId,
+              semester_id: sem.id,
+            })));
+          if (enrollError) {
+            await fpAlert(
+              `Student "${name}" added, but subject enrollment failed: ${enrollError.message}` +
+              (enrollError.message?.includes("does not exist")
+                ? " — the student_subjects table hasn't been created yet. Run the migration first."
+                : "") +
+              `\n\nEnroll them manually from Subject Assignment.`,
+              "warning"
+            );
+          }
+        }
+      }
+
     } else {
       const name          = document.getElementById("new-name").value.trim();
       const email         = document.getElementById("new-email").value.trim();
@@ -589,7 +684,8 @@ function openAddModal() {
     document.getElementById("new-department-group").style.display = "none";
   if (document.getElementById("new-department"))
     document.getElementById("new-department").value = "";
-  onNewStudentDepartmentChange(); // resets the section list to unfiltered
+  onNewStudentDepartmentChange(); // resets the section list to unfiltered, and (via its own
+                                   // call to onNewSectionChange) resets the Subjects list too
   document.getElementById("add-modal").classList.remove("hidden");
 }
 
