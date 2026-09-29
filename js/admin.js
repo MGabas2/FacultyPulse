@@ -75,22 +75,37 @@ async function computeWeightedSET(teacherId, semesterId) {
 
   if (!subjects || subjects.length === 0) return null;
 
+  const catTotals = { A: 0, B: 0, C: 0 };
+  const catCounts = { A: 0, B: 0, C: 0 };
+
+  // Fetch each subject's raw evaluation_scores IN PARALLEL instead of one
+  // await per subject in a sequential for-loop — with N subjects this cuts
+  // the report's DB round-trips from N sequential waits to one parallel
+  // batch. `submitted_at` is included/ordered here (previously only in a
+  // separate, duplicate query in viewReport()'s raw-data panel) so callers
+  // can reuse this same result instead of re-querying the same rows.
+  const subjectResults = await Promise.all(
+    subjects.map(subject =>
+      supabase
+        .from("evaluation_scores")
+        .select("scores, submitted_at")
+        .eq("subject_id", subject.id)
+        .eq("semester_id", semesterId)
+        .order("submitted_at", { ascending: true })
+        .then(({ data }) => ({ subject, evals: data || [] }))
+    )
+  );
+
   const classData      = [];
+  const rawScoresBySubject = {};
   let totalWeighted    = 0;
   let totalEnrolled    = 0;
   let totalRespondents = 0;
 
-  const catTotals = { A: 0, B: 0, C: 0 };
-  const catCounts = { A: 0, B: 0, C: 0 };
+  for (const { subject, evals } of subjectResults) {
+    rawScoresBySubject[subject.id] = evals;
 
-  for (const subject of subjects) {
-    const { data: evals } = await supabase
-      .from("evaluation_scores")
-      .select("scores")
-      .eq("subject_id", subject.id)
-      .eq("semester_id", semesterId);
-
-    if (!evals || evals.length === 0) {
+    if (evals.length === 0) {
       classData.push({
         subjectId:     subject.id,
         course:        subject.name,
@@ -171,6 +186,7 @@ async function computeWeightedSET(teacherId, semesterId) {
     totalRespondents,
     avgA, avgB, avgC,
     subjects,
+    rawScoresBySubject,
   };
 }
 
@@ -490,32 +506,55 @@ async function viewReport(teacherId, teacherName) {
   }
   window._reportSemesterId = semester.id;
 
-  const { data: release } = await supabase
-    .from("report_releases")
-    .select("released_at, released_by, stage")
-    .eq("teacher_id", teacherId)
-    .eq("semester_id", semester.id)
-    .maybeSingle();
+  // All five of these queries are independent of one another (none needs
+  // another's result), so they run in parallel instead of one await after
+  // another — this alone turns 5 sequential round-trips into 1.
+  const [
+    { data: release },
+    { data: teacher },
+    { data: deptSubject },
+    result,
+    { data: supRemarks },
+    { data: fedaf },
+  ] = await Promise.all([
+    supabase
+      .from("report_releases")
+      .select("released_at, released_by, stage")
+      .eq("teacher_id", teacherId)
+      .eq("semester_id", semester.id)
+      .maybeSingle(),
+    supabase
+      .from("users")
+      .select("name, academic_rank, email")
+      .eq("id", teacherId)
+      .single(),
+    supabase
+      .from("subjects")
+      .select("sections(department)")
+      .eq("teacher_id", teacherId)
+      .limit(1)
+      .maybeSingle(),
+    computeWeightedSET(teacherId, semester.id),
+    supabase
+      .from("supervisor_remarks")
+      .select("sef_score, comments, remarks")
+      .eq("teacher_id", teacherId)
+      .eq("semester_id", semester.id)
+      .order("submitted_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("fedaf")
+      .select("areas_improvement, proposed_activities, action_plan, supervisor_signed")
+      .eq("teacher_id", teacherId)
+      .eq("semester_id", semester.id)
+      .maybeSingle(),
+  ]);
 
   window._reportStage    = release?.stage || "pending";
   window._reportReleased = release?.stage === "released";
 
-  const { data: teacher } = await supabase
-    .from("users")
-    .select("name, academic_rank, email")
-    .eq("id", teacherId)
-    .single();
-
-  const { data: deptSubject } = await supabase
-    .from("subjects")
-    .select("sections(department)")
-    .eq("teacher_id", teacherId)
-    .limit(1)
-    .maybeSingle();
-
   const department = deptSubject?.sections?.department || "—";
-
-  const result = await computeWeightedSET(teacherId, semester.id);
 
   if (!result) {
     reportContent.innerHTML = `<p>No evaluation data found for this faculty.</p>`;
@@ -523,16 +562,7 @@ async function viewReport(teacherId, teacherName) {
   }
 
   const { overallSET, classData, totalEnrolled, totalWeighted,
-          avgA, avgB, avgC } = result;
-
-  const { data: supRemarks } = await supabase
-    .from("supervisor_remarks")
-    .select("sef_score, comments, remarks")
-    .eq("teacher_id", teacherId)
-    .eq("semester_id", semester.id)
-    .order("submitted_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+          avgA, avgB, avgC, rawScoresBySubject } = result;
 
   const sefRating      = supRemarks?.sef_score != null
     ? Number(supRemarks.sef_score).toFixed(2)
@@ -540,12 +570,9 @@ async function viewReport(teacherId, teacherName) {
   const supComments    = supRemarks?.comments || "";
   const supRemarksTxt  = supRemarks?.remarks  || "";
 
-  const { data: fedaf } = await supabase
-    .from("fedaf")
-    .select("areas_improvement, proposed_activities, action_plan, supervisor_signed")
-    .eq("teacher_id", teacherId)
-    .eq("semester_id", semester.id)
-    .maybeSingle();
+  // rawScoresBySubject now comes straight from computeWeightedSET(), which
+  // already fetched each subject's evaluation_scores (with submitted_at) —
+  // no need to re-query the same rows again here.
 
   const subjectIds = classData.map(c => c.subjectId).filter(Boolean);
   let studentComments = [];
@@ -561,17 +588,6 @@ async function viewReport(teacherId, teacherName) {
   }
 
   window._studentComments = studentComments;
-
-  const rawScoresBySubject = {};
-  for (const c of classData) {
-    const { data: rawEvals } = await supabase
-      .from("evaluation_scores")
-      .select("scores, submitted_at")
-      .eq("subject_id", c.subjectId)
-      .eq("semester_id", semester.id)
-      .order("submitted_at", { ascending: true });
-    rawScoresBySubject[c.subjectId] = rawEvals || [];
-  }
 
   const SET_QUESTIONS_SHORT = [
     "Comes to class on time.",
