@@ -274,11 +274,11 @@
       transition: background 0.15s;
     }
     #next-btn:hover { background: var(--gold-hv); }
-    #cancel-btn.btn-secondary, #review-close-btn.btn-secondary, #ce-cancel-btn, #cp-cancel-btn {
+    #cancel-btn.btn-secondary, #review-close-btn.btn-secondary, #cp-cancel-btn {
       background: #fff; color: var(--navy); border: 1px solid var(--hairline); border-radius: 8px;
       cursor: pointer; font-family: 'Inter', Arial, sans-serif; padding: 11px 20px; font-size: 14px;
     }
-    #cancel-btn.btn-secondary:hover, #review-close-btn.btn-secondary:hover, #ce-cancel-btn:hover, #cp-cancel-btn:hover { background: var(--panel); }
+    #cancel-btn.btn-secondary:hover, #review-close-btn.btn-secondary:hover, #cp-cancel-btn:hover { background: var(--panel); }
 
     #review-modal .modal-box { max-width: 720px; width: 95vw; padding: 24px; }
     .review-answer { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--panel); font-size: 13px; }
@@ -288,7 +288,7 @@
     #review-edit-btn { background: var(--navy); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-family: 'Inter', Arial, sans-serif; padding: 11px 20px; font-size: 14px; }
     #review-edit-btn:hover { background: var(--navy-deep); }
 
-    #change-email-modal .modal-box, #change-password-modal .modal-box { padding: 26px; }
+    #change-password-modal .modal-box { padding: 26px; }
     .field-label { display: block; font-size: 12.5px; font-weight: 500; color: var(--slate); margin-bottom: 6px; }
     .field-input, .field-textarea {
       width: 100%; padding: 11px 14px; border: 1.5px solid var(--hairline); border-radius: 8px;
@@ -303,13 +303,13 @@
       display: none; background: var(--success-bg); border: 1px solid #b7dcc7; border-radius: 6px;
       padding: 10px 12px; font-size: 13px; color: var(--success); margin-bottom: 10px;
     }
-    #ce-error, #cp-error { color: var(--error); font-size: 12.5px; min-height: 16px; margin: 0 0 10px; }
-    #ce-submit-btn, #cp-submit-btn {
+    #cp-error { color: var(--error); font-size: 12.5px; min-height: 16px; margin: 0 0 10px; }
+    #cp-submit-btn {
       background: var(--gold); color: var(--gold-dp); border: none; border-radius: 8px; cursor: pointer;
       padding: 11px; font-weight: 600; font-size: 14px; font-family: 'Inter', Arial, sans-serif; transition: background 0.15s;
     }
-    #ce-submit-btn:hover, #cp-submit-btn:hover { background: var(--gold-hv); }
-    #ce-submit-btn:disabled, #cp-submit-btn:disabled { background: var(--mist); color: #fff; cursor: not-allowed; }
+    #cp-submit-btn:hover { background: var(--gold-hv); }
+    #cp-submit-btn:disabled { background: var(--mist); color: #fff; cursor: not-allowed; }
 
     .mobile-questions { display: none; }
     .desktop-questions { display: block; }
@@ -399,7 +399,6 @@
     <div class="nav-actions">
       <span id="nav-user"></span>
       <button class="nav-btn" id="change-password-btn">Password</button>
-      <button class="nav-btn" id="change-email-btn">Change Email</button>
       <a href="../index.html" id="logout-btn">Logout</a>
     </div>
   </nav>
@@ -437,36 +436,9 @@
     <div class="all-done-section" id="all-done-section">
       <div class="done-icon">✓</div>
       <h2>Evaluations Submitted</h2>
-      <p>Thank you for completing your faculty evaluations. Your responses have been recorded anonymously and will help improve teaching quality at your institution.</p>
+      <p>Thank you for completing your faculty evaluations. Your responses have been recorded anonymously and submitted to the QA Office to help improve instruction at Batanes State College.</p>
     </div>
 
-  </div>
-
-  <!-- Change Email Modal -->
-  <div id="change-email-modal" class="modal hidden">
-    <div class="modal-box" style="max-width:460px; width:95vw;">
-      <h3 style="margin:0 0 6px;">Request Email Change</h3>
-      <p class="modal-lead">Email changes require QA Office approval. You will be notified once your request is reviewed.</p>
-
-      <div style="margin-bottom:14px;">
-        <label class="field-label">New Email Address</label>
-        <input type="email" id="ce-email" class="field-input" placeholder="e.g. juandelacruz@gmail.com" />
-        <p class="field-hint">Use a real-name email (e.g. yourname@gmail.com). Generic emails will be rejected.</p>
-      </div>
-
-      <div style="margin-bottom:16px;">
-        <label class="field-label">Reason for Change</label>
-        <textarea id="ce-reason" class="field-textarea" placeholder="e.g. My old email is no longer accessible..."></textarea>
-      </div>
-
-      <p id="ce-error" class="error"></p>
-      <div id="ce-success" class="modal-success">Request submitted. The QA Office will review your request.</div>
-
-      <div style="display:flex; gap:10px;">
-        <button id="ce-submit-btn" style="flex:1;">Submit Request</button>
-        <button class="btn-secondary" id="ce-cancel-btn">← Go Back</button>
-      </div>
-    </div>
   </div>
 
   <!-- Change Password Modal -->

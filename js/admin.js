@@ -2031,179 +2031,6 @@ if (historySemFilterEl) historySemFilterEl.addEventListener("change", () => { hi
 lazyPanel("panel-history", loadPrintHistory);
 
 // ══════════════════════════════════════════════════════════════
-//  EMAIL CHANGE REQUESTS PANEL
-// ══════════════════════════════════════════════════════════════
-let emailRequests = [];
-
-async function loadEmailRequests() {
-  const statusFilter = document.getElementById("email-req-filter")?.value;
-  const tbody        = document.getElementById("email-req-tbody");
-  const countEl      = document.getElementById("email-req-count");
-  if (!tbody) return;
-
-  tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:#94a3b8;">Loading...</td></tr>`;
-
-  let query = supabase
-    .from("email_change_requests")
-    .select("id, student_id, current_email, requested_email, reason, status, review_note, created_at, reviewed_at, student:student_id(name, student_id, email)")
-    .order("created_at", { ascending: false });
-
-  if (statusFilter) query = query.eq("status", statusFilter);
-
-  const { data, error } = await query;
-
-  if (error) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:#dc2626;">Failed to load: ${escHtml(error.message)}</td></tr>`;
-    return;
-  }
-
-  if (!data || data.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:#94a3b8;">No requests found.</td></tr>`;
-    if (countEl) countEl.textContent = "0 requests";
-    return;
-  }
-
-  emailRequests = data;
-  if (countEl) countEl.textContent = `${data.length} request${data.length !== 1 ? "s" : ""}`;
-
-  const pending = data.filter(r => r.status === "pending").length;
-  const badge   = document.getElementById("email-req-badge");
-  if (badge) { badge.textContent = pending; badge.style.display = pending > 0 ? "inline-block" : "none"; }
-
-  tbody.innerHTML = data.map(r => {
-    const student   = r.student;
-    const name      = student?.name       || "—";
-    const studentNo = student?.student_id || "—";
-    const date      = new Date(r.created_at).toLocaleDateString("en-PH");
-    const statusBadge = {
-      pending:  `<span style="background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;">⏳ Pending</span>`,
-      approved: `<span style="background:#d1fae5; color:#065f46; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;">✅ Approved</span>`,
-      rejected: `<span style="background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;">❌ Rejected</span>`,
-    }[r.status] || r.status;
-
-    const actions = r.status === "pending" ? `
-      <div style="display:flex; gap:6px; flex-wrap:wrap;">
-        <button onclick="approveEmailRequest('${r.id}', '${r.student_id}')"
-          style="font-size:11px; padding:4px 10px; background:#16a34a;">✅ Approve</button>
-        <button onclick="openRejectEmailModal('${r.id}')"
-          style="font-size:11px; padding:4px 10px; background:#dc2626;">❌ Reject</button>
-      </div>` : "—";
-
-    return `<tr>
-      <td><b>${escHtml(name)}</b><br/><span style="font-size:11px; color:#64748b;">${escHtml(studentNo)}</span></td>
-      <td style="font-size:12px;">${escHtml(r.current_email || r.student?.email || "—")}</td>
-      <td style="font-size:12px; font-weight:bold;">${escHtml(r.requested_email)}</td>
-      <td style="font-size:12px; max-width:200px;">${escHtml(r.reason)}</td>
-      <td style="font-size:12px; white-space:nowrap;">${date}</td>
-      <td>
-        ${statusBadge}
-        ${r.status === "rejected" && r.review_note
-          ? `<div style="font-size:11px; color:#991b1b; margin-top:4px; max-width:160px;">${escHtml(r.review_note)}</div>`
-          : ""}
-      </td>
-      <td>${actions}</td>
-    </tr>`;
-  }).join("");
-}
-
-
-async function approveEmailRequest(requestId, studentUuid) {
-  const req = emailRequests.find(r => r.id === requestId);
-  if (!req) return;
-
-  const confirmed = await fpConfirm(
-    `Approve email change for this student?\n\nNew email: ${req.requested_email}\n\nThis will immediately update their email on record.`
-  );
-  if (!confirmed) return;
-
-  const { error: updateError } = await supabase
-    .from("users")
-    .update({ email: req.requested_email })
-    .eq("id", studentUuid);
-
-  if (updateError) {
-    if (updateError.code === "23505") {
-      await fpAlert(
-        `Can't approve — "${req.requested_email}" is already in use by a different account.\n\n` +
-        `This request is still pending. Either reject it and ask the student to resubmit with ` +
-        `a different email, or first check whether that email belongs to a duplicate/incorrect account.`,
-        "error"
-      );
-    } else {
-      await fpAlert("Failed to update email: " + updateError.message, "error");
-    }
-    return;
-  }
-
-  const { error: reqError } = await supabase
-    .from("email_change_requests")
-    .update({ status: "approved", reviewed_at: new Date().toISOString() })
-    .eq("id", requestId);
-
-  if (reqError) { await fpAlert("Email updated but failed to mark request approved.", "error"); return; }
-
-  await fpAlert("Email change approved and updated successfully.", "success");
-  loadEmailRequests();
-}
-
-let rejectEmailTargetId = null;
-
-function openRejectEmailModal(requestId) {
-  rejectEmailTargetId = requestId;
-  document.getElementById("reject-email-reason").value = "";
-  document.getElementById("reject-email-error").textContent = "";
-  document.getElementById("reject-email-modal").classList.remove("hidden");
-}
-
-async function confirmRejectEmailRequest() {
-  const reasonEl = document.getElementById("reject-email-reason");
-  const errorEl  = document.getElementById("reject-email-error");
-  const reason   = reasonEl.value.trim();
-
-  if (!reason || reason.length < 10) {
-    errorEl.textContent = "Please provide a reason (at least 10 characters) — the student will see this.";
-    return;
-  }
-  if (!rejectEmailTargetId) return;
-
-  const btn = document.getElementById("confirm-reject-email-btn");
-  btn.textContent = "Rejecting...";
-  btn.disabled = true;
-
-  const { error } = await supabase
-    .from("email_change_requests")
-    .update({ status: "rejected", review_note: reason, reviewed_at: new Date().toISOString() })
-    .eq("id", rejectEmailTargetId);
-
-  btn.textContent = "Reject";
-  btn.disabled = false;
-
-  if (error) {
-    errorEl.textContent = "Failed to reject: " + error.message;
-    return;
-  }
-
-  document.getElementById("reject-email-modal").classList.add("hidden");
-  rejectEmailTargetId = null;
-  await fpAlert("Request rejected.", "success");
-  loadEmailRequests();
-}
-
-document.getElementById("confirm-reject-email-btn")?.addEventListener("click", confirmRejectEmailRequest);
-document.getElementById("cancel-reject-email-btn")?.addEventListener("click", () => {
-  document.getElementById("reject-email-modal").classList.add("hidden");
-  rejectEmailTargetId = null;
-});
-
-window.approveEmailRequest = approveEmailRequest;
-window.openRejectEmailModal = openRejectEmailModal;
-
-document.getElementById("refresh-email-req-btn")?.addEventListener("click", loadEmailRequests);
-document.getElementById("email-req-filter")?.addEventListener("change", loadEmailRequests);
-
-loadEmailRequests();
-
-// ══════════════════════════════════════════════════════════════
 //  SYNC ENROLLED COUNTS (manual button — unchanged; auto-sync above
 //  is a separate, lower-frequency path that reuses this same RPC)
 // ══════════════════════════════════════════════════════════════
@@ -2993,11 +2820,138 @@ document.getElementById("refresh-btn-trends")?.addEventListener("click", async (
 
 lazyPanel("panel-trends", loadTrendFacultyOptions);
 
+// ══════════════════════════════════════════════════════════════
+//  SYSTEM BACKUP PANEL
+//  Runs server-side (api/backup.js, service_role key) because this
+//  exports the whole database — every student's scores and personal
+//  info. That must never run with just the public anon key in the
+//  browser. Only exists on Vercel; local dev shows a clear message
+//  instead of silently doing nothing.
+// ══════════════════════════════════════════════════════════════
+const isLocalDevForBackup = ["127.0.0.1", "localhost"].includes(window.location.hostname);
+
+function formatBytes(n) {
+  if (n == null) return "—";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function backupApiCall(method, params = {}, body = null) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) throw new Error("Not logged in via Supabase Auth — please log out and back in.");
+
+  const qs  = new URLSearchParams(params).toString();
+  const url = "/api/backup" + (qs ? `?${qs}` : "");
+
+  const resp = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const result = await resp.json();
+  if (!resp.ok) throw new Error(result.error || `Request failed (${resp.status})`);
+  return result;
+}
+
+async function loadBackupList() {
+  const tbody = document.getElementById("backup-list-tbody");
+  if (!tbody) return;
+
+  if (isLocalDevForBackup) {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#94a3b8;">Backups only run on the deployed (Vercel) site, not local dev.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#94a3b8;">Loading...</td></tr>`;
+
+  try {
+    const { backups } = await backupApiCall("GET");
+    if (!backups || backups.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#94a3b8;">No backups yet. Click "Backup Now" above.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = backups.map(b => `
+      <tr>
+        <td style="font-size:12px;">${escHtml(b.name)}</td>
+        <td style="font-size:12px; white-space:nowrap;">${new Date(b.createdAt).toLocaleString("en-PH")}</td>
+        <td style="font-size:12px;">${formatBytes(b.sizeBytes)}</td>
+        <td><button class="btn-secondary" style="font-size:11px; padding:4px 10px;" onclick="downloadStoredBackup('${escHtml(b.name)}')">⬇ Download</button></td>
+      </tr>
+    `).join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#dc2626;">Failed to load: ${escHtml(err.message)}</td></tr>`;
+  }
+}
+
+async function downloadStoredBackup(name) {
+  try {
+    const { url } = await backupApiCall("GET", { download: name });
+    window.open(url, "_blank");
+  } catch (err) {
+    await fpAlert("Could not get download link: " + err.message, "error");
+  }
+}
+window.downloadStoredBackup = downloadStoredBackup;
+
+function triggerJsonDownload(obj, fileName) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url; a.download = fileName;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+const runBackupBtn = document.getElementById("run-backup-btn");
+if (runBackupBtn) {
+  runBackupBtn.addEventListener("click", async () => {
+    const statusEl = document.getElementById("backup-status");
+
+    if (isLocalDevForBackup) {
+      await fpAlert(
+        "System Backup only runs on the deployed (Vercel) site — it needs the server-side " +
+        "function and Storage bucket, neither of which exist under local dev.",
+        "error"
+      );
+      return;
+    }
+
+    runBackupBtn.disabled = true;
+    runBackupBtn.textContent = "Backing up...";
+    if (statusEl) statusEl.textContent = "Fetching all tables server-side...";
+
+    try {
+      const result = await backupApiCall("POST");
+
+      triggerJsonDownload(result.content, result.fileName);
+
+      if (result.storageWarning) {
+        if (statusEl) statusEl.textContent = "⚠️ Downloaded, but not saved to Storage.";
+        await fpAlert(result.storageWarning, "error");
+      } else {
+        if (statusEl) statusEl.textContent = `✅ Backup complete — ${result.fileName} (${formatBytes(result.sizeBytes)})`;
+      }
+
+      loadBackupList();
+    } catch (err) {
+      if (statusEl) statusEl.textContent = "";
+      await fpAlert("Backup failed: " + err.message, "error");
+    } finally {
+      runBackupBtn.disabled = false;
+      runBackupBtn.textContent = "💾 Backup Now";
+    }
+  });
+}
+
+lazyPanel("panel-backup", loadBackupList);
+
 // ── Init ──
 // Shows the loading popup for the very first thing the admin sees —
 // the default Dashboard panel's data (summary counts + rankings/charts).
 // The other panels' own init calls below this (semesters, subjects,
-// email requests, etc.) run independently and don't block this popup,
+// etc.) run independently and don't block this popup,
 // since their panels aren't visible until the admin clicks their tab.
 {
   const initialLoad = fpLoading("Loading dashboard...");
