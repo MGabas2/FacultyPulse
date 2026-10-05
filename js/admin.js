@@ -2837,13 +2837,13 @@ function formatBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-async function backupApiCall(method, params = {}, body = null) {
+async function backupApiCall(method, params = {}, body = null, endpoint = "/api/backup") {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
   if (!token) throw new Error("Not logged in via Supabase Auth — please log out and back in.");
 
   const qs  = new URLSearchParams(params).toString();
-  const url = "/api/backup" + (qs ? `?${qs}` : "");
+  const url = endpoint + (qs ? `?${qs}` : "");
 
   const resp = await fetch(url, {
     method,
@@ -2877,7 +2877,10 @@ async function loadBackupList() {
         <td style="font-size:12px;">${escHtml(b.name)}</td>
         <td style="font-size:12px; white-space:nowrap;">${new Date(b.createdAt).toLocaleString("en-PH")}</td>
         <td style="font-size:12px;">${formatBytes(b.sizeBytes)}</td>
-        <td><button class="btn-secondary" style="font-size:11px; padding:4px 10px;" onclick="downloadStoredBackup('${escHtml(b.name)}')">⬇ Download</button></td>
+        <td style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button class="btn-secondary" style="font-size:11px; padding:4px 10px;" onclick="downloadStoredBackup('${escHtml(b.name)}')">⬇ Download</button>
+          <button style="font-size:11px; padding:4px 10px; background:#dc2626;" onclick="restoreFromStoredBackup('${escHtml(b.name)}')">♻ Restore</button>
+        </td>
       </tr>
     `).join("");
   } catch (err) {
@@ -2942,6 +2945,77 @@ if (runBackupBtn) {
       runBackupBtn.disabled = false;
       runBackupBtn.textContent = "💾 Backup Now";
     }
+  });
+}
+
+// ── Restore (disaster recovery) ──
+// api/restore.js refuses to run unless the target database is empty, so
+// the worst this can do from a misclick is a 409 error — it can't
+// overwrite or duplicate live data. Still confirmed here because it's a
+// whole-database write and the error message alone won't stop someone
+// from clicking it reflexively.
+async function runRestore(body, confirmMessage) {
+  if (isLocalDevForBackup) {
+    await fpAlert("Restore only runs on the deployed (Vercel) site — it needs the server-side function.", "error");
+    return;
+  }
+
+  const confirmed = await fpConfirm(confirmMessage, {
+    confirmLabel: "Restore",
+    confirmStyle: "fp-btn-danger",
+  });
+  if (!confirmed) return;
+
+  const statusEl = document.getElementById("restore-status");
+  if (statusEl) statusEl.textContent = "Restoring...";
+
+  try {
+    const result = await backupApiCall("POST", {}, body, "/api/restore");
+    const summary = Object.entries(result.restored)
+      .map(([t, n]) => `${t}: ${n}`)
+      .join(", ");
+    if (statusEl) statusEl.textContent = "";
+    await fpAlert(`Restore complete.\n\n${summary}`, "success");
+    loadBackupList();
+  } catch (err) {
+    if (statusEl) statusEl.textContent = "";
+    await fpAlert("Restore failed: " + err.message, "error");
+  }
+}
+
+async function restoreFromStoredBackup(name) {
+  await runRestore(
+    { fileName: name },
+    `Restore "${name}" into the database?\n\nThis only works if the database is currently empty — ` +
+    `it will refuse (and change nothing) if there's already data. Use this for disaster recovery or ` +
+    `setting up a fresh project, not for merging into a running system.`
+  );
+}
+window.restoreFromStoredBackup = restoreFromStoredBackup;
+
+const restoreUploadBtn   = document.getElementById("restore-upload-btn");
+const restoreFileInput   = document.getElementById("restore-file-input");
+if (restoreUploadBtn && restoreFileInput) {
+  restoreUploadBtn.addEventListener("click", () => restoreFileInput.click());
+  restoreFileInput.addEventListener("change", async () => {
+    const file = restoreFileInput.files?.[0];
+    restoreFileInput.value = "";
+    if (!file) return;
+
+    let content;
+    try {
+      content = JSON.parse(await file.text());
+    } catch {
+      await fpAlert("That file isn't valid JSON — make sure it's an unmodified backup file.", "error");
+      return;
+    }
+
+    await runRestore(
+      { content },
+      `Restore "${file.name}" into the database?\n\nThis only works if the database is currently empty — ` +
+      `it will refuse (and change nothing) if there's already data. Use this for disaster recovery or ` +
+      `setting up a fresh project, not for merging into a running system.`
+    );
   });
 }
 
