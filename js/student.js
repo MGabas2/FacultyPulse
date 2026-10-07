@@ -199,12 +199,21 @@ async function init() {
 //  RENDER PROGRESS + SUBJECT STEPS
 // ══════════════════════════════════════════════════════════════
 function renderProgress() {
-  const total     = subjects.length;
-  const doneCount = submittedIds.size;
-  const pct       = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+  const total         = subjects.length;
+  // submittedCount is the only thing allowed to gate the "all done" screen —
+  // it reflects what's actually in the database. readyCount additionally
+  // counts a locally-drafted-but-not-yet-submitted evaluation ("✔ Ready" in
+  // the step list below) so the progress bar moves as soon as a student
+  // finishes answering, instead of sitting still until they hit the final
+  // Submit button — matching what the per-subject step badges already show.
+  const submittedCount = submittedIds.size;
+  const readyCount     = subjects.filter(s => submittedIds.has(s.id) || isDraftComplete(s.id)).length;
+  const pct            = total > 0 ? Math.round((readyCount / total) * 100) : 0;
 
-  // All submitted — show done screen
-  if (doneCount === total && total > 0) {
+  // All submitted — show done screen. Must check submittedCount, not
+  // readyCount: a fully-drafted-but-unsubmitted set must NOT show the done
+  // screen, since nothing has actually reached the database yet.
+  if (submittedCount === total && total > 0) {
     document.getElementById("progress-section").style.display    = "none";
     document.getElementById("submit-all-section").classList.remove("visible");
     document.getElementById("all-done-section").classList.add("visible");
@@ -214,7 +223,7 @@ function renderProgress() {
   document.getElementById("progress-section").style.display = "block";
   document.getElementById("all-done-section").classList.remove("visible");
 
-  document.getElementById("progress-count").textContent = `${doneCount} / ${total} completed`;
+  document.getElementById("progress-count").textContent = `${readyCount} / ${total} ready`;
   const bar = document.getElementById("progress-bar");
   bar.style.width = pct + "%";
   bar.classList.toggle("complete", pct === 100);

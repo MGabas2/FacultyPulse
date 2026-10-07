@@ -36,12 +36,19 @@ let donutChart = null;
 // ══════════════════════════════════════════════════════════════
 //  RATING HELPERS
 // ══════════════════════════════════════════════════════════════
+// CMO No. 19 s.2025 SEF rating bands (5 bands, not 4 — there is no "Poor"
+// tier; "Needs Improvement" is the bottom band, 79.99 and below):
+//   96.00–100.00  Outstanding
+//   91.00– 95.99  Very Satisfactory
+//   86.00– 90.99  Satisfactory
+//   80.00– 85.99  Developing
+//   79.99 & below Needs Improvement
 function getRatingLabel(score) {
-  if (score >= 90) return "Outstanding";
-  if (score >= 75) return "Very Satisfactory";
-  if (score >= 60) return "Satisfactory";
-  if (score >= 45) return "Needs Improvement";
-  return "Poor";
+  if (score >= 96) return "Outstanding";
+  if (score >= 91) return "Very Satisfactory";
+  if (score >= 86) return "Satisfactory";
+  if (score >= 80) return "Developing";
+  return "Needs Improvement";
 }
 
 function getReportStageBadge(stage) {
@@ -56,11 +63,11 @@ function getReportStageBadge(stage) {
 }
 
 function getRatingColor(score) {
-  if (score >= 90) return "#10b981";
-  if (score >= 75) return "#3b82f6";
-  if (score >= 60) return "#f59e0b";
-  if (score >= 45) return "#f97316";
-  return "#ef4444";
+  if (score >= 96) return "#10b981"; // Outstanding
+  if (score >= 91) return "#3b82f6"; // Very Satisfactory
+  if (score >= 86) return "#f59e0b"; // Satisfactory
+  if (score >= 80) return "#f97316"; // Developing
+  return "#ef4444";                  // Needs Improvement
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1330,8 +1337,8 @@ function renderDonutChart(ranked, { silent = false } = {}) {
     "Outstanding":       { count: 0, color: "#10b981" },
     "Very Satisfactory": { count: 0, color: "#3b82f6" },
     "Satisfactory":      { count: 0, color: "#f59e0b" },
-    "Needs Improvement": { count: 0, color: "#f97316" },
-    "Poor":              { count: 0, color: "#ef4444" },
+    "Developing":        { count: 0, color: "#f97316" },
+    "Needs Improvement": { count: 0, color: "#ef4444" },
   };
 
   scoped.forEach(t => {
@@ -2623,6 +2630,384 @@ document.getElementById("subject-unassign-btn")?.addEventListener("click", async
 
   await fpAlert(`Cleared ${ids.length} subject(s).`, "success");
   await loadSubjectsForAssignment();
+});
+
+// ══════════════════════════════════════════════════════════════
+//  BULK ASSIGN FROM FACULTY TEACHING-LOAD FILE
+//
+//  Matches each row of a faculty xlsx (one row per course section
+//  taught, faculty identity only on that person's first row — merged
+//  cells in the original, so it has to be forward-filled) against the
+//  subjects already in the selected semester, then proposes — never
+//  silently applies — a teacher assignment. Only rows the admin
+//  reviews and confirms in the preview actually get written.
+// ══════════════════════════════════════════════════════════════
+
+const YEARLEVEL_WORD = { "FIRST YEAR": 1, "SECOND YEAR": 2, "THIRD YEAR": 3, "FOURTH YEAR": 4 };
+
+// Accepts either the raw faculty file's wording ("FIRST YEAR") or the
+// manual template's "1-A"/"1" style (leading digit, optional section
+// letter the system doesn't track per-section anyway).
+function extractYearLevel(raw) {
+  const s = String(raw || "").trim().toUpperCase();
+  if (YEARLEVEL_WORD[s] !== undefined) return YEARLEVEL_WORD[s];
+  const m = s.match(/^(\d)/);
+  return m ? parseInt(m[1], 10) : undefined;
+}
+
+// A code alias fixes a genuine spelling difference between the two files
+// (confirmed by hand, not guessed) — distinct from normalizeCourseCode's
+// mechanical spacing/hyphen/leading-zero/roman-numeral cleanup below.
+const COURSE_CODE_ALIASES = { "ELEC4": "ELECTIVE4" };
+
+// Token → degree program(s). A compound suffix like "AGRI&ARCHI" is
+// split on non-alphanumerics and each piece resolved independently, so
+// this table only needs single concepts, not every combination anyone
+// might write. A token not in this table (e.g. "ARCHI", "INDTECH") is
+// reported as unmapped rather than silently dropped — see matchFacultyRow.
+const SUFFIX_TOKEN_MAP = {
+  TM: ["BSTM"], HM: ["BSHM"], HTM: ["BSHM", "BSTM"],
+  AGRI: ["BSA"], AUTO: ["BSIT"], ELEC: ["BSIT"], ELECT: ["BSIT"],
+  INFOTECH: ["BSIT", "BSInfoTech"], TED: ["BEED", "BSED"],
+  CYBERSECURITY: ["BSInfoTech"], CYBERTRACK: ["BSInfoTech"],
+  MULTIMEDIA: ["BSInfoTech"], TRACK: [], LEC: ["BSHM"], O: ["BSA"], N: ["BSA"],
+  // Some rows in the real faculty file spell the suffix out as the literal
+  // program code instead of a department-style token (e.g. "FS 1 (BEEd)",
+  // "FS 2 (BSED)") — map those directly to themselves. Confirmed real
+  // programs in the system (enrolled-students export): BEED, BSA, BSED,
+  // BSHM, BSIT, BSInfoTech, BSTM, PEU.
+  BEED: ["BEED"], BSED: ["BSED"],
+};
+
+const ROMAN = { I: 1, II: 2, III: 3, IV: 4, V: 5 };
+
+function normalizeCourseCode(raw) {
+  let s = raw.trim();
+  // Trailing standalone roman numeral ("SSC I" -> "SSC 1") — must happen
+  // before spaces are stripped, while "I"/"II"/etc is still its own word.
+  s = s.replace(/\s+(I|II|III|IV|V)$/i, (_, r) => " " + ROMAN[r.toUpperCase()]);
+  s = s.toUpperCase().replace(/[^A-Z0-9]/g, "");      // drop spaces/hyphens/punctuation
+  s = s.replace(/(?<=[A-Z])0+(?=\d)/, "");            // EDUC05 -> EDUC5
+  return COURSE_CODE_ALIASES[s] || s;
+}
+
+function parseSuffix(rawCode) {
+  const m = rawCode.trim().match(/^(.*?)\s*\(([A-Za-z0-9 &/]+)\)\s*$/);
+  if (!m) return { base: rawCode.trim(), tokens: [] };
+  return { base: m[1].trim(), tokens: m[2].toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean) };
+}
+
+// Parses a subject's section.name, which the student importer builds as
+// `${program}-${yearLevel}-${academicYear}` (admin-users.js). academicYear
+// itself contains a hyphen ("2026-2027"), so this must NOT just split on
+// "-" positionally — program and yearLevel are the first two segments,
+// whatever remains is the academic year.
+function parseSectionName(name) {
+  const parts = (name || "").split("-");
+  if (parts.length < 2) return null;
+  const yl = parseInt(parts[1], 10);
+  if (!Number.isFinite(yl)) return null;
+  return { program: parts[0], yearLevel: yl };
+}
+
+async function parseFacultyWorkbook(file) {
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+
+  const out = [];
+  let lastName = "", lastDept = "";
+  for (let i = 1; i < rows.length; i++) { // skip header row
+    const row = rows[i];
+    const [name, dept, , , , title, code, yearLevelSection] = row;
+    if (name) lastName = String(name).trim();
+    if (dept) lastDept = String(dept).trim();
+    if (!code) continue;
+    out.push({
+      faculty: lastName, dept: lastDept,
+      courseTitle: title || "", courseCode: String(code).trim(),
+      yearLevelRaw: String(yearLevelSection || "").trim().toUpperCase(),
+    });
+  }
+  return out;
+}
+
+// Reads the blank "Faculty Profile Import Template" (headers-only file
+// the admin fills in by hand): one row per faculty member, with Name /
+// Employment Status / Current Faculty Rank / Name of Immediate Supervisor
+// then repeating "Course CodeN" / "Year Level and SectionN" column pairs —
+// however many pairs actually exist in the sheet, not a fixed count (same
+// "detect however many are there" approach as the student template's
+// Course1..CourseN columns in admin-users.js).
+async function parseManualTemplateWorkbook(file) {
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+  if (rows.length === 0) return [];
+
+  const header = rows[0].map(h => String(h || "").trim());
+  const nameIdx = header.findIndex(h => h.toLowerCase() === "name");
+  if (nameIdx === -1) {
+    throw new Error('Expected a "Name" column — is this the Faculty Profile Import Template?');
+  }
+
+  // Collect Course CodeN / Year Level and SectionN / Program SuffixN sets
+  // by their shared numeric suffix, not by position — so columns can be
+  // reordered or extended (Course Code11, ...) without breaking this.
+  const pairsByNum = new Map();
+  header.forEach((h, idx) => {
+    const codeMatch = h.match(/^Course Code(\d+)$/i);
+    const ylMatch = h.match(/^Year Level and Section(\d+)$/i);
+    const suffixMatch = h.match(/^Program Suffix(\d+)$/i);
+    if (codeMatch) {
+      const n = codeMatch[1];
+      pairsByNum.set(n, { ...(pairsByNum.get(n) || {}), codeIdx: idx });
+    } else if (ylMatch) {
+      const n = ylMatch[1];
+      pairsByNum.set(n, { ...(pairsByNum.get(n) || {}), ylIdx: idx });
+    } else if (suffixMatch) {
+      const n = suffixMatch[1];
+      pairsByNum.set(n, { ...(pairsByNum.get(n) || {}), suffixIdx: idx });
+    }
+  });
+  const pairs = [...pairsByNum.values()].filter(p => p.codeIdx !== undefined && p.ylIdx !== undefined);
+
+  const out = [];
+  for (let i = 1; i < rows.length; i++) { // skip header row
+    const row = rows[i];
+    const faculty = String(row[nameIdx] || "").trim();
+    if (!faculty) continue; // blank row — including the shipped example row once it's left in place with no name
+    for (const { codeIdx, ylIdx, suffixIdx } of pairs) {
+      let code = String(row[codeIdx] || "").trim();
+      if (!code) continue; // unused set for this faculty member
+      const suffix = suffixIdx !== undefined ? String(row[suffixIdx] || "").trim() : "";
+      // A warning, not a silent "fix": a suffix hand-typed into the code
+      // itself ("TCH 2-TM") is caught here so it can't quietly fail to
+      // match later — see parseSuffix, which only understands "(TM)".
+      const hyphenSuffixGuess = code.match(/^(.*\S)\s*-\s*([A-Za-z]{1,6})$/);
+      if (!suffix && hyphenSuffixGuess) {
+        out.push({
+          faculty, dept: "", courseTitle: "", courseCode: code,
+          yearLevelRaw: String(row[ylIdx] || "").trim(),
+          templateWarning: `"${code}" looks like it has a program suffix written into the course code ` +
+            `(the "-${hyphenSuffixGuess[2]}" part). That's not recognized — put the course code alone here ` +
+            `and move "${hyphenSuffixGuess[2]}" into this row's Program Suffix column instead.`,
+        });
+        continue;
+      }
+      if (suffix) code = `${code} (${suffix})`; // reuse parseSuffix's existing parenthetical parsing
+      out.push({
+        faculty,
+        dept: "",
+        courseTitle: "",
+        courseCode: code,
+        yearLevelRaw: String(row[ylIdx] || "").trim(),
+      });
+    }
+  }
+  return out;
+}
+
+// Matches one faculty teaching-load row against the subjects already
+// loaded for the selected semester (allSubjectsForAssignment). Returns
+// { status: "matched", subjectIds: [...] } or { status: "unmatched", reason }.
+// Never guesses past what the data actually supports — ties that can't
+// be resolved come back unmatched with a reason, not a best-effort pick.
+function matchFacultyRow(row, subjectsByCourse) {
+  const { base, tokens } = parseSuffix(row.courseCode);
+  const norm = normalizeCourseCode(base);
+  const candidates = subjectsByCourse.get(norm);
+  if (!candidates || candidates.length === 0) {
+    return { status: "unmatched", reason: `Course code "${row.courseCode}" not found in this semester's subjects.` };
+  }
+
+  const ylNum = extractYearLevel(row.yearLevelRaw);
+
+  let suffixPrograms = null, unmappedTokens = [];
+  if (tokens.length > 0) {
+    const mapped = new Set();
+    tokens.forEach(t => {
+      const progs = SUFFIX_TOKEN_MAP[t];
+      if (progs && progs.length > 0) progs.forEach(p => mapped.add(p));
+      else if (!(t in SUFFIX_TOKEN_MAP)) unmappedTokens.push(t);
+    });
+    if (mapped.size > 0) suffixPrograms = mapped;
+  }
+
+  let filtered = candidates.filter(c =>
+    (!ylNum || c.yearLevel === ylNum) &&
+    (!suffixPrograms || suffixPrograms.has(c.program))
+  );
+
+  if (filtered.length === 0) {
+    const note = unmappedTokens.length > 0
+      ? ` — "(${unmappedTokens.join(" ")})" isn't a program currently in the system; it may not be imported yet.`
+      : "";
+    return { status: "unmatched", reason: `"${row.courseCode}" exists, but not for ${row.yearLevelRaw || "an unspecified year level"} in a matching program.${note}` };
+  }
+
+  const warn = unmappedTokens.length > 0
+    ? ` (note: "(${unmappedTokens.join(" ")})" wasn't recognized — only assigned to ${filtered.map(c => c.program).join(", ")})`
+    : "";
+  return { status: "matched", subjectIds: filtered.map(c => c.id), programs: filtered.map(c => c.program), warn };
+}
+
+function buildSubjectsByCourse(subjects) {
+  const map = new Map();
+  subjects.forEach(s => {
+    const parsed = parseSectionName(s.sections?.name);
+    if (!parsed) return;
+    const norm = normalizeCourseCode(s.name);
+    if (!map.has(norm)) map.set(norm, []);
+    map.get(norm).push({ id: s.id, program: parsed.program, yearLevel: parsed.yearLevel, courseName: s.name, teacherId: s.teacher_id });
+  });
+  return map;
+}
+
+let facultyImportResults = []; // rows with resolved teacherId + match result, for the preview/apply step
+
+async function runFacultyImportMatch(file, parseFn = parseFacultyWorkbook) {
+  const statusEl = document.getElementById("faculty-import-status");
+  const previewEl = document.getElementById("faculty-import-preview");
+  statusEl.textContent = "Loading SheetJS…";
+
+  try {
+    await window.fpLoadScript("../js/vendor/xlsx.full.min.js");
+  } catch (err) {
+    statusEl.textContent = "Failed to load the spreadsheet library: " + err.message;
+    return;
+  }
+
+  statusEl.textContent = "Reading file…";
+  let rows;
+  try {
+    rows = await parseFn(file);
+  } catch (err) {
+    statusEl.textContent = "Failed to read the file: " + err.message;
+    return;
+  }
+  if (rows.length === 0) {
+    statusEl.textContent = "That file has no data rows.";
+    return;
+  }
+
+  statusEl.textContent = "Matching against this semester's subjects…";
+
+  // Always match against the CURRENT semester filter, re-loaded fresh so
+  // a stale in-memory list can't cause a wrong assignment.
+  await loadSubjectsForAssignment();
+  const subjectsByCourse = buildSubjectsByCourse(allSubjectsForAssignment);
+
+  const { data: teachers } = await supabase.from("users").select("id, name").eq("role", "teacher");
+  const teacherByName = new Map((teachers || []).map(t => [t.name.trim().toLowerCase(), t.id]));
+
+  facultyImportResults = rows.map(row => {
+    // A hyphen-suffix typo caught during parsing — never guess a match
+    // off an ambiguous code, surface it as a fix-this-row item instead.
+    if (row.templateWarning) {
+      return { ...row, status: "unmatched", reason: row.templateWarning };
+    }
+    const teacherId = teacherByName.get(row.faculty.trim().toLowerCase());
+    if (!teacherId) {
+      return { ...row, status: "unmatched", reason: `No teacher account found with the name "${row.faculty}" — add them first in User Management.` };
+    }
+    const match = matchFacultyRow(row, subjectsByCourse);
+    return { ...row, teacherId, ...match };
+  });
+
+  statusEl.textContent = "";
+  renderFacultyImportPreview();
+}
+
+function renderFacultyImportPreview() {
+  const previewEl = document.getElementById("faculty-import-preview");
+  const matched = facultyImportResults.filter(r => r.status === "matched");
+  const unmatched = facultyImportResults.filter(r => r.status === "unmatched");
+
+  previewEl.style.display = "block";
+  previewEl.innerHTML = `
+    <div style="background:var(--gold-bg); border:1px solid #f1d9a6; border-radius:10px; padding:12px 14px; margin-bottom:14px;">
+      <b>${matched.length}</b> row(s) matched and ready to apply · <b>${unmatched.length}</b> need manual review in the table below.
+      Nothing is written to the database until you click "Apply Matched Assignments."
+    </div>
+    ${matched.length > 0 ? `
+      <button id="faculty-import-apply-btn" style="margin-bottom:14px;">✅ Apply ${matched.length} Matched Assignment(s)</button>
+    ` : ""}
+    ${unmatched.length > 0 ? `
+      <h4 style="font-size:13px; margin:0 0 8px;">Needs manual review (${unmatched.length})</h4>
+      <table>
+        <thead><tr><th>Faculty</th><th>Course</th><th>Year Level</th><th>Reason</th></tr></thead>
+        <tbody>
+          ${unmatched.map(r => `
+            <tr>
+              <td style="font-size:12px;">${escHtml(r.faculty)}</td>
+              <td style="font-size:12px;">${escHtml(r.courseCode)}</td>
+              <td style="font-size:12px;">${escHtml(r.yearLevelRaw)}</td>
+              <td style="font-size:12px; color:#991b1b;">${escHtml(r.reason)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    ` : ""}
+  `;
+
+  document.getElementById("faculty-import-apply-btn")?.addEventListener("click", applyFacultyImportMatches);
+}
+
+async function applyFacultyImportMatches() {
+  const matched = facultyImportResults.filter(r => r.status === "matched");
+  if (matched.length === 0) return;
+
+  const confirmed = await fpConfirm(
+    `Apply ${matched.length} teacher assignment(s) from this file?\n\n` +
+    `This updates the "teacher" field on each matched subject. Subjects that already have a ` +
+    `different teacher assigned will be overwritten.`,
+    { confirmLabel: "Apply", confirmStyle: "fp-btn-primary" }
+  );
+  if (!confirmed) return;
+
+  const btn = document.getElementById("faculty-import-apply-btn");
+  if (btn) { btn.textContent = "Applying..."; btn.disabled = true; }
+
+  let applied = 0;
+  const failures = [];
+  for (const row of matched) {
+    const { error } = await supabase.from("subjects").update({ teacher_id: row.teacherId }).in("id", row.subjectIds);
+    if (error) failures.push(`${row.faculty} / ${row.courseCode}: ${error.message}`);
+    else applied += row.subjectIds.length;
+  }
+
+  if (failures.length > 0) {
+    await fpAlert(`Applied ${applied} subject assignment(s), but ${failures.length} failed:\n\n${failures.join("\n")}`, "error");
+  } else {
+    await fpAlert(`Applied ${applied} subject assignment(s) across ${matched.length} teaching-load row(s).`, "success");
+  }
+
+  document.getElementById("faculty-import-preview").style.display = "none";
+  facultyImportResults = [];
+  await loadSubjectsForAssignment();
+}
+
+document.getElementById("faculty-import-btn")?.addEventListener("click", () => {
+  document.getElementById("faculty-import-file-input")?.click();
+});
+document.getElementById("faculty-import-file-input")?.addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = "";
+  if (!file) return;
+  await runFacultyImportMatch(file, parseFacultyWorkbook);
+});
+
+document.getElementById("faculty-template-import-btn")?.addEventListener("click", () => {
+  document.getElementById("faculty-template-import-file-input")?.click();
+});
+document.getElementById("faculty-template-import-file-input")?.addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = "";
+  if (!file) return;
+  await runFacultyImportMatch(file, parseManualTemplateWorkbook);
 });
 
 lazyPanel("panel-subjects", () => {

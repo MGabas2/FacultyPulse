@@ -100,20 +100,26 @@ let currentTeacherId = null;
 // ══════════════════════════════════════════════════════════════
 //  HELPERS
 // ══════════════════════════════════════════════════════════════
-// CMO No. 19 Annex A/B rating scale breakpoints
+// CMO No. 19 s.2025 SEF rating bands (5 bands, no "Poor" tier — "Needs
+// Improvement" is the bottom band). Kept in sync with js/admin.js's
+// getRatingLabel/getRatingColor — if you change one, change all three
+// (teacher.js, supervisor.js, js/admin.js all keep their own copy).
+//   96.00–100.00  Outstanding      91.00–95.99  Very Satisfactory
+//   86.00– 90.99  Satisfactory     80.00–85.99  Developing
+//   79.99 & below Needs Improvement
 function getRatingLabel(score) {
-  if (score >= 91) return "Outstanding";
-  if (score >= 61) return "Very Satisfactory";
-  if (score >= 31) return "Satisfactory";
-  if (score >= 11) return "Needs Improvement";
-  return "Poor";
+  if (score >= 96) return "Outstanding";
+  if (score >= 91) return "Very Satisfactory";
+  if (score >= 86) return "Satisfactory";
+  if (score >= 80) return "Developing";
+  return "Needs Improvement";
 }
 
 function getRatingColor(score) {
-  if (score >= 91) return "#10b981";
-  if (score >= 61) return "#3b82f6";
-  if (score >= 31) return "#f59e0b";
-  if (score >= 11) return "#f97316";
+  if (score >= 96) return "#10b981";
+  if (score >= 91) return "#3b82f6";
+  if (score >= 86) return "#f59e0b";
+  if (score >= 80) return "#f97316";
   return "#ef4444";
 }
 

@@ -213,6 +213,7 @@ function updateTableHeaders(role) {
     student:    ["Name", "Student ID", "Section", "Email", "Status", "Action"],
     supervisor: ["Name", "Email", "Role", "—", "Status", "Action"],
     admin:      ["Name", "Email", "Role", "—", "Status", "Action"],
+    executive:  ["Name", "Email", "Role", "—", "Status", "Action"],
     "":         ["Name", "ID / Student ID", "Role", "Email", "Status", "Action"],
   };
 
@@ -444,6 +445,7 @@ function getRoleBadgeClass(role) {
   return role === "admin" ? "badge-admin"
        : role === "teacher" ? "badge-teacher"
        : role === "supervisor" ? "badge-supervisor"
+       : role === "executive" ? "badge-admin" // reuse admin's styling — no dedicated color defined for this role
        : "pending";
 }
 
@@ -503,7 +505,7 @@ function onNewRoleChange() {
 
   if (role === "student") {
     studentFields.classList.remove("hidden");
-  } else if (["teacher","supervisor","admin"].includes(role)) {
+  } else if (["teacher","supervisor","admin","executive"].includes(role)) {
     staffFields.classList.remove("hidden");
     if (role === "teacher" && rankGroup) rankGroup.style.display = "block";
     // Department applies to teacher AND supervisor — not admin, who isn't

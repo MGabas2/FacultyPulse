@@ -444,6 +444,10 @@ async function login() {
       if (userRow.role === "teacher")    window.location.href = "pages/teacher.html";
       if (userRow.role === "admin")      window.location.href = "pages/admin.html";
       if (userRow.role === "supervisor") window.location.href = "pages/supervisor.html";
+      if (userRow.role === "executive")  window.location.href = "pages/executive.html";
+      // "depthead" intentionally left as dead code, not wired up — no login
+      // tab, no page, no way to create one from User Management. Pre-existing
+      // before this change; flagged to the team rather than silently removed.
       if (userRow.role === "depthead")   window.location.href = "pages/depthead.html";
     }
   } catch (err) {
