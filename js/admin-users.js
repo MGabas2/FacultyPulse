@@ -191,7 +191,7 @@ async function loadUsers() {
 
   const { data, error } = await supabase
     .from("users")
-    .select("id, student_id, role, name, email, section_id, is_active, academic_rank, employment_type, department, sections(name)");
+    .select("id, student_id, role, name, email, section_id, is_active, academic_rank, employment_type, department, major, sections(name)");
 
   if (error) {
     tbody.innerHTML = `<tr><td colspan="6">Error loading users.</td></tr>`;
@@ -223,14 +223,50 @@ function updateTableHeaders(role) {
 // ══════════════════════════════════════════════════════════════
 //  RENDER TABLE
 // ══════════════════════════════════════════════════════════════
+// Rebuilds the Majoring filter's option list from whatever distinct, non-
+// blank major values currently exist among students (scoped to the active
+// Section filter, if any) — never a hardcoded list, since majors aren't
+// controlled vocabulary and vary by program/registrar export.
+function populateMajoringFilterOptions(filterSection) {
+  const select = document.getElementById("filter-majoring");
+  if (!select) return;
+  const current = select.value;
+
+  const majors = new Set();
+  allUsers.forEach(u => {
+    if (u.role !== "student" || !u.major) return;
+    if (filterSection && u.section_id !== filterSection) return;
+    majors.add(u.major);
+  });
+
+  const sorted = [...majors].sort((a, b) => a.localeCompare(b));
+  select.innerHTML = `<option value="">All Majors</option>` +
+    sorted.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join("");
+  // Preserve the admin's current selection if it's still a valid option.
+  if (sorted.includes(current)) select.value = current;
+}
+
 function renderTable() {
   const search        = document.getElementById("search-input").value.toLowerCase();
   const filterRole    = document.getElementById("filter-role").value;
   const filterSection = document.getElementById("filter-section").value;
   const filterStatus  = document.getElementById("filter-status-users")?.value || "";
+  const filterMajoring = document.getElementById("filter-majoring")?.value || "";
 
   // Update headers to match current role filter
   updateTableHeaders(filterRole);
+
+  // Majoring only applies to students — hide the filter entirely otherwise,
+  // and (re)populate it from whatever major values actually exist right now.
+  const majoringGroup = document.getElementById("filter-majoring-group");
+  if (majoringGroup) {
+    if (filterRole === "student") {
+      majoringGroup.style.display = "";
+      populateMajoringFilterOptions(filterSection);
+    } else {
+      majoringGroup.style.display = "none";
+    }
+  }
 
   let filtered = allUsers.filter(u => {
     if (u.role === "admin") return false;   // admins not shown in user management
@@ -242,7 +278,8 @@ function renderTable() {
     const matchStatus  = !filterStatus
       || (filterStatus === "active"   &&  isActive)
       || (filterStatus === "inactive" && !isActive);
-    return matchSearch && matchRole && matchSection && matchStatus;
+    const matchMajoring = !filterMajoring || (u.major || "") === filterMajoring;
+    return matchSearch && matchRole && matchSection && matchStatus && matchMajoring;
   });
 
   // Sort
@@ -322,7 +359,9 @@ function renderTable() {
       col2 = u.student_id
         ? `<code style="font-size:11px;">${escHtml(u.student_id)}</code>`
         : "—";
-      col3 = section;
+      col3 = u.major
+        ? `${escHtml(section)}<br><span style="font-size:11px; color:var(--slate);">${escHtml(u.major)}</span>`
+        : section;
       col4 = u.email || "—";
 
     } else {
@@ -900,6 +939,7 @@ const IMPORT_COLUMNS = {
   program:    ["Degree Program", "Degree_Program"],
   yearLevel:  ["Year Level", "Year_Level"],
   email:      ["Email"],
+  majoring:   ["Majoring", "Major"], // optional — some programs don't have one
 };
 
 function findHeaderKey(headerRow, aliases) {
@@ -1048,7 +1088,7 @@ async function handleImportFile(e) {
   for (const [key, aliases] of Object.entries(IMPORT_COLUMNS)) {
     const found = findHeaderKey(headerRow, aliases);
     if (found) colMap[key] = found;
-    else if (key !== "middleName" && key !== "email") missing.push(aliases[0]);
+    else if (key !== "middleName" && key !== "email" && key !== "majoring") missing.push(aliases[0]);
   }
   if (missing.length > 0) {
     setImportStatus(`Missing required column(s): ${missing.join(", ")}. Check the file matches the current template.`, true);
@@ -1073,6 +1113,7 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
     const program     = cleanOptionalText(row[colMap.program]);
     const yearLevel   = normalizeYearLevel(cleanOptionalText(row[colMap.yearLevel]));
     const email       = colMap.email ? cleanOptionalText(row[colMap.email]) : "";
+    const majoring    = colMap.majoring ? cleanOptionalText(row[colMap.majoring]) : "";
 
     const rowErrors = [];
     if (!STUDENT_ID_FORMAT.test(studentId)) rowErrors.push("invalid/missing ID No.");
@@ -1090,7 +1131,7 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
     const name = middleName ? `${lastName}, ${firstName} ${middleName}` : `${lastName}, ${firstName}`;
     const courses = courseColumns.map(col => cleanOptionalText(row[col])).filter(Boolean);
 
-    parsed.push({ studentId, name, email: email || null, sectionName, program, courses });
+    parsed.push({ studentId, name, email: email || null, sectionName, program, courses, major: majoring || null });
   });
 
   if (parsed.length === 0) {
@@ -1180,11 +1221,11 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
         continue;
       }
       if (existingIds.has(p.studentId)) {
-        toPromote.push({ studentId: p.studentId, sectionId });
+        toPromote.push({ studentId: p.studentId, sectionId, major: p.major });
       } else {
         toInsert.push({
           student_id: p.studentId, name: p.name, email: p.email,
-          role: "student", section_id: sectionId,
+          role: "student", section_id: sectionId, major: p.major,
         });
       }
     }
@@ -1213,8 +1254,13 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
     setImportStatus(`Updating section for ${toPromote.length} returning student(s)…`);
     let studentsPromoted = 0;
     await runWithConcurrency(toPromote, 15, async (p) => {
+      // Only overwrite major if this import actually provided one — a blank
+      // Majoring cell on a re-import (or an older template without the
+      // column at all) must never silently erase a value set earlier.
+      const updates = { section_id: p.sectionId };
+      if (p.major) updates.major = p.major;
       const { error } = await supabase
-        .from("users").update({ section_id: p.sectionId })
+        .from("users").update(updates)
         .eq("student_id", p.studentId).eq("role", "student");
       if (error) {
         errors.push({ row: "-", studentId: p.studentId, issues: "promotion failed: " + error.message });
@@ -1395,6 +1441,7 @@ document.getElementById("search-input").addEventListener("input", renderTable);
 document.getElementById("filter-role").addEventListener("change", renderTable);
 document.getElementById("filter-section").addEventListener("change", renderTable);
 document.getElementById("filter-status-users")?.addEventListener("change", renderTable);
+document.getElementById("filter-majoring")?.addEventListener("change", renderTable);
 
 document.getElementById("import-users-btn")?.addEventListener("click", openImportPicker);
 document.getElementById("import-choose-file-btn")?.addEventListener("click", () => {
