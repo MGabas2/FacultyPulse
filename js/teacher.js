@@ -45,21 +45,97 @@ function getRatingColor(score) {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  INIT
+//  SEMESTER SELECTOR — lets a teacher switch to a PAST semester,
+//  but only one they actually have a released report for. The
+//  dropdown is not every semester in the system (most of those a
+//  given teacher never taught, or taught but was never released) —
+//  it's the active semester (always listed, so the existing "Not Yet
+//  Available" messaging still shows for it) plus any semester where
+//  report_releases.stage = 'released' for THIS teacher_id. The
+//  release gate in loadSemesterData() below still re-checks on every
+//  selection regardless — this just keeps the list itself honest.
 // ══════════════════════════════════════════════════════════════
-async function loadSemester() {
+async function populateSemesterOptions() {
+  const sel = document.getElementById("semester-filter");
+
+  const [{ data: releasedRows }, { data: activeSemRow }] = await Promise.all([
+    supabase
+      .from("report_releases")
+      .select("semester_id")
+      .eq("teacher_id", userId)
+      .eq("stage", "released"),
+    supabase
+      .from("semesters")
+      .select("id, label, is_active, start_date")
+      .eq("is_active", true)
+      .maybeSingle(),
+  ]);
+
+  const semesterIds = new Set((releasedRows || []).map(r => r.semester_id));
+  if (activeSemRow) semesterIds.add(activeSemRow.id);
+
+  if (semesterIds.size === 0) {
+    if (sel) sel.innerHTML = `<option value="">No semesters found</option>`;
+    return null;
+  }
+
+  const { data: sems } = await supabase
+    .from("semesters")
+    .select("id, label, is_active, start_date")
+    .in("id", [...semesterIds])
+    .order("start_date", { ascending: false, nullsFirst: false });
+
+  if (!sel) return (sems || []).find(s => s.is_active)?.id || (sems || [])[0]?.id || null;
+
+  if (!sems || sems.length === 0) {
+    sel.innerHTML = `<option value="">No semesters found</option>`;
+    return null;
+  }
+
+  sel.innerHTML = sems
+    .map(s => `<option value="${s.id}">${s.label}${s.is_active ? " (current)" : ""}</option>`)
+    .join("");
+
+  // Only show the picker at all when there's actually a past semester to
+  // switch to — a teacher with just the current (possibly unreleased)
+  // semester has nothing past to pick, so the control would be dead UI.
+  const filterRow = document.getElementById("semester-filter-row");
+  if (filterRow) filterRow.style.display = sems.length > 1 ? "flex" : "none";
+
+  const activeSem = sems.find(s => s.is_active) || sems[0];
+  sel.value = activeSem.id;
+  return activeSem.id;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  LOAD SELECTED SEMESTER
+// ══════════════════════════════════════════════════════════════
+async function loadSemesterData(semesterId) {
+  // Reset both panels every switch — otherwise a released semester's
+  // dashboard could stay visible underneath while a not-released one
+  // loads, or vice versa.
+  document.getElementById("not-released-view").style.display = "none";
+  document.getElementById("dashboard-view").style.display    = "none";
+
+  if (!semesterId) {
+    document.getElementById("semester-label").textContent = "No semester selected";
+    showNotReleased();
+    return;
+  }
+
   const { data: semester } = await supabase
-    .from("semesters").select("id, label").eq("is_active", true).single();
+    .from("semesters").select("id, label").eq("id", semesterId).maybeSingle();
 
   if (!semester) {
-    document.getElementById("semester-label").textContent = "No active semester";
+    document.getElementById("semester-label").textContent = "Semester not found";
     showNotReleased();
     return;
   }
 
   document.getElementById("semester-label").textContent = semester.label;
 
-  // Gate: only show after final release
+  // Gate: only show after final release — same check regardless of
+  // whether this is the active semester or one picked from the past.
   const { data: release } = await supabase
     .from("report_releases")
     .select("stage")
@@ -98,7 +174,15 @@ async function loadScores(semesterId) {
     .eq("teacher_id", userId)
     .eq("semester_id", semesterId);
 
-  if (!subjects || subjects.length === 0) return;
+  if (!subjects || subjects.length === 0) {
+    // Guard against stale data from a previously-viewed semester lingering
+    // on screen (only reachable now that semester-switching exists).
+    const recCard = document.getElementById("rec-card");
+    if (recCard) recCard.style.display = "none";
+    const tbody = document.getElementById("class-tbody");
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">No subjects recorded for this semester.</td></tr>`;
+    return;
+  }
 
   const classData = [];
   let totalWeighted = 0, totalEnrolled = 0, totalRespondents = 0;
@@ -512,6 +596,15 @@ async function loadSubjects(semesterId) {
 //  LOAD SUPERVISOR REMARKS + SEF RATING
 // ══════════════════════════════════════════════════════════════
 async function loadSupervisorRemarks(semesterId) {
+  // Reset both cards first — switching to a semester with no supervisor
+  // remarks must not leave the PREVIOUS semester's SEF score/remarks on
+  // screen. This only mattered once semester-switching existed; before
+  // that the page loaded once per session and these started hidden.
+  const sefCardReset     = document.getElementById("sef-card");
+  const remarksCardReset = document.getElementById("remarks-card");
+  if (sefCardReset)     sefCardReset.style.display     = "none";
+  if (remarksCardReset) remarksCardReset.style.display = "none";
+
   const { data: remarks } = await supabase
     .from("supervisor_remarks")
     .select("sef_score, remarks, submitted_at")
@@ -586,5 +679,12 @@ document.getElementById("logout-btn").addEventListener("click", (e) => {
   window.location.href = "../index.html";
 });
 
+document.getElementById("semester-filter")?.addEventListener("change", (e) => {
+  loadSemesterData(e.target.value);
+});
+
 // ── Init ──
-loadSemester();
+(async function init() {
+  const defaultSemId = await populateSemesterOptions();
+  await loadSemesterData(defaultSemId);
+})();

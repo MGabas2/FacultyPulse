@@ -1830,6 +1830,66 @@ function populateDashFacultyFilter() {
 }
 
 // ══════════════════════════════════════════════════════════════
+//  SYNC ENROLLED COUNTS — client-side, no DB function required.
+//
+//  This used to call a `sync_enrolled_counts` Postgres RPC. That RPC
+//  is not defined anywhere in this codebase — no migration file for
+//  it exists — which means it was either never actually created in
+//  Supabase, or was dropped at some point; either way `supabase.rpc()`
+//  fails against a function that doesn't exist on the server, which is
+//  exactly the "Sync Enrolled doesn't work" symptom. Since there's no
+//  live DB access here to inspect or recreate that function safely,
+//  this replaces it with the same computation done in JS instead:
+//  count each subject's real student_subjects rows directly, and
+//  write back only the subjects whose enrolled_count is wrong.
+// ══════════════════════════════════════════════════════════════
+async function syncEnrolledCounts() {
+  const { data: links, error: linksError } = await supabase
+    .from("student_subjects")
+    .select("subject_id");
+
+  if (linksError) return { error: linksError };
+
+  const counts = new Map();
+  (links || []).forEach(r => {
+    counts.set(r.subject_id, (counts.get(r.subject_id) || 0) + 1);
+  });
+
+  const { data: subjects, error: subjError } = await supabase
+    .from("subjects")
+    .select("id, enrolled_count");
+
+  if (subjError) return { error: subjError };
+
+  const toUpdate = (subjects || []).filter(
+    s => (counts.get(s.id) || 0) !== (s.enrolled_count || 0)
+  );
+
+  let updated = 0;
+  const errors = [];
+  const CHUNK = 20;
+  for (let i = 0; i < toUpdate.length; i += CHUNK) {
+    const batch = toUpdate.slice(i, i + CHUNK);
+    const results = await Promise.all(
+      batch.map(s =>
+        supabase.from("subjects")
+          .update({ enrolled_count: counts.get(s.id) || 0 })
+          .eq("id", s.id)
+      )
+    );
+    results.forEach(({ error }) => {
+      if (error) errors.push(error.message);
+      else updated++;
+    });
+  }
+
+  if (errors.length > 0) {
+    return { data: { updated }, error: { message: errors.slice(0, 3).join("; ") + (errors.length > 3 ? ` (+${errors.length - 3} more)` : "") } };
+  }
+  return { data: { updated } };
+}
+
+// ══════════════════════════════════════════════════════════════
 //  AUTO-REFRESH
 //
 //  - Dashboard numbers (loadSummary + loadRankings) refresh every 30s.
@@ -1873,7 +1933,7 @@ async function silentDashboardRefresh() {
 async function silentEnrolledSync() {
   if (document.hidden || !isDashboardPanelActive()) return;
   try {
-    const { data, error } = await supabase.rpc("sync_enrolled_counts");
+    const { data, error } = await syncEnrolledCounts();
     if (error) { console.error("Auto-sync enrolled counts failed:", error.message); return; }
     if (data?.updated > 0) {
       // Something actually changed — refresh the numbers derived from it.
@@ -2052,7 +2112,7 @@ if (syncEnrolledBtn) {
     syncEnrolledBtn.textContent = "Syncing...";
     syncEnrolledBtn.disabled = true;
 
-    const { data, error } = await supabase.rpc("sync_enrolled_counts");
+    const { data, error } = await syncEnrolledCounts();
 
     syncEnrolledBtn.textContent = "Sync Enrolled";
     syncEnrolledBtn.disabled = false;
