@@ -105,6 +105,42 @@
     table.exec-table td { padding: 10px 12px; border-bottom: 1px solid var(--hairline); vertical-align: middle; }
     table.exec-table tr:last-child td { border-bottom: none; }
     table.exec-table tr:hover { background: var(--maroon-bg); }
+    table.exec-table tr[data-program], table.exec-table tr[data-teacher-id] { cursor: pointer; }
+
+    #exec-report-modal .modal-box { scrollbar-width: none; -ms-overflow-style: none; }
+    #exec-report-modal .modal-box::-webkit-scrollbar { display: none; }
+
+    /* ── PRINT (IFER Annex C / D) — same behavior as the Admin report print ── */
+    @media print {
+      @page { margin: 15mm; }
+      #exec-report-content, #exec-report-content * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color: #000 !important;
+      }
+      nav, .no-print { display: none !important; }
+      body { overflow: visible !important; }
+      .container, .hero, #change-password-modal { display: none !important; }
+      #exec-report-modal {
+        position: static !important; background: none !important;
+        display: block !important; overflow: visible !important;
+      }
+      #exec-report-modal .modal-box {
+        box-shadow: none !important; max-width: 100% !important;
+        width: 100% !important; max-height: none !important;
+        overflow: visible !important; padding: 0 !important;
+        border: none !important; border-radius: 0 !important; display: block !important;
+      }
+      #exec-report-content { overflow: visible !important; padding: 0 !important; }
+      #exec-report-content th, #exec-report-content td {
+        background: #ffffff !important; color: #000000 !important; border: 1px solid #000 !important;
+      }
+      #exec-report-content td[style*="border:none"] { border: none !important; }
+      #exec-report-content th[style*="background:#333"] { background: #333 !important; color: #fff !important; }
+      #exec-report-content table { page-break-inside: auto; }
+      #exec-report-content tr    { page-break-inside: avoid; }
+      #exec-report-content [style*="page-break-before:always"], #exec-annex-d-section { page-break-before: always !important; }
+    }
 
     .rating-pill { display: inline-block; padding: 3px 11px; border-radius: 20px; font-size: 12px; font-weight: 600; color: #fff; }
 
@@ -193,8 +229,10 @@
       <p class="kicker">Institutional faculty evaluation summary</p>
       <h2>Executive Summary</h2>
       <p class="lead">
-        Program-level averages across all evaluated faculty this semester — a read-only view
-        for institutional oversight. Individual student responses are never shown here.
+        Program-level and individual-faculty averages, released reports only — a read-only
+        view for institutional oversight. A report only appears here once it has completed
+        the supervisor review and Final Release step; individual student responses are
+        never shown.
       </p>
       <div class="sem-row">
         <label for="exec-semester-filter">Semester:</label>
@@ -224,15 +262,49 @@
     </div>
 
     <div class="panel-box">
-      <h3>Average Rating by Program</h3>
+      <h3>SET / SEF Rating by Program</h3>
       <p class="sub">
-        Each program's average is the mean of every individual student SET submission for
-        faculty teaching in that program this semester (CMO No. 19, s.2025 formula). Programs
-        with very few respondents will show less statistically stable averages — treat small
-        numbers accordingly.
+        SET Rating is the mean of every student SET submission for faculty teaching in that
+        program this semester (CMO No. 19 formula). SEF Rating is the mean of each faculty's
+        latest supervisor-submitted SEF score. Click a program row to see only that program's
+        faculty below. Programs with very few respondents will show less statistically stable
+        averages — treat small numbers accordingly.
       </p>
       <div id="program-summary-container">
         <div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div>
+      </div>
+    </div>
+
+    <div class="panel-box">
+      <h3>Individual Faculty Reports</h3>
+      <p class="sub">
+        Only faculty whose report has reached Final Release appear below. A faculty member
+        still at "pending", "forwarded to supervisor", or "supervisor done" is not shown here
+        and is excluded from the program averages above as well. Click a row to open that
+        faculty's full report (Annex C &amp; D).
+      </p>
+      <div id="faculty-filter-chip" class="notice-box" style="display:none; align-items:center; justify-content:space-between;">
+        <span id="faculty-filter-text"></span>
+        <button id="faculty-filter-clear" class="nav-btn" style="background:var(--maroon); color:#fff; border:1px solid var(--maroon); flex-shrink:0;">Show All Programs</button>
+      </div>
+      <div id="faculty-report-container">
+        <div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Individual Faculty Report Modal (Annex C & D, read-only) -->
+  <div id="exec-report-modal" class="modal hidden">
+    <div class="modal-box" style="max-width:780px; width:95vw;
+      display:flex; flex-direction:column; padding:0; overflow:hidden;">
+
+      <div id="exec-report-content" style="flex:1; overflow-y:auto; padding:24px 28px;"></div>
+
+      <div class="no-print" style="
+        padding:14px 20px; border-top:1px solid var(--hairline); background:white;
+        display:flex; gap:10px; flex-wrap:wrap; align-items:center; flex-shrink:0;">
+        <button id="exec-report-print-btn" class="nav-btn" style="background:var(--navy); color:#fff; border:1px solid var(--navy);">🖨 Print</button>
+        <button id="exec-report-close-btn" class="nav-btn" style="background:#fff; color:var(--navy); border:1px solid var(--hairline);">Close</button>
       </div>
     </div>
   </div>
