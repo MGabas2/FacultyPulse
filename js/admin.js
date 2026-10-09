@@ -652,20 +652,22 @@ async function viewReport(teacherId, teacherName) {
         continue;
       }
 
+      // Per-respondent columns (R1, R2, …) are deliberately NOT rendered here —
+      // even without a name attached, a row of individual answers is exactly
+      // the kind of granular data that's easy to re-identify in a small
+      // class (e.g. "the one student who gave all 1s"). Only the per-question
+      // AVERAGE across respondents is shown, consistent with how the rest of
+      // this report (and the Executive dashboard) already only ever shows
+      // aggregates — never an individual submission.
       html += `
           <div style="overflow-x:auto; margin-bottom:16px;">
             <table style="border-collapse:collapse; font-size:11px; min-width:100%;">
               <thead>
                 <tr>
                   <th style="border:1px solid #cbd5e1; padding:6px 8px; background:#f8fafc;
-                    text-align:left; min-width:260px; color:#334155;">Question</th>`;
-      evals.forEach((_, i) => {
-        html += `<th style="border:1px solid #cbd5e1; padding:6px 8px; background:#f8fafc;
-          text-align:center; color:#334155; min-width:40px;">R${i + 1}</th>`;
-      });
-      html += `
+                    text-align:left; min-width:260px; color:#334155;">Question</th>
                   <th style="border:1px solid #cbd5e1; padding:6px 8px; background:#eff6ff;
-                    text-align:center; color:#1e40af; min-width:52px;">Avg</th>
+                    text-align:center; color:#1e40af; min-width:70px;">Avg (/5)</th>
                 </tr>
               </thead>
               <tbody>`;
@@ -673,17 +675,17 @@ async function viewReport(teacherId, teacherName) {
       ["q1","q2","q3","q4","q5","q6","q7","q8","q9","q10","q11","q12","q13","q14","q15"]
         .forEach((qid, qi) => {
           if (qi === 0)
-            html += `<tr><td colspan="${evals.length + 2}"
+            html += `<tr><td colspan="2"
               style="background:#f1f5f9; padding:5px 8px; font-size:10px;
                 font-weight:600; color:#475569; border:1px solid #cbd5e1;">
               A. Management of Teaching and Learning</td></tr>`;
           if (qi === 6)
-            html += `<tr><td colspan="${evals.length + 2}"
+            html += `<tr><td colspan="2"
               style="background:#f1f5f9; padding:5px 8px; font-size:10px;
                 font-weight:600; color:#475569; border:1px solid #cbd5e1;">
               B. Content Knowledge, Pedagogy and Technology</td></tr>`;
           if (qi === 11)
-            html += `<tr><td colspan="${evals.length + 2}"
+            html += `<tr><td colspan="2"
               style="background:#f1f5f9; padding:5px 8px; font-size:10px;
                 font-weight:600; color:#475569; border:1px solid #cbd5e1;">
               C. Commitment and Transparency</td></tr>`;
@@ -697,40 +699,19 @@ async function viewReport(teacherId, teacherName) {
           html += `<tr>
             <td style="border:1px solid #cbd5e1; padding:5px 8px; color:#334155;">
               <b>${qi + 1}.</b> ${escHtml(SET_QUESTIONS_SHORT[qi])}
-            </td>`;
-          vals.forEach(v => {
-            html += `<td style="border:1px solid #cbd5e1; padding:5px 8px;
-              text-align:center; color:#1e293b;">${v}</td>`;
-          });
-          html += `<td style="border:1px solid #cbd5e1; padding:5px 8px;
-            text-align:center; font-weight:600; color:#1e40af; background:#eff6ff;">${avg}</td>
+            </td>
+            <td style="border:1px solid #cbd5e1; padding:5px 8px;
+              text-align:center; font-weight:600; color:#1e40af; background:#eff6ff;">${avg}</td>
           </tr>`;
         });
 
-      html += `<tr style="background:#f8fafc;">
-        <td style="border:1px solid #cbd5e1; padding:6px 8px; font-weight:700; color:#1e293b;">
-          Total Score (raw / 75)
-        </td>`;
-      evals.forEach(e => {
-        const total = Object.values(e.scores || {}).reduce((s,v) => s+v, 0);
-        html += `<td style="border:1px solid #cbd5e1; padding:6px 8px;
-          text-align:center; font-weight:700; color:#1e293b;">${total}</td>`;
-      });
-      html += `<td style="border:1px solid #cbd5e1; padding:6px 8px;
-        text-align:center; color:#64748b;">—</td></tr>`;
-
       html += `<tr style="background:#eff6ff;">
         <td style="border:1px solid #cbd5e1; padding:6px 8px; font-weight:700; color:#1e40af;">
-          Computed SET Rating
-        </td>`;
-      evals.forEach(e => {
-        const total = Object.values(e.scores || {}).reduce((s,v) => s+v, 0);
-        const rating = ((total / 75) * 100).toFixed(2);
-        html += `<td style="border:1px solid #cbd5e1; padding:6px 8px;
-          text-align:center; font-weight:700; color:#1e40af;">${rating}</td>`;
-      });
-      html += `<td style="border:1px solid #cbd5e1; padding:6px 8px;
-        text-align:center; font-weight:700; color:#1e40af;">${c.avgSETRating.toFixed(2)}</td></tr>`;
+          Computed SET Rating (class average)
+        </td>
+        <td style="border:1px solid #cbd5e1; padding:6px 8px;
+          text-align:center; font-weight:700; color:#1e40af;">${c.avgSETRating.toFixed(2)}</td>
+      </tr>`;
 
       html += `</tbody></table></div>`;
     }
@@ -1938,6 +1919,7 @@ async function silentEnrolledSync() {
     if (data?.updated > 0) {
       // Something actually changed — refresh the numbers derived from it.
       await loadRankings({ preserve: true });
+      if (typeof loadSubjectsForAssignment === "function") loadSubjectsForAssignment();
     }
   } catch (err) {
     console.error("Auto-sync enrolled counts failed:", err);
@@ -2127,6 +2109,14 @@ if (syncEnrolledBtn) {
       "success"
     );
     loadRankings();
+    // Subject Assignment caches its own list in allSubjectsForAssignment and
+    // only refetches on panel-load or filter change — not on its own, so a
+    // sync run from the Dashboard tab was leaving it showing pre-sync
+    // numbers until the admin happened to reload the page. Refresh it here
+    // too, whether or not that panel is the one currently visible — the
+    // query itself is cheap, and it means the numbers are correct the next
+    // time the admin switches to that tab instead of looking stale again.
+    if (typeof loadSubjectsForAssignment === "function") loadSubjectsForAssignment();
   });
 }
 
