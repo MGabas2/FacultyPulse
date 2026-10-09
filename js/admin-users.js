@@ -31,10 +31,27 @@ const ACADEMIC_RANKS = [
   "Professor IV", "Professor V", "Professor VI",
 ];
 
+// ── Organizational departments (as of 2026-10-09) ──
+// These are REAL administrative units, distinct from program/section codes
+// (BSIT, BSED, BSA, BSInfoTech, BSTM, BSHM, ...). One org department can
+// cover several programs (HTM -> BSTM + BSHM, TEd -> BEED + BSED), which is
+// exactly why faculty/supervisor "department" can no longer be the same
+// string as a section's program code — that was the source of the earlier
+// BSTM/BSHM ambiguity. This list is for TEACHER/SUPERVISOR accounts only.
+//
+// Known consequence, accepted deliberately (2026-10-09): Subject
+// Assignment's per-department teacher filter (admin.js, loadTeachersForAssignment)
+// still matches users.department against a SECTION's program-code department
+// — with teacher.department now an org unit, filtering Subject Assignment by
+// a specific program (e.g. "BSIT") will show no teachers. Use "All
+// Departments" there and find the teacher by name/search until that panel is
+// updated to understand the org-department -> program mapping too.
+const ORG_DEPARTMENTS = ["Agri", "HTM", "ICT", "IT", "TEd"];
+
 // ── State ──
 let allUsers        = [];
 let sections        = [];
-let departments      = [];
+let departments      = []; // program codes (sections.department) — student section filtering only
 let editTargetId    = null;
 let archiveTargetId = null;
 let currentPage     = 1;
@@ -42,11 +59,11 @@ const PAGE_SIZE     = 10;
 
 // ══════════════════════════════════════════════════════════════
 //  LOAD DEPARTMENTS
-//  Departments come from the sections table (BSIT, BSHM, ...) —
-//  the same canonical list used for student sections — so a
-//  teacher/supervisor's Department dropdown always matches real
-//  program names instead of admins retyping free text that could
-//  drift out of sync (e.g. "BSIT" vs "BS IT" vs "BSInfoTech").
+//  Two separate vocabularies, deliberately kept apart:
+//   - Program codes (sections.department: BSIT, BSED, BSA, ...) — used only
+//     to filter the student Add-User form's Section list.
+//   - Org departments (ORG_DEPARTMENTS, above) — used for teacher/supervisor
+//     accounts, since one org department can span several programs.
 // ══════════════════════════════════════════════════════════════
 async function loadDepartments() {
   const { data, error } = await supabase.from("sections").select("department");
@@ -54,16 +71,21 @@ async function loadDepartments() {
 
   departments = [...new Set((data || []).map(r => r.department).filter(Boolean))].sort();
 
-  // new-student-department is the Add-User student form's department
-  // filter (narrows the Section list below it) — same canonical list as
-  // the staff department dropdowns, so it's populated the same way here.
-  ["new-department", "edit-department", "new-student-department"].forEach(id => {
+  const studentSel = document.getElementById("new-student-department");
+  if (studentSel) {
+    const current = studentSel.value;
+    studentSel.innerHTML = `<option value="">-- Select Department --</option>` +
+      departments.map(d => `<option value="${escHtml(d)}">${escHtml(d)}</option>`).join("");
+    if (departments.includes(current)) studentSel.value = current;
+  }
+
+  ["new-department", "edit-department"].forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
     const current = sel.value;
     sel.innerHTML = `<option value="">-- Select Department --</option>` +
-      departments.map(d => `<option value="${escHtml(d)}">${escHtml(d)}</option>`).join("");
-    if (departments.includes(current)) sel.value = current;
+      ORG_DEPARTMENTS.map(d => `<option value="${escHtml(d)}">${escHtml(d)}</option>`).join("");
+    if (ORG_DEPARTMENTS.includes(current)) sel.value = current;
   });
 }
 
@@ -1488,6 +1510,322 @@ function renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted,
 }
 
 // ══════════════════════════════════════════════════════════════
+//  XLSX IMPORT — bulk faculty account creation ("Faculty Profile" template)
+//
+//  Each row creates (or updates) one teacher account:
+//   - New email  -> insert into `users` (role: teacher), auto-generate a
+//     random password, and create their Supabase Auth login via the same
+//     /api/create-teacher-auth function the single Add-User flow uses.
+//     Supabase Auth passwords can't be retrieved later, so the summary
+//     table below is the ONLY place a generated password is ever shown —
+//     the admin must copy it down before closing this modal.
+//   - Existing email (matches an existing role='teacher' user, case-
+//     insensitive) -> UPDATE academic_rank/employment_type/department
+//     only. Password and Auth login are never touched for an existing
+//     account — re-importing a roster must never silently reset someone's
+//     login credentials.
+//
+//  Department has no free-text fallback: it must exactly match one of the
+//  ORG_DEPARTMENTS values (Agri, HTM, ICT, IT, TEd — see the constant
+//  above) — NOT a program/section code like "BSIT" or "BSTM". A typo'd or
+//  program-code department fails that row rather than silently creating a
+//  new, disconnected department string nothing else recognizes.
+//
+//  A "*Reference" column (which program(s) sit under that org department,
+//  e.g. HTM -> BSTM, BSHM) may be present in the file for the admin's own
+//  reading — it is purely informational and is never read or imported.
+// ══════════════════════════════════════════════════════════════
+
+const FACULTY_IMPORT_COLUMNS = {
+  name:           ["Name", "Full Name", "Faculty Name"],
+  email:          ["Email"],
+  employmentType: ["Employment Status", "Employment Type", "Employment_Type"],
+  academicRank:   ["Current Faculty Rank", "Academic Rank", "Rank"],
+  department:     ["Department", "Department1"],
+};
+
+const EMPLOYMENT_TYPES = ["Full-time", "Part-time", "COS"];
+
+function generateRandomPassword() {
+  // 12 random chars, avoiding visually-ambiguous ones (0/O, 1/l/I) since
+  // these get hand-copied off a screen by an admin.
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  const bytes = new Uint32Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => chars[b % chars.length]).join("");
+}
+
+function openFacultyImportPicker() {
+  document.getElementById("faculty-import-modal")?.classList.remove("hidden");
+  document.getElementById("faculty-import-summary").innerHTML = "";
+  setFacultyImportStatus("");
+}
+
+function setFacultyImportStatus(text, isError = false) {
+  const el = document.getElementById("faculty-roster-import-status");
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isError ? "#dc2626" : "#475569";
+}
+
+async function handleFacultyImportFile(e) {
+  const file = e.target.files?.[0];
+  e.target.value = "";
+  if (!file) return;
+
+  if (typeof XLSX === "undefined") {
+    await fpAlert("The spreadsheet library failed to load. Check your connection and try again.", "error");
+    return;
+  }
+
+  setFacultyImportStatus("Reading file…");
+
+  let workbook;
+  try {
+    const buf = await file.arrayBuffer();
+    workbook = XLSX.read(buf, { type: "array" });
+  } catch (err) {
+    setFacultyImportStatus("Failed to read the file: " + err.message, true);
+    return;
+  }
+
+  // The template ships a "Read Me" sheet alongside the real data — use
+  // whichever sheet is actually named "Faculty Profile" if present, else
+  // fall back to the first sheet.
+  const sheetName = workbook.SheetNames.find(n => /faculty profile/i.test(n)) || workbook.SheetNames[0];
+  const ws = workbook.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false });
+
+  if (rows.length === 0) {
+    setFacultyImportStatus("That sheet has no data rows.", true);
+    return;
+  }
+
+  const headerRow = Object.keys(rows[0]);
+  const colMap = {};
+  let missing = [];
+  for (const [key, aliases] of Object.entries(FACULTY_IMPORT_COLUMNS)) {
+    const found = findHeaderKey(headerRow, aliases);
+    if (found) colMap[key] = found;
+    else missing.push(aliases[0]);
+  }
+  if (missing.length > 0) {
+    setFacultyImportStatus(`Missing required column(s): ${missing.join(", ")}. Check the file has Name, Email, Department, Employment Status, and Current Faculty Rank columns.`, true);
+    return;
+  }
+
+  await runFacultyImport(rows, colMap);
+}
+
+async function runFacultyImport(rows, colMap) {
+  const errors = [];
+  const parsed = [];
+
+  rows.forEach((row, i) => {
+    const rowNum = i + 2; // account for header row
+    const name             = cleanOptionalText(row[colMap.name]);
+    const email            = cleanOptionalText(row[colMap.email]).toLowerCase();
+    const employmentRaw    = cleanOptionalText(row[colMap.employmentType]);
+    const employmentType   = EMPLOYMENT_TYPES.find(t => t.toLowerCase() === employmentRaw.toLowerCase()) || employmentRaw;
+    const academicRankRaw  = cleanOptionalText(row[colMap.academicRank]);
+    const academicRank     = ACADEMIC_RANKS.find(r => r.toLowerCase() === academicRankRaw.toLowerCase()) || academicRankRaw;
+    const departmentRaw    = cleanOptionalText(row[colMap.department]);
+    const department       = ORG_DEPARTMENTS.find(d => d.toLowerCase() === departmentRaw.toLowerCase()) || "";
+
+    const rowErrors = [];
+    if (!name)  rowErrors.push("missing Name");
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) rowErrors.push("missing/invalid Email");
+    if (!departmentRaw) rowErrors.push("missing Department");
+    else if (!department) rowErrors.push(`Department "${departmentRaw}" doesn't match any known org department (${ORG_DEPARTMENTS.join(", ")})`);
+
+    if (rowErrors.length > 0) {
+      errors.push({ row: rowNum, email: email || "(blank)", issues: rowErrors.join(", ") });
+      return;
+    }
+
+    parsed.push({ name, email, employmentType: employmentType || null, academicRank: academicRank || null, department });
+  });
+
+  if (parsed.length === 0) {
+    renderFacultyImportSummary({ created: [], updated: 0, errors, totalRows: rows.length });
+    return;
+  }
+
+  // De-dup by email within the file itself — same safety net as the
+  // student importer, so one accidentally-repeated row doesn't create two
+  // accounts for the same person.
+  const seenEmails = new Set();
+  const deduped = [];
+  let duplicateRows = 0;
+  for (const p of parsed) {
+    if (seenEmails.has(p.email)) { duplicateRows++; continue; }
+    seenEmails.add(p.email);
+    deduped.push(p);
+  }
+
+  setFacultyImportStatus(`Checking ${deduped.length} email(s) against existing accounts…`);
+  const { data: existingUsers, error: existingError } = await fetchAllRows("users", "id, email, role");
+  if (existingError) {
+    setFacultyImportStatus("Import stopped: " + existingError.message, true);
+    return;
+  }
+  const existingByEmail = new Map(
+    (existingUsers || [])
+      .filter(u => u.role === "teacher" && u.email)
+      .map(u => [u.email.toLowerCase(), u])
+  );
+  // A different role (student/supervisor/admin) already owns that email —
+  // skip rather than silently repurposing someone's account.
+  const otherRoleEmails = new Set(
+    (existingUsers || [])
+      .filter(u => u.role !== "teacher" && u.email)
+      .map(u => u.email.toLowerCase())
+  );
+
+  const toInsert = [];
+  const toUpdate = [];
+  for (const p of deduped) {
+    if (otherRoleEmails.has(p.email)) {
+      errors.push({ row: "-", email: p.email, issues: "email already belongs to a non-teacher account" });
+      continue;
+    }
+    const existing = existingByEmail.get(p.email);
+    if (existing) toUpdate.push({ ...p, id: existing.id });
+    else toInsert.push(p);
+  }
+
+  // ── Create new teacher accounts (row + Auth login) ──
+  const isLocalDev = ["127.0.0.1", "localhost"].includes(window.location.hostname);
+  let authToken = null;
+  if (!isLocalDev) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    authToken = sessionData?.session?.access_token || null;
+  }
+
+  const created = []; // { name, email, password, authOk, authMsg }
+  const insertErrors = [];
+  setFacultyImportStatus(`Creating ${toInsert.length} new faculty account(s)…`);
+
+  await runWithConcurrency(toInsert, 3, async (p) => {
+    const password = generateRandomPassword();
+    const { error: insertError } = await supabase.from("users").insert({
+      role: "teacher", name: p.name, email: p.email,
+      academic_rank: p.academicRank, employment_type: p.employmentType, department: p.department,
+    });
+    if (insertError) {
+      insertErrors.push({
+        row: "-", email: p.email,
+        issues: insertError.code === "23505" ? "email already exists" : "insert failed: " + insertError.message,
+      });
+      return;
+    }
+
+    let authOk = false, authMsg;
+    if (isLocalDev) {
+      authMsg = "local dev — add manually in Supabase";
+    } else {
+      try {
+        const resp = await fetch("/api/create-teacher-auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}` },
+          body: JSON.stringify({ email: p.email, password, name: p.name }),
+        });
+        const result = await resp.json();
+        authOk = resp.ok;
+        authMsg = resp.ok ? "login created" : "login FAILED: " + (result.error || "unknown error");
+      } catch (err) {
+        authMsg = "login FAILED: " + err.message;
+      }
+    }
+
+    created.push({ name: p.name, email: p.email, password, authOk, authMsg });
+  });
+
+  // ── Update existing teacher accounts (rank/employment/department only) ──
+  setFacultyImportStatus(`Updating ${toUpdate.length} existing faculty account(s)…`);
+  let updated = 0;
+  await runWithConcurrency(toUpdate, 10, async (p) => {
+    const { error } = await supabase.from("users").update({
+      academic_rank: p.academicRank, employment_type: p.employmentType, department: p.department,
+    }).eq("id", p.id);
+    if (error) {
+      errors.push({ row: "-", email: p.email, issues: "update failed: " + error.message });
+    } else {
+      updated++;
+    }
+  });
+
+  renderFacultyImportSummary({ created, updated, duplicateRows, errors: [...errors, ...insertErrors], totalRows: rows.length });
+
+  await loadDepartments();
+  await loadUsers();
+}
+
+function renderFacultyImportSummary({ created, updated, duplicateRows = 0, errors, totalRows }) {
+  setFacultyImportStatus(`Done — processed ${totalRows} row(s).`);
+  const box = document.getElementById("faculty-import-summary");
+  if (!box) return;
+
+  const authFailures = created.filter(c => !c.authOk);
+
+  let html = `
+    <ul style="margin:8px 0 0; padding-left:18px; font-size:13px; line-height:1.8;">
+      <li>${created.length} new faculty account(s) created</li>
+      <li>${updated} existing faculty account(s) updated (rank / employment / department)</li>
+      ${duplicateRows > 0 ? `<li>${duplicateRows} duplicate row(s) for the same email collapsed to one</li>` : ""}
+      ${authFailures.length > 0 ? `<li style="color:#dc2626;">${authFailures.length} login(s) NOT created automatically — see below, add manually in Supabase</li>` : ""}
+      <li style="${errors.length ? "color:#dc2626;" : ""}">${errors.length} row(s) skipped due to issues</li>
+    </ul>
+  `;
+
+  if (created.length > 0) {
+    html += `
+      <p style="font-size:12px; font-weight:700; margin:14px 0 6px; color:#671408;">
+        ⚠️ New account passwords — copy these down now. They cannot be shown again once this window is closed.
+      </p>
+      <div style="max-height:220px; overflow-y:auto; border:1px solid #f3c9bd; border-radius:6px;">
+        <table style="width:100%; font-size:12px;">
+          <thead><tr>
+            <th style="padding:6px 8px;">Name</th>
+            <th style="padding:6px 8px;">Email</th>
+            <th style="padding:6px 8px;">Password</th>
+            <th style="padding:6px 8px;">Login</th>
+          </tr></thead>
+          <tbody>
+            ${created.map(c => `
+              <tr>
+                <td style="padding:6px 8px;">${escHtml(c.name)}</td>
+                <td style="padding:6px 8px;">${escHtml(c.email)}</td>
+                <td style="padding:6px 8px; font-family:monospace;">${escHtml(c.password)}</td>
+                <td style="padding:6px 8px; color:${c.authOk ? "#065f46" : "#dc2626"};">${escHtml(c.authMsg)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  if (errors.length > 0) {
+    const shown = errors.slice(0, 50);
+    html += `
+      <p style="font-size:12px; font-weight:600; margin:14px 0 6px; color:#dc2626;">
+        Skipped rows${errors.length > shown.length ? ` (showing first ${shown.length} of ${errors.length})` : ""}:
+      </p>
+      <div style="max-height:160px; overflow-y:auto; border:1px solid #fecaca; border-radius:6px; padding:8px 10px; background:#fef2f2;">
+        ${shown.map(e => `
+          <div style="font-size:11px; color:#991b1b; margin-bottom:4px;">
+            Row ${e.row} — <code>${escHtml(e.email)}</code>: ${escHtml(e.issues)}
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  box.innerHTML = html;
+}
+
+// ══════════════════════════════════════════════════════════════
 //  EXPOSE + EVENTS
 // ══════════════════════════════════════════════════════════════
 window.setSort          = setSort;
@@ -1527,6 +1865,15 @@ document.getElementById("import-choose-file-btn")?.addEventListener("click", () 
 document.getElementById("import-file-input")?.addEventListener("change", handleImportFile);
 document.getElementById("close-import-btn")?.addEventListener("click", () => {
   document.getElementById("import-modal").classList.add("hidden");
+});
+
+document.getElementById("import-faculty-btn")?.addEventListener("click", openFacultyImportPicker);
+document.getElementById("faculty-import-choose-file-btn")?.addEventListener("click", () => {
+  document.getElementById("faculty-roster-import-file-input")?.click();
+});
+document.getElementById("faculty-roster-import-file-input")?.addEventListener("change", handleFacultyImportFile);
+document.getElementById("close-faculty-import-btn")?.addEventListener("click", () => {
+  document.getElementById("faculty-import-modal").classList.add("hidden");
 });
 
 loadDepartments();

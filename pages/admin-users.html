@@ -85,6 +85,10 @@
           📥 Import Students
         </button>
         <input type="file" id="import-file-input" accept=".xlsx" style="display:none;" />
+        <button id="import-faculty-btn" class="btn-secondary" title="Bulk-create or update faculty accounts from the Faculty Profile template">
+          📥 Import Faculty
+        </button>
+        <input type="file" id="faculty-import-file-input" accept=".xlsx" style="display:none;" />
         <button id="add-user-btn">+ Add User</button>
       </div>
 
@@ -164,8 +168,12 @@
             <option value="">-- Select Department --</option>
           </select>
           <p class="field-hint">
-            Which department this person belongs to — used to filter Subject Assignment
-            by department before subjects are assigned.
+            This person's organizational department (e.g. IT, HTM, TEd —
+            one department can cover more than one program). Note: Subject
+            Assignment's per-department teacher filter still matches
+            program codes (BSIT, BSED, ...), not this list — use "All
+            Departments" there and search by name until that panel is
+            updated to match.
           </p>
         </div>
         <div class="form-group" id="new-rank-group" style="display:none;">
@@ -296,6 +304,40 @@
       <div id="import-summary"></div>
       <div style="display:flex; gap:10px; margin-top:20px;">
         <button class="btn-secondary" id="close-import-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Faculty Import Modal -->
+  <div id="faculty-import-modal" class="modal hidden">
+    <div class="modal-box" style="max-width:640px;">
+      <h3>📥 Import Faculty</h3>
+      <p style="font-size:12px; color:#64748b; margin-bottom:10px;">
+        Creates or updates teacher accounts from the Faculty Profile template.
+        A new email creates an account with an auto-generated password and
+        login — <b>write the password down from the summary below before
+        closing this window; it cannot be shown again.</b> A matching
+        existing email only updates that teacher's rank, employment type,
+        and department — their password and login are never touched.
+        Required columns: Name, Email, Department, Employment Status,
+        Current Faculty Rank. Department must be an organizational
+        department — <b>Agri, HTM, ICT, IT, or TEd</b> — not a program
+        code like "BSIT" or "BSTM". A "*Reference" column showing which
+        programs sit under each department may be present for your own
+        reading; it is ignored by this importer.
+      </p>
+      <p style="font-size:12px; color:#92400e; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:8px 10px; margin-bottom:10px;">
+        ⚠️ Known effect: once faculty use these org departments, Subject
+        Assignment's "filter teachers by department" dropdown won't find
+        them when filtered by a program code (e.g. "BSIT"). Use "All
+        Departments" there and find the teacher by name/search until that
+        panel is updated to match.
+      </p>
+      <button id="faculty-import-choose-file-btn">Choose File…</button>
+      <p id="faculty-import-status" style="font-size:13px; color:#475569; min-height:18px; margin-top:8px;"></p>
+      <div id="faculty-import-summary"></div>
+      <div style="display:flex; gap:10px; margin-top:20px;">
+        <button class="btn-secondary" id="close-faculty-import-btn">Close</button>
       </div>
     </div>
   </div>
