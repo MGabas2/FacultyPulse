@@ -1824,11 +1824,31 @@ function populateDashFacultyFilter() {
 //  count each subject's real student_subjects rows directly, and
 //  write back only the subjects whose enrolled_count is wrong.
 // ══════════════════════════════════════════════════════════════
-async function syncEnrolledCounts() {
-  const { data: links, error: linksError } = await supabase
-    .from("student_subjects")
-    .select("subject_id");
+// Supabase/PostgREST caps an unpaginated select at 1000 rows by default.
+// With 800+ students per semester, student_subjects (and potentially
+// subjects itself, across semesters) can easily exceed that — an
+// unpaginated fetch silently truncates instead of erroring, so this
+// pages through with .range() until a page comes back short, rather
+// than trusting a single select() to return everything.
+async function fetchAllRows(table, columns) {
+  const PAGE = 1000;
+  let all = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(columns)
+      .range(from, from + PAGE - 1);
+    if (error) return { error };
+    all = all.concat(data || []);
+    if (!data || data.length < PAGE) break;
+    from += PAGE;
+  }
+  return { data: all };
+}
 
+async function syncEnrolledCounts() {
+  const { data: links, error: linksError } = await fetchAllRows("student_subjects", "subject_id");
   if (linksError) return { error: linksError };
 
   const counts = new Map();
@@ -1836,10 +1856,7 @@ async function syncEnrolledCounts() {
     counts.set(r.subject_id, (counts.get(r.subject_id) || 0) + 1);
   });
 
-  const { data: subjects, error: subjError } = await supabase
-    .from("subjects")
-    .select("id, enrolled_count");
-
+  const { data: subjects, error: subjError } = await fetchAllRows("subjects", "id, enrolled_count");
   if (subjError) return { error: subjError };
 
   const toUpdate = (subjects || []).filter(
