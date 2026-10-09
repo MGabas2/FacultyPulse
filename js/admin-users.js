@@ -1345,7 +1345,22 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
       enrollmentsLinked += batch.length;
     }
 
-    renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted, duplicateRows, subjectsCreated, enrollmentsLinked, errors, totalRows: rows.length });
+    // ── Auto-sync enrolled_count right now, not on a timer ──
+    // subjects.enrolled_count is a denormalized cache of how many
+    // student_subjects rows point at it — it only ever needs recomputing
+    // at the exact moment enrollment changes, which is right here, not on
+    // some later background tick that depends on an admin happening to be
+    // on a particular tab. See js/admin.js's syncEnrolledCounts() for the
+    // original — duplicated here (not imported; these are separate pages
+    // with no shared module) with the same pagination fix: Supabase caps
+    // an unpaginated select() at 1000 rows, and this institution has well
+    // over 1000 student_subjects rows, so fetchAllRows() pages through
+    // with .range() instead of trusting a single select() to return
+    // everything (that exact gap previously corrupted enrolled_count —
+    // keep this paginated version in sync with admin.js's if it changes).
+    const syncResult = await syncEnrolledCountsAfterImport();
+
+    renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted, duplicateRows, subjectsCreated, enrollmentsLinked, errors, totalRows: rows.length, syncResult });
 
     await loadSections();
     await loadDepartments();
@@ -1376,7 +1391,62 @@ function setImportStatus(text, isError = false, isNote = false) {
   el.style.color = isError ? "#dc2626" : isNote ? "#d97706" : "#475569";
 }
 
-function renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted, duplicateRows = 0, subjectsCreated = 0, enrollmentsLinked = 0, errors, totalRows }) {
+async function fetchAllRows(table, columns) {
+  const PAGE = 1000;
+  let all = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(columns)
+      .range(from, from + PAGE - 1);
+    if (error) return { error };
+    all = all.concat(data || []);
+    if (!data || data.length < PAGE) break;
+    from += PAGE;
+  }
+  return { data: all };
+}
+
+async function syncEnrolledCountsAfterImport() {
+  const { data: links, error: linksError } = await fetchAllRows("student_subjects", "subject_id");
+  if (linksError) return { error: linksError.message };
+
+  const counts = new Map();
+  (links || []).forEach(r => {
+    counts.set(r.subject_id, (counts.get(r.subject_id) || 0) + 1);
+  });
+
+  const { data: subjects, error: subjError } = await fetchAllRows("subjects", "id, enrolled_count");
+  if (subjError) return { error: subjError.message };
+
+  const toUpdate = (subjects || []).filter(
+    s => (counts.get(s.id) || 0) !== (s.enrolled_count || 0)
+  );
+
+  let updated = 0;
+  const errors = [];
+  const CHUNK = 20;
+  for (let i = 0; i < toUpdate.length; i += CHUNK) {
+    const batch = toUpdate.slice(i, i + CHUNK);
+    const results = await Promise.all(
+      batch.map(s =>
+        supabase.from("subjects")
+          .update({ enrolled_count: counts.get(s.id) || 0 })
+          .eq("id", s.id)
+      )
+    );
+    results.forEach(({ error }) => {
+      if (error) errors.push(error.message);
+      else updated++;
+    });
+  }
+
+  if (errors.length > 0) return { updated, error: errors.slice(0, 3).join("; ") };
+  return { updated };
+}
+
+function renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted, duplicateRows = 0, subjectsCreated = 0, enrollmentsLinked = 0, errors, totalRows, syncResult = {} }) {
   setImportStatus(`Done — processed ${totalRows} row(s).`);
   const box = document.getElementById("import-summary");
   if (!box) return;
@@ -1389,6 +1459,11 @@ function renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted,
       ${duplicateRows > 0 ? `<li>${duplicateRows} duplicate row(s) for the same student collapsed to one</li>` : ""}
       <li>${subjectsCreated} course subject(s) resolved — <b>no teacher assigned yet</b>, that still needs to be done manually</li>
       <li>${enrollmentsLinked} student-to-subject enrollment(s) recorded</li>
+      <li style="${syncResult.error ? "color:#dc2626;" : ""}">
+        ${syncResult.error
+          ? `Enrolled-count sync failed: ${escHtml(syncResult.error)} — run "Sync Enrolled" manually from the Dashboard.`
+          : `Enrolled counts auto-synced (${syncResult.updated ?? 0} subject${syncResult.updated === 1 ? "" : "s"} updated) — no manual sync needed.`}
+      </li>
       <li style="${errors.length ? "color:#dc2626;" : ""}">${errors.length} row(s) skipped due to issues</li>
     </ul>
   `;
