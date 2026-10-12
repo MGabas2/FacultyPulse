@@ -23,28 +23,50 @@ const supervisorName = sessionStorage.getItem("name");
 
 document.getElementById("nav-user").textContent = "Logged in as: " + supervisorName;
 
-// ── This supervisor's own department — fetched once at load, since
-//    faculty visibility below is scoped by department match (exactly
-//    one supervisor per department, i.e. the program chair), not by
-//    the old per-teacher supervisor_id link. ──
-let supervisorDepartment = null;
-async function loadSupervisorDepartment() {
+// ── Which faculty this supervisor can see (2026-10-12 rewrite) ──
+// Previously this was a department-string match (.eq("users.department",
+// supervisorDepartment)) — exactly one supervisor per department, so
+// department match WAS the assignment. That broke the moment a real
+// supervisor needed to oversee faculty across more than one department
+// (confirmed from real Faculty Profile data — e.g. one HTM chair covering
+// both BSTM and BSHM, and more broadly supervisors spanning departments
+// entirely). It's replaced here with an explicit supervisor_assignments
+// table (supervisor_id, teacher_id) populated by the admin's combined
+// Faculty + Supervisor import. See supervisor_assignments_migration.sql —
+// this table must exist before this page will show anyone.
+let assignedTeacherIds = null;
+async function loadAssignedTeacherIds() {
   const { data, error } = await supabase
-    .from("users")
-    .select("department")
-    .eq("id", supervisorId)
-    .maybeSingle();
-  if (error || !data?.department) {
+    .from("supervisor_assignments")
+    .select("teacher_id")
+    .eq("supervisor_id", supervisorId);
+
+  if (error) {
     document.getElementById("faculty-cards-container").innerHTML = `
       <div class="empty-state">
         <div class="icon">⚠️</div>
-        <h3>No Department Set</h3>
-        <p>Your account has no department assigned, so no faculty can be shown.
-           Ask an admin to set your department in User Management.</p>
+        <h3>Couldn't Load Your Assigned Faculty</h3>
+        <p>${escapeHtml(error.message)}</p>
       </div>`;
     return null;
   }
-  return data.department;
+
+  const ids = (data || []).map(r => r.teacher_id);
+  if (ids.length === 0) {
+    document.getElementById("faculty-cards-container").innerHTML = `
+      <div class="empty-state">
+        <div class="icon">📭</div>
+        <h3>No Faculty Assigned to You Yet</h3>
+        <p>An admin hasn't linked any faculty to your account yet. Ask them to run
+           the Supervisor Assignment import, or check with User Management.</p>
+      </div>`;
+    document.getElementById("count-pending").textContent = "0";
+    document.getElementById("count-done").textContent    = "0";
+    document.getElementById("count-total").textContent   = "0";
+    return null;
+  }
+
+  return ids;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -141,9 +163,9 @@ async function loadForwardedReports() {
   const container = document.getElementById("faculty-cards-container");
   container.innerHTML = `<p style="color:#94a3b8; text-align:center; padding:32px 0;">Loading...</p>`;
 
-  if (supervisorDepartment === null) {
-    supervisorDepartment = await loadSupervisorDepartment();
-    if (!supervisorDepartment) return; // empty-state already rendered
+  if (assignedTeacherIds === null) {
+    assignedTeacherIds = await loadAssignedTeacherIds();
+    if (!assignedTeacherIds) return; // empty/error state already rendered
   }
 
   const { data: semester } = await supabase
@@ -158,20 +180,17 @@ async function loadForwardedReports() {
   document.getElementById("semester-label").textContent = semester.label;
 
   // ── Ownership filter ──
-  // users!inner + .eq("users.department", supervisorDepartment) restricts
-  // this query, at the database level, to faculty in THIS supervisor's own
-  // department — the model here is exactly one supervisor per department
-  // (the program chair), so department match IS the assignment. This
-  // replaces the earlier users.supervisor_id link, which nothing in the
-  // admin UI ever actually set. Without a real filter here, every
-  // supervisor account could see and submit an SEF for every faculty
-  // member in the system, regardless of department — that was a real
-  // bug, not a hypothetical one.
+  // .in("teacher_id", assignedTeacherIds) restricts this query, at the
+  // database level, to exactly the faculty this supervisor is actually
+  // linked to via supervisor_assignments — see loadAssignedTeacherIds()
+  // above. Without a real filter here, every supervisor account could see
+  // and submit an SEF for every faculty member in the system — that was a
+  // real bug under the old department-match version, not a hypothetical one.
   const { data: releases, error } = await supabase
     .from("report_releases")
     .select("id, teacher_id, stage, users!inner(name, academic_rank, department)")
     .eq("semester_id", semester.id)
-    .eq("users.department", supervisorDepartment)
+    .in("teacher_id", assignedTeacherIds)
     .in("stage", ["forwarded_to_supervisor", "supervisor_done"]);
 
   if (error || !releases || releases.length === 0) {
@@ -233,8 +252,7 @@ async function loadForwardedReports() {
 //    semester. Annex B assumes one row per course; a faculty here can
 //    have several, so we list them all rather than guessing a single
 //    one. College/Department comes straight from the teacher's own
-//    stored `department` now (passed in from the card, matches the
-//    supervisor's own department by construction) rather than being
+//    stored `department` now (passed in from the card) rather than being
 //    inferred from subjects/sections — more reliable, and works even
 //    for a teacher with zero subjects assigned yet. ──
 async function populateCourseTitle(teacherId) {

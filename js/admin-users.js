@@ -1614,10 +1614,123 @@ async function handleFacultyImportFile(e) {
     return;
   }
 
-  await runFacultyImport(rows, colMap);
+  await runFacultyImport(rows, colMap, workbook);
 }
 
-async function runFacultyImport(rows, colMap) {
+// ══════════════════════════════════════════════════════════════
+//  SUPERVISOR ASSIGNMENTS — "Supervisors" + "Assignments" sheets,
+//  read from the SAME workbook as the Faculty Profile import.
+//
+//  Lookup-only, by design (2026-10-12): unlike faculty rows, neither a
+//  Supervisor Code's email nor a Faculty Email auto-creates an account.
+//  Both must already exist as real users (role=supervisor / role=teacher
+//  respectively) — a supervisor account has more access than a teacher
+//  account, so silently creating one from a typo'd spreadsheet row is a
+//  bigger mistake than silently creating a teacher account would be. Add
+//  supervisors manually via + Add User first; faculty rows in the SAME
+//  file are resolved AFTER the Faculty Profile sheet above has run, so a
+//  brand-new teacher in this same import is already eligible to be linked.
+//
+//  Sheets are optional — a plain Faculty Profile-only file (the old
+//  format) still imports fine; these two sheets are just skipped if absent.
+// ══════════════════════════════════════════════════════════════
+function findSheetByName(workbook, pattern) {
+  const name = workbook.SheetNames.find(n => pattern.test(n));
+  return name ? workbook.Sheets[name] : null;
+}
+
+async function runSupervisorAssignmentImport(workbook) {
+  const supWs = findSheetByName(workbook, /^supervisors$/i);
+  const asnWs = findSheetByName(workbook, /^assignments$/i);
+  if (!supWs || !asnWs) return null; // sheets not present — nothing to do
+
+  const supRows = XLSX.utils.sheet_to_json(supWs, { defval: "", raw: false });
+  const asnRows = XLSX.utils.sheet_to_json(asnWs, { defval: "", raw: false });
+
+  const errors = [];
+
+  // ── Resolve Supervisor Code -> email, from the Supervisors sheet ──
+  const codeToEmail = new Map();
+  supRows.forEach((row, i) => {
+    const rowNum = i + 2;
+    const code  = cleanOptionalText(row["Supervisor Code"]);
+    const email = cleanOptionalText(row["Supervisor Email"]).toLowerCase();
+    if (!code || !email) return; // blank trailing rows — not an error, just skip
+    if (codeToEmail.has(code)) {
+      errors.push({ row: rowNum, email, issues: `Supervisor Code "${code}" is used more than once in the Supervisors sheet` });
+      return;
+    }
+    codeToEmail.set(code, email);
+  });
+
+  if (asnRows.length === 0) {
+    return { linked: 0, errors, totalRows: 0 };
+  }
+
+  // ── Re-fetch current users so a teacher created earlier in THIS SAME
+  //    import run is already linkable, and so a supervisor added to the
+  //    system moments ago (by another admin, another tab) is seen too. ──
+  const { data: existingUsers, error: existingError } = await fetchAllRows("users", "id, email, role");
+  if (existingError) {
+    errors.push({ row: "-", email: "-", issues: "Could not check accounts: " + existingError.message });
+    return { linked: 0, errors, totalRows: asnRows.length };
+  }
+  const supervisorByEmail = new Map(
+    (existingUsers || []).filter(u => u.role === "supervisor" && u.email).map(u => [u.email.toLowerCase(), u])
+  );
+  const teacherByEmail = new Map(
+    (existingUsers || []).filter(u => u.role === "teacher" && u.email).map(u => [u.email.toLowerCase(), u])
+  );
+
+  const toLink = [];
+  asnRows.forEach((row, i) => {
+    const rowNum = i + 2;
+    const code = cleanOptionalText(row["Supervisor Code"]);
+    const facultyEmail = cleanOptionalText(row["Faculty Email (Supervised)"]).toLowerCase();
+    if (!code && !facultyEmail) return; // blank trailing row
+
+    if (!code) { errors.push({ row: rowNum, email: facultyEmail || "(blank)", issues: "missing Supervisor Code" }); return; }
+    if (!facultyEmail) { errors.push({ row: rowNum, email: "(blank)", issues: "missing Faculty Email" }); return; }
+
+    const supEmail = codeToEmail.get(code);
+    if (!supEmail) { errors.push({ row: rowNum, email: facultyEmail, issues: `Supervisor Code "${code}" not found in the Supervisors sheet` }); return; }
+
+    const supervisor = supervisorByEmail.get(supEmail);
+    if (!supervisor) { errors.push({ row: rowNum, email: facultyEmail, issues: `No existing supervisor account for "${supEmail}" — add them via + Add User first` }); return; }
+
+    const teacher = teacherByEmail.get(facultyEmail);
+    if (!teacher) { errors.push({ row: rowNum, email: facultyEmail, issues: `No existing teacher account for this email — check it's on the Faculty Profile sheet and was imported successfully` }); return; }
+
+    toLink.push({ supervisor_id: supervisor.id, teacher_id: teacher.id, row: rowNum, email: facultyEmail });
+  });
+
+  let linked = 0;
+  if (toLink.length > 0) {
+    for (const batch of chunkArray(toLink, 200)) {
+      const { error } = await supabase
+        .from("supervisor_assignments")
+        .upsert(
+          batch.map(b => ({ supervisor_id: b.supervisor_id, teacher_id: b.teacher_id })),
+          { onConflict: "supervisor_id,teacher_id", ignoreDuplicates: true }
+        );
+      if (error) {
+        batch.forEach(b => errors.push({
+          row: b.row, email: b.email,
+          issues: "link failed: " + error.message +
+            (error.message?.includes("does not exist")
+              ? " — the supervisor_assignments table hasn't been created yet. Run the migration first."
+              : ""),
+        }));
+      } else {
+        linked += batch.length;
+      }
+    }
+  }
+
+  return { linked, errors, totalRows: asnRows.length };
+}
+
+async function runFacultyImport(rows, colMap, workbook) {
   const errors = [];
   const parsed = [];
 
@@ -1755,13 +1868,28 @@ async function runFacultyImport(rows, colMap) {
     }
   });
 
-  renderFacultyImportSummary({ created, updated, duplicateRows, errors: [...errors, ...insertErrors], totalRows: rows.length });
+  // ── Supervisor Assignments pass — only runs if the workbook actually
+  //    has "Supervisors" + "Assignments" sheets (the combined-file format).
+  //    Runs AFTER faculty accounts above, so a brand-new teacher in this
+  //    same file is already linkable. ──
+  let supervisorResult = null;
+  if (workbook) {
+    setFacultyImportStatus("Checking for Supervisor Assignment sheets…");
+    supervisorResult = await runSupervisorAssignmentImport(workbook);
+  }
+
+  renderFacultyImportSummary({
+    created, updated, duplicateRows,
+    errors: [...errors, ...insertErrors],
+    totalRows: rows.length,
+    supervisorResult,
+  });
 
   await loadDepartments();
   await loadUsers();
 }
 
-function renderFacultyImportSummary({ created, updated, duplicateRows = 0, errors, totalRows }) {
+function renderFacultyImportSummary({ created, updated, duplicateRows = 0, errors, totalRows, supervisorResult = null }) {
   setFacultyImportStatus(`Done — processed ${totalRows} row(s).`);
   const box = document.getElementById("faculty-import-summary");
   if (!box) return;
@@ -1819,6 +1947,38 @@ function renderFacultyImportSummary({ created, updated, duplicateRows = 0, error
           </div>
         `).join("")}
       </div>
+    `;
+  }
+
+  if (supervisorResult) {
+    html += `
+      <hr style="margin:18px 0; border:none; border-top:1px solid #e2e8f0;" />
+      <p style="font-size:13px; font-weight:700; margin:0 0 8px; color:#16324f;">🔗 Supervisor Assignments</p>
+      <ul style="margin:0 0 0; padding-left:18px; font-size:13px; line-height:1.8;">
+        <li>${supervisorResult.linked} faculty-to-supervisor link(s) created or confirmed</li>
+        <li style="${supervisorResult.errors.length ? "color:#dc2626;" : ""}">${supervisorResult.errors.length} row(s) skipped due to issues</li>
+      </ul>
+    `;
+    if (supervisorResult.errors.length > 0) {
+      const shownSup = supervisorResult.errors.slice(0, 50);
+      html += `
+        <p style="font-size:12px; font-weight:600; margin:14px 0 6px; color:#dc2626;">
+          Skipped assignment rows${supervisorResult.errors.length > shownSup.length ? ` (showing first ${shownSup.length} of ${supervisorResult.errors.length})` : ""}:
+        </p>
+        <div style="max-height:160px; overflow-y:auto; border:1px solid #fecaca; border-radius:6px; padding:8px 10px; background:#fef2f2;">
+          ${shownSup.map(e => `
+            <div style="font-size:11px; color:#991b1b; margin-bottom:4px;">
+              Row ${e.row} — <code>${escHtml(e.email)}</code>: ${escHtml(e.issues)}
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
+  } else {
+    html += `
+      <p style="font-size:11.5px; color:#8b98a5; margin:14px 0 0;">
+        No "Supervisors"/"Assignments" sheets found in this file — supervisor links were not touched.
+      </p>
     `;
   }
 
