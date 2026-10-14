@@ -117,7 +117,7 @@ async function computeWeightedSET(teacherId, semesterId) {
         subjectId:     subject.id,
         course:        subject.name,
         section:       subject.sections?.name || "—",
-        noStudents:    subject.enrolled_count || 0,
+        noStudents:    0, // 0 respondents, not enrolled_count — see fix note below
         avgSETRating:  0,
         weightedScore: 0,
         respondents:   0,
@@ -148,29 +148,28 @@ async function computeWeightedSET(teacherId, semesterId) {
 
     const respondents   = evals.length;
     const avgSETRating  = parseFloat((sumRatings / respondents).toFixed(2));
-    let enrolled = subject.enrolled_count || 0;
-    if (enrolled < respondents) {
-      console.warn(
-        `⚠️ ${subject.name}: enrolled_count (${enrolled}) is less than ` +
-        `respondents (${respondents}). Using respondents instead. ` +
-        `Please correct enrolled_count in the subjects table.`
-      );
-      enrolled = respondents;
-    }
-    const weightedScore = parseFloat((enrolled * avgSETRating).toFixed(2));
+    // Weight/divisor = number of students who actually RESPONDED, not
+    // subject.enrolled_count (full class roster). Per QA, the hand-
+    // computed version of this report has always divided by respondents —
+    // enrolled_count stays as roster bookkeeping ("Sync Enrolled" etc.)
+    // but no longer feeds this formula. `totalEnrolled`/`noStudents` keep
+    // their old names below (so the report template and viewReport()'s
+    // "No. of Students" column/explanation text don't need to change),
+    // but the value they carry is now respondents, not enrolled_count.
+    const weightedScore = parseFloat((respondents * avgSETRating).toFixed(2));
 
     classData.push({
       subjectId:     subject.id,
       course:        subject.name,
       section:       subject.sections?.name || "—",
-      noStudents:    enrolled,
+      noStudents:    respondents,
       avgSETRating,
       weightedScore,
       respondents,
     });
 
     totalWeighted    += weightedScore;
-    totalEnrolled    += enrolled;
+    totalEnrolled    += respondents;
     totalRespondents += respondents;
   }
 
@@ -302,9 +301,10 @@ async function loadRankings(opts = {}) {
       });
 
       const avgSETRating  = parseFloat((sumRatings / evals.length).toFixed(2));
-      const enrolledCount = subject.enrolled_count || evals.length;
-      totalWeighted    += avgSETRating * enrolledCount;
-      totalEnrolled    += enrolledCount;
+      // Divisor/weight = respondents (evals.length), not enrolled_count —
+      // same fix as computeWeightedSET() above, same reasoning.
+      totalWeighted    += avgSETRating * evals.length;
+      totalEnrolled    += evals.length;
       totalRespondents += evals.length;
     }
 
@@ -1577,6 +1577,161 @@ async function finalRelease() {
   await fpAlert(`Report released to ${teacherName}.\nThe faculty can now view their evaluation results.`, "success");
   viewReport(teacherId, teacherName);
 }
+
+// ══════════════════════════════════════════════════════════════
+//  BULK ACTIONS — Forward All / Release All
+//
+//  Same per-teacher logic as forwardToSupervisor()/finalRelease() above,
+//  just looped over every teacher in `allRanked` that's currently
+//  eligible, instead of requiring the admin to open each report one at
+//  a time. Each teacher is written one at a time (not a single bulk
+//  query) so one failure doesn't silently affect the others, and the
+//  admin gets a real per-teacher success/fail count instead of an
+//  all-or-nothing result.
+//
+//  NOTE: forwardToSupervisor() computes a per-subject submission-count
+//  summary (extra queries) purely for the confirm dialog's text. That's
+//  skipped here — doing it for every eligible teacher before a single
+//  confirm would mean dozens of extra round trips just to build a
+//  message. The bulk confirm only states the count and what's eligible.
+// ══════════════════════════════════════════════════════════════
+async function bulkForwardToSupervisor() {
+  const { data: semester } = await supabase
+    .from("semesters").select("id").eq("is_active", true).maybeSingle();
+  if (!semester) { await fpAlert("No active semester.", "warning"); return; }
+  const semesterId = semester.id;
+
+  // Eligible = still "pending" (not yet forwarded/reviewed/released).
+  const targets = allRanked.filter(t => (t.stage || "pending") === "pending");
+
+  if (targets.length === 0) {
+    await fpAlert("No faculty reports are waiting to be forwarded — everything eligible has already been forwarded, reviewed, or released.", "info");
+    return;
+  }
+
+  const confirmed = await fpConfirm(
+    `Forward ${targets.length} report(s) to their supervisors?\n\n` +
+    `This forwards every faculty report still in "Pending Review" to the ` +
+    `supervisor assigned to that faculty's department. Reports already ` +
+    `forwarded, reviewed, or released are skipped.`,
+    { confirmLabel: `Forward ${targets.length}`, confirmStyle: "fp-btn-primary" }
+  );
+  if (!confirmed) return;
+
+  const btn = document.getElementById("bulk-forward-btn");
+  if (btn) { btn.textContent = "Forwarding..."; btn.disabled = true; }
+
+  let okCount = 0, failCount = 0;
+  const failedNames = [];
+
+  for (const t of targets) {
+    try {
+      const { data: existing } = await supabase
+        .from("report_releases")
+        .select("id")
+        .eq("teacher_id", t.id)
+        .eq("semester_id", semesterId)
+        .maybeSingle();
+
+      let error;
+      if (existing) {
+        ({ error } = await supabase
+          .from("report_releases")
+          .update({ stage: "forwarded_to_supervisor" })
+          .eq("teacher_id", t.id)
+          .eq("semester_id", semesterId));
+      } else {
+        ({ error } = await supabase
+          .from("report_releases")
+          .insert({
+            teacher_id:  t.id,
+            semester_id: semesterId,
+            released_by: sessionStorage.getItem("name") || "QA Admin",
+            stage:       "forwarded_to_supervisor",
+          }));
+      }
+
+      if (error) throw error;
+      okCount++;
+    } catch (err) {
+      failCount++;
+      failedNames.push(t.name);
+      console.error("Bulk forward failed for", t.name, err);
+    }
+  }
+
+  if (btn) { btn.textContent = "📤 Forward All"; btn.disabled = false; }
+
+  await fpAlert(
+    failCount > 0
+      ? `Forwarded ${okCount} report(s).\n${failCount} failed: ${failedNames.join(", ")}`
+      : `Forwarded ${okCount} report(s) to their supervisors.`,
+    failCount > 0 ? "error" : "success"
+  );
+
+  await loadRankings({ preserve: true });
+}
+
+async function bulkFinalRelease() {
+  const { data: semester } = await supabase
+    .from("semesters").select("id").eq("is_active", true).maybeSingle();
+  if (!semester) { await fpAlert("No active semester.", "warning"); return; }
+  const semesterId = semester.id;
+
+  // Eligible = supervisor has submitted remarks (stage "supervisor_done")
+  // but not yet released — same gate as the single Release button.
+  const targets = allRanked.filter(t => t.stage === "supervisor_done");
+
+  if (targets.length === 0) {
+    await fpAlert("No faculty reports are ready for release — a report only qualifies after its supervisor has submitted remarks.", "info");
+    return;
+  }
+
+  const confirmed = await fpConfirm(
+    `Release ${targets.length} report(s) to faculty?\n\n` +
+    `This publishes every report whose supervisor has already submitted ` +
+    `remarks. Faculty will immediately be able to view their results.\n\n` +
+    `This action cannot be undone.`,
+    { confirmLabel: `Release ${targets.length}`, confirmStyle: "fp-btn-success" }
+  );
+  if (!confirmed) return;
+
+  const btn = document.getElementById("bulk-release-btn");
+  if (btn) { btn.textContent = "Releasing..."; btn.disabled = true; }
+
+  let okCount = 0, failCount = 0;
+  const failedNames = [];
+
+  for (const t of targets) {
+    try {
+      const { error } = await supabase
+        .from("report_releases")
+        .update({ stage: "released" })
+        .eq("teacher_id", t.id)
+        .eq("semester_id", semesterId);
+      if (error) throw error;
+      okCount++;
+    } catch (err) {
+      failCount++;
+      failedNames.push(t.name);
+      console.error("Bulk release failed for", t.name, err);
+    }
+  }
+
+  if (btn) { btn.textContent = "✅ Release All"; btn.disabled = false; }
+
+  await fpAlert(
+    failCount > 0
+      ? `Released ${okCount} report(s).\n${failCount} failed: ${failedNames.join(", ")}`
+      : `Released ${okCount} report(s) to faculty.`,
+    failCount > 0 ? "error" : "success"
+  );
+
+  await loadRankings({ preserve: true });
+}
+
+document.getElementById("bulk-forward-btn")?.addEventListener("click", bulkForwardToSupervisor);
+document.getElementById("bulk-release-btn")?.addEventListener("click", bulkFinalRelease);
 
 window.viewReport = viewReport;
 

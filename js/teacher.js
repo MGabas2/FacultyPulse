@@ -204,7 +204,7 @@ async function loadScores(semesterId) {
     if (!evals || evals.length === 0) {
       classData.push({
         course: subject.name, section: subject.sections?.name || "—",
-        noStudents: subject.enrolled_count || 0,
+        noStudents: 0, // 0 respondents, not enrolled_count — see fix note below
         avgSETRating: 0, weightedScore: 0, respondents: 0,
       });
       continue;
@@ -231,16 +231,20 @@ async function loadScores(semesterId) {
 
     const respondents    = evals.length;
     const avgSETRating   = parseFloat((sumRatings / respondents).toFixed(2));
-    const enrolled       = subject.enrolled_count || respondents;
-    const weightedScore  = parseFloat((enrolled * avgSETRating).toFixed(2));
+    // Weight/divisor = respondents, not enrolled_count — same fix as
+    // admin.js's computeWeightedSET()/loadRankings(). `totalEnrolled`/
+    // `noStudents` keep their old names so renderClassTable()'s text
+    // ("Overall SET = ... ÷ totalEnrolled") doesn't need to change, but
+    // the value is now respondents.
+    const weightedScore  = parseFloat((respondents * avgSETRating).toFixed(2));
 
     classData.push({
       course: subject.name, section: subject.sections?.name || "—",
-      noStudents: enrolled, avgSETRating, weightedScore, respondents,
+      noStudents: respondents, avgSETRating, weightedScore, respondents,
     });
 
     totalWeighted    += weightedScore;
-    totalEnrolled    += enrolled;
+    totalEnrolled    += respondents;
     totalRespondents += respondents;
   }
 
