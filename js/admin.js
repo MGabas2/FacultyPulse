@@ -118,6 +118,7 @@ async function computeWeightedSET(teacherId, semesterId) {
         course:        subject.name,
         section:       subject.sections?.name || "—",
         noStudents:    0, // 0 respondents, not enrolled_count — see fix note below
+        enrolledCount: subject.enrolled_count || 0, // roster size, for display only
         avgSETRating:  0,
         weightedScore: 0,
         respondents:   0,
@@ -163,6 +164,7 @@ async function computeWeightedSET(teacherId, semesterId) {
       course:        subject.name,
       section:       subject.sections?.name || "—",
       noStudents:    respondents,
+      enrolledCount: subject.enrolled_count || 0, // roster size, for display only
       avgSETRating,
       weightedScore,
       respondents,
@@ -642,7 +644,7 @@ async function viewReport(teacherId, teacherName) {
           <p style="font-weight:600; font-size:12px; color:#334155; margin:0 0 6px;">
             ${escHtml(c.course)} (${escHtml(c.section)})
             — ${evals.length} respondent${evals.length !== 1 ? "s" : ""}
-            out of ${c.noStudents} enrolled
+            out of ${c.enrolledCount} enrolled
             | Avg SET: <b>${c.avgSETRating.toFixed(2)}</b>
             | Weighted: <b>${c.weightedScore.toFixed(2)}</b>
           </p>`;
