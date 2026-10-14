@@ -160,11 +160,23 @@ async function init() {
   // this specific student takes." Also pull section name/department here
   // so the eval modal's "A. Faculty Information" block (College/Department,
   // Program Level) can be filled in without a second query per subject.
-  const { data: enrollmentRows, error } = await supabase
-    .from("student_subjects")
-    .select("subjects(id, name, users(name), sections(name, department))")
-    .eq("student_id", studentId)
-    .eq("semester_id", semester.id);
+  // These two queries don't depend on each other — both only need
+  // studentId and semester.id, which we already have — so they're fired
+  // together instead of one after another. That cuts one full network
+  // round trip off every dashboard load (noticeable from a high-latency
+  // connection, where each sequential round trip adds up).
+  const [{ data: enrollmentRows, error }, { data: done }] = await Promise.all([
+    supabase
+      .from("student_subjects")
+      .select("subjects(id, name, users(name), sections(name, department))")
+      .eq("student_id", studentId)
+      .eq("semester_id", semester.id),
+    supabase
+      .from("evaluation_tracking")
+      .select("subject_id")
+      .eq("student_id", studentId)
+      .eq("semester_id", semester.id),
+  ]);
 
   const subs = (enrollmentRows || []).map(r => r.subjects).filter(Boolean);
 
@@ -176,13 +188,6 @@ async function init() {
   }
 
   subjects = subs;
-
-  // Check which subjects already submitted in DB
-  const { data: done } = await supabase
-    .from("evaluation_tracking")
-    .select("subject_id")
-    .eq("student_id", studentId)
-    .eq("semester_id", semester.id);
 
   submittedIds = new Set((done || []).map(e => e.subject_id));
 
