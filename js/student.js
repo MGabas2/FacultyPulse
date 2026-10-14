@@ -734,51 +734,29 @@ async function submitAll() {
   for (const sub of toSubmit) {
     const draft = drafts[sub.id];
     try {
-      // Step 1: Tracking (guard against double submit)
-      const { error: trackError } = await supabase
-        .from("evaluation_tracking")
-        .insert({
-          student_id:  studentId,
-          subject_id:  sub.id,
-          semester_id: activeSemId,
-        });
+      // All three writes (tracking + scores + comment) happen inside one
+      // Postgres transaction via the submit_evaluation() RPC — either all
+      // of them commit or none do. This replaces the old three-separate-
+      // insert sequence, which could leave a tracking row with no matching
+      // scores row if the connection dropped mid-submit (a real risk on
+      // campus Wi-Fi/mobile data), silently losing that evaluation on retry.
+      const { error: submitError } = await supabase.rpc("submit_evaluation", {
+        p_student_id:  studentId,
+        p_subject_id:  sub.id,
+        p_semester_id: activeSemId,
+        p_scores:      draft.scores,
+        p_comment:     draft.comment || null,
+      });
 
-      if (trackError) {
-        if (trackError.code === "23505") {
+      if (submitError) {
+        if (submitError.code === "23505") {
           // Already submitted — mark done and continue
           submittedIds.add(sub.id);
           delete drafts[sub.id];
           successCount++;
           continue;
         }
-        throw new Error(trackError.message);
-      }
-
-      // Step 2: Scores (identity-free)
-      const { error: scoreError } = await supabase
-        .from("evaluation_scores")
-        .insert({
-          subject_id:  sub.id,
-          semester_id: activeSemId,
-          scores:      draft.scores,
-        });
-
-      if (scoreError) {
-        // Rollback tracking
-        await supabase.from("evaluation_tracking").delete()
-          .eq("student_id",  studentId)
-          .eq("subject_id",  sub.id)
-          .eq("semester_id", activeSemId);
-        throw new Error(scoreError.message);
-      }
-
-      // Step 3: Comment (best-effort, identity-free)
-      if (draft.comment) {
-        await supabase.from("evaluation_comments").insert({
-          subject_id:  sub.id,
-          semester_id: activeSemId,
-          comment:     draft.comment,
-        });
+        throw new Error(submitError.message);
       }
 
       submittedIds.add(sub.id);
