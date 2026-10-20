@@ -527,7 +527,7 @@ async function viewReport(teacherId, teacherName) {
     { data: teacher },
     { data: deptSubject },
     result,
-    { data: supRemarks },
+    { data: supRemarksRows },
     { data: fedaf },
   ] = await Promise.all([
     supabase
@@ -550,12 +550,14 @@ async function viewReport(teacherId, teacherName) {
     computeWeightedSET(teacherId, semester.id),
     supabase
       .from("supervisor_remarks")
-      .select("sef_score, comments, remarks")
+      // ALL rows, not just the latest — a faculty member can have 2+
+      // assigned supervisors (supervisor_assignments) each submitting
+      // their own row; averaged below instead of showing whichever one
+      // happened to be submitted most recently.
+      .select("sef_score, comments, remarks, submitted_at, supervisor_id")
       .eq("teacher_id", teacherId)
       .eq("semester_id", semester.id)
-      .order("submitted_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .order("submitted_at", { ascending: false }),
     supabase
       .from("fedaf")
       .select("areas_improvement, proposed_activities, action_plan, supervisor_signed")
@@ -577,11 +579,24 @@ async function viewReport(teacherId, teacherName) {
   const { overallSET, classData, totalEnrolled, totalWeighted,
           avgA, avgB, avgC, rawScoresBySubject } = result;
 
-  const sefRating      = supRemarks?.sef_score != null
-    ? Number(supRemarks.sef_score).toFixed(2)
+  // With 2+ assigned supervisors, each one submits their own
+  // supervisor_remarks row — the faculty's SEF rating is the AVERAGE of
+  // every submitted score, not whichever row happened to be most recent.
+  // Comments/remarks from multiple supervisors are concatenated (labeled
+  // when there's more than one) rather than only showing the latest.
+  const scoredRows = (supRemarksRows || []).filter(r => r.sef_score != null);
+  const sefRating  = scoredRows.length > 0
+    ? (scoredRows.reduce((sum, r) => sum + Number(r.sef_score), 0) / scoredRows.length).toFixed(2)
     : "—";
-  const supComments    = supRemarks?.comments || "";
-  const supRemarksTxt  = supRemarks?.remarks  || "";
+  const multipleSupervisors = (supRemarksRows || []).length > 1;
+  const supComments   = (supRemarksRows || [])
+    .filter(r => r.comments)
+    .map(r => multipleSupervisors ? `• ${r.comments}` : r.comments)
+    .join("\n");
+  const supRemarksTxt = (supRemarksRows || [])
+    .filter(r => r.remarks)
+    .map(r => multipleSupervisors ? `• ${r.remarks}` : r.remarks)
+    .join("\n");
 
   // rawScoresBySubject now comes straight from computeWeightedSET(), which
   // already fetched each subject's evaluation_scores (with submitted_at) —
@@ -724,12 +739,12 @@ async function viewReport(teacherId, teacherName) {
               Supervisor's Evaluation of Faculty (SEF) — Summary
             </p>`;
 
-    if (supRemarks) {
+    if ((supRemarksRows || []).length > 0) {
       html += `
             <table style="border-collapse:collapse; font-size:12px; width:100%; max-width:420px; margin-bottom:12px;">
               <tr>
                 <td style="border:1px solid #cbd5e1; padding:8px 12px; background:#f8fafc;
-                  font-weight:600; color:#334155;">Overall SEF Rating</td>
+                  font-weight:600; color:#334155;">Overall SEF Rating${multipleSupervisors ? ` (avg. of ${scoredRows.length})` : ""}</td>
                 <td style="border:1px solid #cbd5e1; padding:8px 12px; text-align:center;
                   font-weight:700; font-size:15px; color:#1e40af;">${sefRating}</td>
               </tr>
@@ -737,16 +752,16 @@ async function viewReport(teacherId, teacherName) {
                 <td style="border:1px solid #cbd5e1; padding:8px 12px; background:#f8fafc;
                   font-weight:600; color:#334155; vertical-align:top;">Supervisor Comments</td>
                 <td style="border:1px solid #cbd5e1; padding:8px 12px; color:#334155;
-                  font-size:11px; line-height:1.6;">
-                  ${supRemarks.comments ? escHtml(supRemarks.comments) : "<em style='color:#94a3b8;'>No comments submitted.</em>"}
+                  font-size:11px; line-height:1.6; white-space:pre-line;">
+                  ${supComments ? escHtml(supComments) : "<em style='color:#94a3b8;'>No comments submitted.</em>"}
                 </td>
               </tr>
               <tr>
                 <td style="border:1px solid #cbd5e1; padding:8px 12px; background:#f8fafc;
                   font-weight:600; color:#334155; vertical-align:top;">Supervisor Remarks</td>
                 <td style="border:1px solid #cbd5e1; padding:8px 12px; color:#334155;
-                  font-size:11px; line-height:1.6;">
-                  ${supRemarks.remarks ? escHtml(supRemarks.remarks) : "<em style='color:#94a3b8;'>No remarks submitted.</em>"}
+                  font-size:11px; line-height:1.6; white-space:pre-line;">
+                  ${supRemarksTxt ? escHtml(supRemarksTxt) : "<em style='color:#94a3b8;'>No remarks submitted.</em>"}
                 </td>
               </tr>
             </table>

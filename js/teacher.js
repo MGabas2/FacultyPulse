@@ -624,33 +624,44 @@ async function loadSupervisorRemarks(semesterId) {
   if (sefCardReset)     sefCardReset.style.display     = "none";
   if (remarksCardReset) remarksCardReset.style.display = "none";
 
-  const { data: remarks } = await supabase
+  // ALL rows, not just the latest — 2+ assigned supervisors each submit
+  // their own row, and the rating shown here is their AVERAGE, not
+  // whichever one happened to submit most recently.
+  const { data: remarksRows } = await supabase
     .from("supervisor_remarks")
     .select("sef_score, remarks, submitted_at")
     .eq("teacher_id", userId)
     .eq("semester_id", semesterId)
-    .order("submitted_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order("submitted_at", { ascending: false });
 
-  if (!remarks) return;
+  if (!remarksRows || remarksRows.length === 0) return;
+
+  const multipleSupervisors = remarksRows.length > 1;
+  const scoredRows = remarksRows.filter(r => r.sef_score != null);
+  const avgScore = scoredRows.length > 0
+    ? scoredRows.reduce((sum, r) => sum + Number(r.sef_score), 0) / scoredRows.length
+    : null;
 
   // SEF card
-  if (remarks.sef_score) {
+  if (avgScore != null) {
     const sefCard = document.getElementById("sef-card");
     if (sefCard) sefCard.style.display = "block";
     const sefEl = document.getElementById("sef-rating");
     const sefLb = document.getElementById("sef-label");
-    if (sefEl) { sefEl.textContent = remarks.sef_score; sefEl.style.color = getRatingColor(remarks.sef_score); }
-    if (sefLb)   sefLb.textContent = getRatingLabel(remarks.sef_score);
+    if (sefEl) { sefEl.textContent = avgScore.toFixed(2); sefEl.style.color = getRatingColor(avgScore); }
+    if (sefLb)   sefLb.textContent = getRatingLabel(avgScore) + (multipleSupervisors ? ` (avg. of ${scoredRows.length} supervisors)` : "");
   }
 
-  // Remarks card
-  if (remarks.remarks) {
+  // Remarks card — concatenated when more than one supervisor submitted.
+  const remarksText = remarksRows
+    .filter(r => r.remarks)
+    .map(r => multipleSupervisors ? `• ${r.remarks}` : r.remarks)
+    .join("\n");
+  if (remarksText) {
     const remarksCard = document.getElementById("remarks-card");
     const remarksBox  = document.getElementById("supervisor-remarks-box");
     if (remarksCard) remarksCard.style.display = "block";
-    if (remarksBox)  remarksBox.textContent = remarks.remarks;
+    if (remarksBox)  remarksBox.textContent = remarksText;
   }
 }
 

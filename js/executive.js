@@ -167,15 +167,15 @@ async function loadProgramSummary(semesterId) {
     return;
   }
 
-  // ── Latest SEF score per released teacher (supervisor_remarks.sef_score).
-  //    A teacher may have several supervisor_remarks rows over time; take
-  //    the most recent by submitted_at, same as admin.js's viewReport(). ──
+  // ── SEF score per released teacher (supervisor_remarks.sef_score).
+  //    A teacher can have 2+ assigned supervisors each submitting their
+  //    own row for the same semester — the rating used here is the
+  //    AVERAGE of all of them, not just the most recently submitted one. ──
   const { data: sefRows, error: sefError } = await supabase
     .from("supervisor_remarks")
     .select("teacher_id, sef_score, submitted_at")
     .eq("semester_id", semesterId)
-    .in("teacher_id", [...releasedTeacherIds])
-    .order("submitted_at", { ascending: false });
+    .in("teacher_id", [...releasedTeacherIds]);
 
   if (sefError) {
     container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Error loading SEF scores: ${escHtml(sefError.message)}</p></div>`;
@@ -185,11 +185,15 @@ async function loadProgramSummary(semesterId) {
     return;
   }
 
-  const sefByTeacher = new Map(); // teacher_id -> latest sef_score (or undefined if never a number)
+  const sefScoresByTeacher = new Map(); // teacher_id -> [score, score, ...]
   (sefRows || []).forEach(r => {
-    if (!sefByTeacher.has(r.teacher_id) && r.sef_score != null) {
-      sefByTeacher.set(r.teacher_id, Number(r.sef_score));
-    }
+    if (r.sef_score == null) return;
+    if (!sefScoresByTeacher.has(r.teacher_id)) sefScoresByTeacher.set(r.teacher_id, []);
+    sefScoresByTeacher.get(r.teacher_id).push(Number(r.sef_score));
+  });
+  const sefByTeacher = new Map(); // teacher_id -> average sef_score
+  sefScoresByTeacher.forEach((scores, teacherId) => {
+    sefByTeacher.set(teacherId, scores.reduce((a, b) => a + b, 0) / scores.length);
   });
 
   const scoresBySubject = new Map();
@@ -516,15 +520,17 @@ async function openFacultyReport(teacherId, teacherName) {
     { data: teacher },
     { data: deptSubject },
     result,
-    { data: supRemarks },
+    { data: supRemarksRows },
     { data: fedaf },
   ] = await Promise.all([
     supabase.from("users").select("name, academic_rank").eq("id", teacherId).single(),
     supabase.from("subjects").select("sections(department)").eq("teacher_id", teacherId).eq("semester_id", semesterId).limit(1).maybeSingle(),
     computeWeightedSET(teacherId, semesterId),
+    // ALL rows — 2+ assigned supervisors each submit their own; averaged
+    // below instead of only showing the most recently submitted one.
     supabase.from("supervisor_remarks").select("sef_score, comments, remarks")
       .eq("teacher_id", teacherId).eq("semester_id", semesterId)
-      .order("submitted_at", { ascending: false }).limit(1).maybeSingle(),
+      .order("submitted_at", { ascending: false }),
     supabase.from("fedaf").select("areas_improvement, proposed_activities, action_plan, supervisor_signed")
       .eq("teacher_id", teacherId).eq("semester_id", semesterId).maybeSingle(),
   ]);
@@ -537,7 +543,18 @@ async function openFacultyReport(teacherId, teacherName) {
   }
 
   const { overallSET, classData, totalEnrolled, totalWeighted, avgA, avgB, avgC } = result;
-  const sefRating = supRemarks?.sef_score != null ? Number(supRemarks.sef_score).toFixed(2) : "—";
+  const multipleSupervisors = (supRemarksRows || []).length > 1;
+  const scoredSupRows = (supRemarksRows || []).filter(r => r.sef_score != null);
+  const sefRating = scoredSupRows.length > 0
+    ? (scoredSupRows.reduce((sum, r) => sum + Number(r.sef_score), 0) / scoredSupRows.length).toFixed(2)
+    : "—";
+  // Kept as a single object so the comment-splitting logic further down
+  // doesn't need to change — just fed the concatenated text instead of
+  // one supervisor's text.
+  const supRemarks = {
+    comments: (supRemarksRows || []).filter(r => r.comments).map(r => multipleSupervisors ? `• ${r.comments}` : r.comments).join("\n"),
+    remarks:  (supRemarksRows || []).filter(r => r.remarks).map(r => multipleSupervisors ? `• ${r.remarks}` : r.remarks).join("\n"),
+  };
 
   const subjectIds = (result.subjects || []).map(s => s.id);
   let studentComments = [];

@@ -221,8 +221,26 @@ async function loadForwardedReports() {
     return;
   }
 
-  const pending = releases.filter(r => r.stage === "forwarded_to_supervisor").length;
-  const done    = releases.filter(r => r.stage === "supervisor_done").length;
+  // ── Per-SUPERVISOR done status, not the shared report_releases.stage ──
+  // A faculty member can now have 2+ assigned supervisors (supervisor_
+  // assignments), and report_releases.stage flips to "supervisor_done" the
+  // moment ANY one of them submits — it's a single shared row per teacher,
+  // not per supervisor. Using that stage directly here would lock every
+  // OTHER assigned supervisor out of the form entirely (they'd just see
+  // "View Submission" showing someone else's rating, with no way to add
+  // their own). What actually gates MY form vs MY submitted-view is
+  // whether *I* have a row in supervisor_remarks for this teacher — so
+  // fetch that separately and use it instead of release.stage.
+  const { data: myRemarks } = await supabase
+    .from("supervisor_remarks")
+    .select("teacher_id")
+    .eq("supervisor_id", supervisorId)
+    .eq("semester_id", semester.id)
+    .in("teacher_id", assignedTeacherIds);
+  const myDoneIds = new Set((myRemarks || []).map(r => r.teacher_id));
+
+  const pending = releases.filter(r => !myDoneIds.has(r.teacher_id)).length;
+  const done    = releases.filter(r =>  myDoneIds.has(r.teacher_id)).length;
   document.getElementById("count-pending").textContent = pending;
   document.getElementById("count-done").textContent    = done;
   document.getElementById("count-total").textContent   = releases.length;
@@ -232,7 +250,7 @@ async function loadForwardedReports() {
     const teacherName = release.users?.name || "Unknown Faculty";
     const teacherRank = release.users?.academic_rank || "";
     const teacherDept = release.users?.department || "";
-    const isDone      = release.stage === "supervisor_done";
+    const isDone      = myDoneIds.has(release.teacher_id);
     const safeId      = release.teacher_id;
     const safeName    = escapeHtml(teacherName).replace(/'/g,"\\'");
     const safeRank    = escapeHtml(teacherRank).replace(/'/g,"\\'");
@@ -311,11 +329,16 @@ async function openReview(teacherId, teacherName, isDone, academicRank, departme
 
   if (isDone) {
     // Load existing submission
+    // Scoped to MY OWN supervisor_id — with 2+ supervisors on this teacher,
+    // "my existing submission" must never show a different supervisor's
+    // rating as if it were mine (that previously had no supervisor_id
+    // filter at all, so whichever submission existed showed for everyone).
     const { data: existing } = await supabase
       .from("supervisor_remarks")
       .select("comments, remarks, sef_score")
       .eq("teacher_id", teacherId)
       .eq("semester_id", activeSemester.id)
+      .eq("supervisor_id", supervisorId)
       .order("submitted_at", { ascending: false })
       .limit(1)
       .maybeSingle();
