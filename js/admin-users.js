@@ -1755,7 +1755,7 @@ async function runSupervisorAssignmentImport(workbook) {
   // ── Re-fetch current users so a teacher created earlier in THIS SAME
   //    import run is already linkable, and so a supervisor added to the
   //    system moments ago (by another admin, another tab) is seen too. ──
-  const { data: existingUsers, error: existingError } = await fetchAllRows("users", "id, email, role");
+  const { data: existingUsers, error: existingError } = await fetchAllRows("users", "id, email, role, department");
   if (existingError) {
     errors.push({ row: "-", email: "-", issues: "Could not check accounts: " + existingError.message });
     return { linked: 0, errors, totalRows: asnRows.length, createdSupervisors: [], grantedSupervisors: [] };
@@ -1951,7 +1951,13 @@ async function runSupervisorAssignmentImport(workbook) {
         // The teacher's own id IS the supervisor_id going forward — no
         // separate account, so supervisorByEmail just points at the same row.
         supervisorByEmail.set(email, { id: teacherRow.id, email, role: "teacher" });
-        grantedSupervisors.push({ name: info.name || teacherRow.email, email });
+        grantedSupervisors.push({
+          name: info.name || teacherRow.email, email,
+          // Department plays NO role in who they can see/supervise — that's
+          // entirely supervisor_assignments — so a blank one here is a
+          // data-quality flag only, never a reason this grant should fail.
+          departmentMissing: !teacherRow.department,
+        });
       }
     }
   }
@@ -2235,17 +2241,27 @@ function renderFacultyImportSummary({ created, updated, duplicateRows = 0, error
             <thead><tr>
               <th style="padding:6px 8px;">Name</th>
               <th style="padding:6px 8px;">Email</th>
+              <th style="padding:6px 8px;">Department</th>
             </tr></thead>
             <tbody>
               ${grantedSups.map(g => `
                 <tr>
                   <td style="padding:6px 8px;">${escHtml(g.name)}</td>
                   <td style="padding:6px 8px;">${escHtml(g.email)}</td>
+                  <td style="padding:6px 8px; ${g.departmentMissing ? "color:#b45309; font-weight:600;" : ""}">
+                    ${g.departmentMissing ? "⚠️ blank — check Faculty Profile sheet" : "OK"}
+                  </td>
                 </tr>
               `).join("")}
             </tbody>
           </table>
         </div>
+        ${grantedSups.some(g => g.departmentMissing) ? `
+          <p style="font-size:11px; color:#92400e; margin:6px 0 0;">
+            Blank department is a data-quality flag only — it does NOT affect who they can see or supervise
+            (that's entirely supervisor_assignments), it's just display info worth fixing.
+          </p>
+        ` : ""}
       `;
     }
 
