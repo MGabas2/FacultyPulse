@@ -745,8 +745,15 @@ async function submitAll() {
       // insert sequence, which could leave a tracking row with no matching
       // scores row if the connection dropped mid-submit (a real risk on
       // campus Wi-Fi/mobile data), silently losing that evaluation on retry.
+      // submit_evaluation()'s p_student_id parameter is typed uuid in
+      // Postgres (it looks the student up by users.id internally) — NOT
+      // the human-readable Student ID text ("2023-1154-AB") that the
+      // `studentId` variable above holds. sessionStorage.userId (set by
+      // login.js's finalizeStudentLogin) is the real UUID; passing
+      // `studentId` here throws "invalid input syntax for type uuid" on
+      // every submission attempt.
       const { error: submitError } = await supabase.rpc("submit_evaluation", {
-        p_student_id:  studentId,
+        p_student_id:  sessionStorage.getItem("userId"),
         p_subject_id:  sub.id,
         p_semester_id: activeSemId,
         p_scores:      draft.scores,
