@@ -624,11 +624,16 @@
           <p style="font-size:12px; color:var(--slate); background:var(--panel); border:1px solid var(--hairline); border-radius:6px; padding:8px 10px; margin-bottom:10px;">
             To also link faculty to their supervisors, include "Supervisors"
             and "Assignments" sheets in the same workbook (Supervisor Code +
-            Supervisor Email on one, Supervisor Code + Faculty Email
-            (Supervised) on the other). Both the supervisor and the faculty
-            account must already exist — this step only links existing
-            accounts, it never creates a supervisor account. A faculty can be
-            linked to more than one supervisor if the sheet lists them twice.
+            Supervisor Email + Supervisor Name on one, Supervisor Code +
+            Faculty Email (Supervised) on the other). The faculty account
+            must already exist. A supervisor account can be <b>auto-created</b>
+            if it doesn't exist yet — you'll see an on-screen confirmation
+            listing exactly which new supervisor accounts are about to be
+            created (check it carefully, a typo there creates a real account
+            with supervisor-level access) before anything is written, and
+            any new account's one-time password will be shown in the summary
+            below, same as new faculty accounts. A faculty can be linked to
+            more than one supervisor if the sheet lists them twice.
           </p>
           <button id="faculty-import-choose-file-btn">Choose File…</button>
           <p id="faculty-roster-import-status" style="font-size:13px; color:var(--slate); min-height:18px; margin-top:8px;"></p>
@@ -893,6 +898,35 @@
             <button id="refresh-btn-subjects" style="font-size:12px; padding:5px 10px;">🔄 Refresh</button>
           </h2>
 
+          <!-- Bulk teaching-load import — two paths into the SAME
+               match-then-apply pipeline (runFacultyImportMatch in admin.js):
+               nothing is written to subjects.teacher_id until the admin
+               reviews the preview and clicks Apply. These two buttons and
+               faculty-import-preview below were previously missing from
+               this page even though admin.js fully wires them up — same
+               root cause as the earlier missing Import Faculty button. -->
+          <div class="section" style="padding:14px 16px; margin-bottom:12px;">
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+              <button id="faculty-import-btn" class="btn-secondary" style="white-space:nowrap;"
+                title="Match teachers to subjects straight from the raw FACULTY_INFORMATION.xlsx registrar export">
+                📥 Import from Registrar Export
+              </button>
+              <input type="file" id="faculty-import-file-input" accept=".xlsx" style="display:none;" />
+              <button id="faculty-template-import-btn" class="btn-secondary" style="white-space:nowrap;"
+                title="Match teachers to subjects from the Faculty Profile Import Template (Course Code1, Year Level and Section1, Program Suffix1, ...)">
+                📥 Import from Manual Template
+              </button>
+              <input type="file" id="faculty-template-import-file-input" accept=".xlsx" style="display:none;" />
+            </div>
+            <p style="font-size:11.5px; color:var(--slate); margin:8px 0 0;">
+              Both match against <b>this semester's</b> subjects by course code, year level, and program
+              — nothing is written until you review the preview below and click Apply. Rows that can't
+              be matched automatically (unknown course code, no teacher account with that name, wrong
+              year level/program) are listed for manual review instead of being skipped silently.
+            </p>
+            <p id="faculty-import-status" style="font-size:13px; color:var(--slate); min-height:18px; margin-top:8px;"></p>
+            <div id="faculty-import-preview" style="display:none; margin-top:10px;"></div>
+          </div>
 
           <div class="section">
             <div class="subject-assign-scope-row">

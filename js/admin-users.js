@@ -641,29 +641,19 @@ async function saveUser() {
         return;
       }
 
-      // Exactly one supervisor per department (the program chair) is the
-      // assumed model — a second supervisor on the same department would
-      // silently give both of them the exact same faculty list, which
-      // isn't "co-supervision" by design here, it's a data-entry mistake.
-      if (role === "supervisor") {
-        const { data: existingSup, error: checkError } = await supabase
-          .from("users")
-          .select("id, name")
-          .eq("role", "supervisor")
-          .eq("department", department)
-          .eq("is_active", true)
-          .maybeSingle();
-        if (checkError) {
-          errorEl.textContent = "Failed to check existing supervisors: " + checkError.message;
-          return;
-        }
-        if (existingSup) {
-          errorEl.textContent =
-            `${existingSup.name} is already the active supervisor for ${department}. ` +
-            `Archive them first if you're replacing them, or pick a different department.`;
-          return;
-        }
-      }
+      // NOTE: this used to enforce "exactly one active supervisor per
+      // department" here — a holdover from the old department-match
+      // access-control model. That model was replaced on 2026-10-12 by
+      // the supervisor_assignments link table (see supervisor.js), which
+      // explicitly supports multiple supervisors per department and even
+      // multiple supervisors on the same faculty member. The old check
+      // was never removed when the model changed, so it was silently
+      // blocking valid real-world cases (e.g. one HTM chair covering both
+      // BSTM and BSHM, or two co-supervisors over the same roster) with an
+      // error message describing a rule the rest of the system no longer
+      // follows. Department is kept below as a descriptive/display field
+      // only for supervisors — it plays no role in who they can see or
+      // supervise; that's entirely determined by supervisor_assignments.
 
       const insertData = {
         role, name, email,
@@ -1621,15 +1611,23 @@ async function handleFacultyImportFile(e) {
 //  SUPERVISOR ASSIGNMENTS — "Supervisors" + "Assignments" sheets,
 //  read from the SAME workbook as the Faculty Profile import.
 //
-//  Lookup-only, by design (2026-10-12): unlike faculty rows, neither a
-//  Supervisor Code's email nor a Faculty Email auto-creates an account.
-//  Both must already exist as real users (role=supervisor / role=teacher
-//  respectively) — a supervisor account has more access than a teacher
-//  account, so silently creating one from a typo'd spreadsheet row is a
-//  bigger mistake than silently creating a teacher account would be. Add
-//  supervisors manually via + Add User first; faculty rows in the SAME
-//  file are resolved AFTER the Faculty Profile sheet above has run, so a
-//  brand-new teacher in this same import is already eligible to be linked.
+//  Confirm-then-create (2026-10-20, supersedes the 2026-10-12 lookup-only
+//  design): a Supervisor Code's email can now auto-create a supervisor
+//  account, same as faculty rows do — but ONLY after the admin explicitly
+//  confirms a preview listing exactly which new accounts are about to be
+//  created. A supervisor account has more access than a teacher account,
+//  so silently creating one from a typo'd spreadsheet row is a bigger
+//  mistake than silently creating a teacher account would be — the
+//  confirmation step is what makes a typo something the admin SEES and can
+//  cancel, instead of something that happens invisibly. Decline the
+//  confirmation (or cancel it) and those rows fall back to the old
+//  behavior: skipped with "add them via + Add User first".
+//
+//  Faculty Email rows are still lookup-only — that side is already
+//  covered by the Faculty Profile import earlier in this same run, so an
+//  unresolved faculty email means a real data problem (wrong sheet, typo,
+//  import order), not something to paper over by creating a phantom
+//  teacher account with no profile data behind it.
 //
 //  Sheets are optional — a plain Faculty Profile-only file (the old
 //  format) still imports fine; these two sheets are just skipped if absent.
@@ -1649,22 +1647,29 @@ async function runSupervisorAssignmentImport(workbook) {
 
   const errors = [];
 
-  // ── Resolve Supervisor Code -> email, from the Supervisors sheet ──
+  // ── Resolve Supervisor Code -> email/name, from the Supervisors sheet ──
+  // "Supervisor Name" is read from whichever of these headers is present;
+  // older files that only ever had it as a "(reference only)" column still
+  // work, since the name is now actually used (for a newly-created
+  // account's display name), not just decorative.
   const codeToEmail = new Map();
+  const codeToName  = new Map();
   supRows.forEach((row, i) => {
     const rowNum = i + 2;
     const code  = cleanOptionalText(row["Supervisor Code"]);
     const email = cleanOptionalText(row["Supervisor Email"]).toLowerCase();
+    const name  = cleanOptionalText(row["Supervisor Name"] || row["Supervisor Name (reference only)"]);
     if (!code || !email) return; // blank trailing rows — not an error, just skip
     if (codeToEmail.has(code)) {
       errors.push({ row: rowNum, email, issues: `Supervisor Code "${code}" is used more than once in the Supervisors sheet` });
       return;
     }
     codeToEmail.set(code, email);
+    if (name) codeToName.set(code, name);
   });
 
   if (asnRows.length === 0) {
-    return { linked: 0, errors, totalRows: 0 };
+    return { linked: 0, errors, totalRows: 0, createdSupervisors: [] };
   }
 
   // ── Re-fetch current users so a teacher created earlier in THIS SAME
@@ -1673,7 +1678,7 @@ async function runSupervisorAssignmentImport(workbook) {
   const { data: existingUsers, error: existingError } = await fetchAllRows("users", "id, email, role");
   if (existingError) {
     errors.push({ row: "-", email: "-", issues: "Could not check accounts: " + existingError.message });
-    return { linked: 0, errors, totalRows: asnRows.length };
+    return { linked: 0, errors, totalRows: asnRows.length, createdSupervisors: [] };
   }
   const supervisorByEmail = new Map(
     (existingUsers || []).filter(u => u.role === "supervisor" && u.email).map(u => [u.email.toLowerCase(), u])
@@ -1681,8 +1686,18 @@ async function runSupervisorAssignmentImport(workbook) {
   const teacherByEmail = new Map(
     (existingUsers || []).filter(u => u.role === "teacher" && u.email).map(u => [u.email.toLowerCase(), u])
   );
+  // A different role already owns that email — never silently create a
+  // second account over it (mirrors the faculty importer's same guard).
+  const otherRoleEmails = new Set(
+    (existingUsers || []).filter(u => u.role !== "supervisor" && u.email).map(u => u.email.toLowerCase())
+  );
 
-  const toLink = [];
+  // ── Pass 1: resolve what we can, and collect which supervisor emails
+  //    are referenced but don't have an account yet (candidates to
+  //    create, pending the admin's confirmation below). ──
+  const pending = []; // { rowNum, facultyEmail, supEmail, teacher }
+  const neededSupEmails = new Map(); // email -> { name, rows: [rowNum,...] }
+
   asnRows.forEach((row, i) => {
     const rowNum = i + 2;
     const code = cleanOptionalText(row["Supervisor Code"]);
@@ -1695,13 +1710,112 @@ async function runSupervisorAssignmentImport(workbook) {
     const supEmail = codeToEmail.get(code);
     if (!supEmail) { errors.push({ row: rowNum, email: facultyEmail, issues: `Supervisor Code "${code}" not found in the Supervisors sheet` }); return; }
 
-    const supervisor = supervisorByEmail.get(supEmail);
-    if (!supervisor) { errors.push({ row: rowNum, email: facultyEmail, issues: `No existing supervisor account for "${supEmail}" — add them via + Add User first` }); return; }
-
     const teacher = teacherByEmail.get(facultyEmail);
     if (!teacher) { errors.push({ row: rowNum, email: facultyEmail, issues: `No existing teacher account for this email — check it's on the Faculty Profile sheet and was imported successfully` }); return; }
 
-    toLink.push({ supervisor_id: supervisor.id, teacher_id: teacher.id, row: rowNum, email: facultyEmail });
+    // A supervisor who is ALSO a teacher (e.g. a department chair with a
+    // teaching load) must never be linked to supervise their own faculty
+    // account — that would let them submit their own SEF and potentially
+    // see their own students' SET scores before official release. Teacher
+    // and supervisor accounts are separate rows/emails by design, so this
+    // only fires if the SAME email appears as both a Supervisor Email and
+    // a Faculty Email, which is always a data-entry mistake, not a valid
+    // "I supervise myself" case.
+    if (supEmail === facultyEmail) {
+      errors.push({ row: rowNum, email: facultyEmail, issues: `"${supEmail}" is listed as both the supervisor and the faculty being supervised on this row — a supervisor can't be assigned over themselves` });
+      return;
+    }
+
+    if (otherRoleEmails.has(supEmail)) {
+      errors.push({ row: rowNum, email: facultyEmail, issues: `"${supEmail}" already exists as a non-supervisor account — can't create a supervisor account over it` });
+      return;
+    }
+
+    if (!supervisorByEmail.has(supEmail)) {
+      const entry = neededSupEmails.get(supEmail) || { name: codeToName.get(code) || "", rows: [] };
+      entry.rows.push(rowNum);
+      neededSupEmails.set(supEmail, entry);
+    }
+
+    pending.push({ rowNum, facultyEmail, supEmail, teacher });
+  });
+
+  // ── Confirm-then-create: show the admin exactly which new supervisor
+  //    accounts are about to be created, before anything is written. ──
+  const createdSupervisors = [];
+  if (neededSupEmails.size > 0) {
+    const previewLines = [...neededSupEmails.entries()]
+      .map(([email, info]) => `• ${info.name ? info.name + " — " : ""}${email}`)
+      .join("\n");
+    const proceed = await fpConfirm(
+      `${neededSupEmails.size} supervisor account(s) referenced in the Assignments sheet ` +
+      `don't exist yet and will be CREATED with a random password:\n\n${previewLines}\n\n` +
+      `Check these emails carefully — a typo here creates a brand-new account with ` +
+      `supervisor-level access. Create them?`,
+      { confirmLabel: "Create Accounts", confirmStyle: "fp-btn-success" }
+    );
+
+    if (!proceed) {
+      // Declined — fall back to the old behavior for every row that
+      // depended on one of these, instead of silently dropping them.
+      neededSupEmails.forEach((info, email) => {
+        info.rows.forEach(rowNum => {
+          errors.push({ row: rowNum, email, issues: `No existing supervisor account for "${email}" — add them via + Add User first, or re-run the import and confirm account creation` });
+        });
+      });
+    } else {
+      const isLocalDev = ["127.0.0.1", "localhost"].includes(window.location.hostname);
+      for (const [email, info] of neededSupEmails.entries()) {
+        const password = generateRandomPassword();
+        const name = info.name || email;
+
+        const { data: inserted, error: insertErr } = await supabase
+          .from("users")
+          .insert({ role: "supervisor", name, email, is_active: true })
+          .select("id")
+          .single();
+
+        if (insertErr) {
+          info.rows.forEach(rowNum => errors.push({
+            row: rowNum, email,
+            issues: `Could not create supervisor account: ${insertErr.message}`,
+          }));
+          continue;
+        }
+
+        let authOk = false, authMsg;
+        if (isLocalDev) {
+          authMsg = "⚠️ Running locally — add login manually in Supabase";
+        } else {
+          try {
+            const { data: sessionData } = await supabase.auth.getSession();
+            const token = sessionData?.session?.access_token;
+            const resp = await fetch("/api/create-teacher-auth", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+              body: JSON.stringify({ email, password, name }),
+            });
+            const result = await resp.json();
+            authOk  = resp.ok;
+            authMsg = resp.ok ? "Created" : `⚠️ Not created: ${result.error || "unknown error"}`;
+          } catch (err) {
+            authMsg = `⚠️ Couldn't reach login service: ${err.message}`;
+          }
+        }
+
+        supervisorByEmail.set(email, { id: inserted.id, email, role: "supervisor" });
+        createdSupervisors.push({ name, email, password, authOk, authMsg });
+      }
+    }
+  }
+
+  // ── Pass 2: now that any confirmed accounts exist, resolve supervisor_id
+  //    for every pending row. ──
+  const toLink = [];
+  pending.forEach(p => {
+    const supervisor = supervisorByEmail.get(p.supEmail);
+    if (!supervisor) return; // already recorded as an error above (declined or failed to create)
+    toLink.push({ supervisor_id: supervisor.id, teacher_id: p.teacher.id, row: p.rowNum, email: p.facultyEmail });
   });
 
   let linked = 0;
@@ -1727,7 +1841,7 @@ async function runSupervisorAssignmentImport(workbook) {
     }
   }
 
-  return { linked, errors, totalRows: asnRows.length };
+  return { linked, errors, totalRows: asnRows.length, createdSupervisors };
 }
 
 async function runFacultyImport(rows, colMap, workbook) {
@@ -1951,14 +2065,45 @@ function renderFacultyImportSummary({ created, updated, duplicateRows = 0, error
   }
 
   if (supervisorResult) {
+    const createdSups = supervisorResult.createdSupervisors || [];
     html += `
       <hr style="margin:18px 0; border:none; border-top:1px solid #e2e8f0;" />
       <p style="font-size:13px; font-weight:700; margin:0 0 8px; color:#16324f;">🔗 Supervisor Assignments</p>
       <ul style="margin:0 0 0; padding-left:18px; font-size:13px; line-height:1.8;">
+        ${createdSups.length > 0 ? `<li>${createdSups.length} new supervisor account(s) created</li>` : ""}
         <li>${supervisorResult.linked} faculty-to-supervisor link(s) created or confirmed</li>
         <li style="${supervisorResult.errors.length ? "color:#dc2626;" : ""}">${supervisorResult.errors.length} row(s) skipped due to issues</li>
       </ul>
     `;
+
+    if (createdSups.length > 0) {
+      html += `
+        <p style="font-size:12px; font-weight:700; margin:14px 0 6px; color:#671408;">
+          ⚠️ New supervisor account passwords — copy these down now. They cannot be shown again once this window is closed.
+        </p>
+        <div style="max-height:220px; overflow-y:auto; border:1px solid #f3c9bd; border-radius:6px;">
+          <table style="width:100%; font-size:12px;">
+            <thead><tr>
+              <th style="padding:6px 8px;">Name</th>
+              <th style="padding:6px 8px;">Email</th>
+              <th style="padding:6px 8px;">Password</th>
+              <th style="padding:6px 8px;">Login</th>
+            </tr></thead>
+            <tbody>
+              ${createdSups.map(c => `
+                <tr>
+                  <td style="padding:6px 8px;">${escHtml(c.name)}</td>
+                  <td style="padding:6px 8px;">${escHtml(c.email)}</td>
+                  <td style="padding:6px 8px; font-family:monospace;">${escHtml(c.password)}</td>
+                  <td style="padding:6px 8px; color:${c.authOk ? "#065f46" : "#dc2626"};">${escHtml(c.authMsg)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
     if (supervisorResult.errors.length > 0) {
       const shownSup = supervisorResult.errors.slice(0, 50);
       html += `
