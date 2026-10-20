@@ -1669,7 +1669,7 @@ async function runSupervisorAssignmentImport(workbook) {
   });
 
   if (asnRows.length === 0) {
-    return { linked: 0, errors, totalRows: 0, createdSupervisors: [] };
+    return { linked: 0, errors, totalRows: 0, createdSupervisors: [], grantedSupervisors: [] };
   }
 
   // ── Re-fetch current users so a teacher created earlier in THIS SAME
@@ -1678,7 +1678,7 @@ async function runSupervisorAssignmentImport(workbook) {
   const { data: existingUsers, error: existingError } = await fetchAllRows("users", "id, email, role");
   if (existingError) {
     errors.push({ row: "-", email: "-", issues: "Could not check accounts: " + existingError.message });
-    return { linked: 0, errors, totalRows: asnRows.length, createdSupervisors: [] };
+    return { linked: 0, errors, totalRows: asnRows.length, createdSupervisors: [], grantedSupervisors: [] };
   }
   const supervisorByEmail = new Map(
     (existingUsers || []).filter(u => u.role === "supervisor" && u.email).map(u => [u.email.toLowerCase(), u])
@@ -1686,17 +1686,25 @@ async function runSupervisorAssignmentImport(workbook) {
   const teacherByEmail = new Map(
     (existingUsers || []).filter(u => u.role === "teacher" && u.email).map(u => [u.email.toLowerCase(), u])
   );
-  // A different role already owns that email — never silently create a
-  // second account over it (mirrors the faculty importer's same guard).
-  const otherRoleEmails = new Set(
-    (existingUsers || []).filter(u => u.role !== "supervisor" && u.email).map(u => u.email.toLowerCase())
+  // Real BatSC department chairs ARE teachers (evaluated by students like
+  // anyone else) who ALSO supervise other faculty's SEF — one person, one
+  // email/login, two hats. So a supervisor email matching an existing
+  // TEACHER account is no longer an error: it's a grant candidate (flip
+  // is_supervisor=true on their existing row, same login, no new
+  // password — see neededGrantEmails below). Only a role that genuinely
+  // can't be a supervisor (student/admin) blocks the row outright.
+  const blockedRoleEmails = new Set(
+    (existingUsers || []).filter(u => (u.role === "student" || u.role === "admin") && u.email).map(u => u.email.toLowerCase())
   );
 
   // ── Pass 1: resolve what we can, and collect which supervisor emails
   //    are referenced but don't have an account yet (candidates to
-  //    create, pending the admin's confirmation below). ──
+  //    create, pending the admin's confirmation below), plus which ones
+  //    match an EXISTING teacher account and just need is_supervisor
+  //    granted on it (no new account/password). ──
   const pending = []; // { rowNum, facultyEmail, supEmail, teacher }
-  const neededSupEmails = new Map(); // email -> { name, rows: [rowNum,...] }
+  const neededSupEmails   = new Map(); // email -> { name, rows: [rowNum,...] }  (brand-new accounts)
+  const neededGrantEmails = new Map(); // email -> { name, rows: [rowNum,...] }  (existing teacher -> is_supervisor=true)
 
   asnRows.forEach((row, i) => {
     const rowNum = i + 2;
@@ -1726,15 +1734,22 @@ async function runSupervisorAssignmentImport(workbook) {
       return;
     }
 
-    if (otherRoleEmails.has(supEmail)) {
-      errors.push({ row: rowNum, email: facultyEmail, issues: `"${supEmail}" already exists as a non-supervisor account — can't create a supervisor account over it` });
+    if (blockedRoleEmails.has(supEmail)) {
+      errors.push({ row: rowNum, email: facultyEmail, issues: `"${supEmail}" already exists as a student or admin account — can't grant supervisor access to it` });
       return;
     }
 
     if (!supervisorByEmail.has(supEmail)) {
-      const entry = neededSupEmails.get(supEmail) || { name: codeToName.get(code) || "", rows: [] };
-      entry.rows.push(rowNum);
-      neededSupEmails.set(supEmail, entry);
+      if (teacherByEmail.has(supEmail)) {
+        // Existing teacher account — grant is_supervisor, don't create anew.
+        const entry = neededGrantEmails.get(supEmail) || { name: codeToName.get(code) || "", rows: [] };
+        entry.rows.push(rowNum);
+        neededGrantEmails.set(supEmail, entry);
+      } else {
+        const entry = neededSupEmails.get(supEmail) || { name: codeToName.get(code) || "", rows: [] };
+        entry.rows.push(rowNum);
+        neededSupEmails.set(supEmail, entry);
+      }
     }
 
     pending.push({ rowNum, facultyEmail, supEmail, teacher });
@@ -1809,6 +1824,58 @@ async function runSupervisorAssignmentImport(workbook) {
     }
   }
 
+  // ── Confirm-then-grant: for emails that already have a teacher login
+  //    (the real, common case — a department chair who also teaches),
+  //    flip is_supervisor=true on their EXISTING row. Same person, same
+  //    email/password, same user id — nothing new to create or remember,
+  //    and supervisor_assignments.supervisor_id below just points at that
+  //    same id. ──
+  const grantedSupervisors = [];
+  if (neededGrantEmails.size > 0) {
+    const previewLines = [...neededGrantEmails.entries()]
+      .map(([email, info]) => `• ${info.name ? info.name + " — " : ""}${email}`)
+      .join("\n");
+    const proceed = await fpConfirm(
+      `${neededGrantEmails.size} supervisor(s) referenced in the Assignments sheet already have an ` +
+      `existing TEACHER account under this same email (a chair who also teaches). They will be GRANTED ` +
+      `supervisor access on their existing account — same login, no new password:\n\n${previewLines}\n\n` +
+      `They'll be able to switch between their Teacher and Supervisor dashboards with the same credentials. Grant access?`,
+      { confirmLabel: "Grant Access", confirmStyle: "fp-btn-success" }
+    );
+
+    if (!proceed) {
+      neededGrantEmails.forEach((info, email) => {
+        info.rows.forEach(rowNum => {
+          errors.push({ row: rowNum, email, issues: `Supervisor access for "${email}" was declined — re-run the import and confirm to grant it` });
+        });
+      });
+    } else {
+      for (const [email, info] of neededGrantEmails.entries()) {
+        const teacherRow = teacherByEmail.get(email);
+        const { error: grantErr } = await supabase
+          .from("users")
+          .update({ is_supervisor: true })
+          .eq("id", teacherRow.id);
+
+        if (grantErr) {
+          info.rows.forEach(rowNum => errors.push({
+            row: rowNum, email,
+            issues: `Could not grant supervisor access: ${grantErr.message}` +
+              (grantErr.message?.includes("is_supervisor")
+                ? " — the is_supervisor column hasn't been added to users yet. Run the migration first."
+                : ""),
+          }));
+          continue;
+        }
+
+        // The teacher's own id IS the supervisor_id going forward — no
+        // separate account, so supervisorByEmail just points at the same row.
+        supervisorByEmail.set(email, { id: teacherRow.id, email, role: "teacher" });
+        grantedSupervisors.push({ name: info.name || teacherRow.email, email });
+      }
+    }
+  }
+
   // ── Pass 2: now that any confirmed accounts exist, resolve supervisor_id
   //    for every pending row. ──
   const toLink = [];
@@ -1841,7 +1908,7 @@ async function runSupervisorAssignmentImport(workbook) {
     }
   }
 
-  return { linked, errors, totalRows: asnRows.length, createdSupervisors };
+  return { linked, errors, totalRows: asnRows.length, createdSupervisors, grantedSupervisors };
 }
 
 async function runFacultyImport(rows, colMap, workbook) {
@@ -2066,15 +2133,41 @@ function renderFacultyImportSummary({ created, updated, duplicateRows = 0, error
 
   if (supervisorResult) {
     const createdSups = supervisorResult.createdSupervisors || [];
+    const grantedSups = supervisorResult.grantedSupervisors || [];
     html += `
       <hr style="margin:18px 0; border:none; border-top:1px solid #e2e8f0;" />
       <p style="font-size:13px; font-weight:700; margin:0 0 8px; color:#16324f;">🔗 Supervisor Assignments</p>
       <ul style="margin:0 0 0; padding-left:18px; font-size:13px; line-height:1.8;">
         ${createdSups.length > 0 ? `<li>${createdSups.length} new supervisor account(s) created</li>` : ""}
+        ${grantedSups.length > 0 ? `<li>${grantedSups.length} existing teacher account(s) granted supervisor access (same login)</li>` : ""}
         <li>${supervisorResult.linked} faculty-to-supervisor link(s) created or confirmed</li>
         <li style="${supervisorResult.errors.length ? "color:#dc2626;" : ""}">${supervisorResult.errors.length} row(s) skipped due to issues</li>
       </ul>
     `;
+
+    if (grantedSups.length > 0) {
+      html += `
+        <p style="font-size:12px; font-weight:700; margin:14px 0 6px; color:#16324f;">
+          Existing teacher accounts granted supervisor access — no new password, they log in with their current credentials via either tab:
+        </p>
+        <div style="max-height:160px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px;">
+          <table style="width:100%; font-size:12px;">
+            <thead><tr>
+              <th style="padding:6px 8px;">Name</th>
+              <th style="padding:6px 8px;">Email</th>
+            </tr></thead>
+            <tbody>
+              ${grantedSups.map(g => `
+                <tr>
+                  <td style="padding:6px 8px;">${escHtml(g.name)}</td>
+                  <td style="padding:6px 8px;">${escHtml(g.email)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
 
     if (createdSups.length > 0) {
       html += `

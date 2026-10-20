@@ -424,31 +424,47 @@ async function login() {
       if (authError) { errorMsg.textContent = "Incorrect email or password."; return; }
 
       const { data: userRow, error: userError } = await supabase
-        .from("users").select("role, name, id").eq("email", username).single();
+        .from("users").select("role, name, id, is_supervisor").eq("email", username).single();
 
       if (userError || !userRow) {
         errorMsg.textContent = "Account not found in system. Contact admin.";
         await supabase.auth.signOut();
         return;
       }
-      if (userRow.role !== activeRole) {
+
+      // Dual-role case: a real department chair is a TEACHER account
+      // (students evaluate them like any faculty) who ALSO supervises
+      // other faculty's SEF — same email/password, same users row, no
+      // second account. is_supervisor on that teacher row is what lets
+      // them in via the Supervisor tab with those same credentials.
+      const dualSupervisorLogin =
+        activeRole === "supervisor" && userRow.role === "teacher" && userRow.is_supervisor === true;
+
+      if (userRow.role !== activeRole && !dualSupervisorLogin) {
         errorMsg.textContent = `This account is not a ${activeRole}. Switch to the correct tab.`;
         await supabase.auth.signOut();
         return;
       }
 
-      sessionStorage.setItem("role",   userRow.role);
-      sessionStorage.setItem("name",   userRow.name);
-      sessionStorage.setItem("userId", userRow.id);
+      // "role" is which DASHBOARD they're entering (what the rest of the
+      // app's guards check), not necessarily their DB role — those only
+      // diverge for the dual-role case above. dbRole/isSupervisor are kept
+      // separately so teacher.html/supervisor.html can show a "Switch to
+      // ___ View" link without re-querying the DB.
+      sessionStorage.setItem("role",         activeRole);
+      sessionStorage.setItem("name",         userRow.name);
+      sessionStorage.setItem("userId",       userRow.id);
+      sessionStorage.setItem("dbRole",       userRow.role);
+      sessionStorage.setItem("isSupervisor", String(userRow.is_supervisor === true));
 
-      if (userRow.role === "teacher")    window.location.href = "pages/teacher.html";
-      if (userRow.role === "admin")      window.location.href = "pages/admin.html";
-      if (userRow.role === "supervisor") window.location.href = "pages/supervisor.html";
-      if (userRow.role === "executive")  window.location.href = "pages/executive.html";
+      if (activeRole === "teacher")    window.location.href = "pages/teacher.html";
+      if (activeRole === "admin")      window.location.href = "pages/admin.html";
+      if (activeRole === "supervisor") window.location.href = "pages/supervisor.html";
+      if (activeRole === "executive")  window.location.href = "pages/executive.html";
       // "depthead" intentionally left as dead code, not wired up — no login
       // tab, no page, no way to create one from User Management. Pre-existing
       // before this change; flagged to the team rather than silently removed.
-      if (userRow.role === "depthead")   window.location.href = "pages/depthead.html";
+      if (activeRole === "depthead")   window.location.href = "pages/depthead.html";
     }
   } catch (err) {
     errorMsg.textContent = "Something went wrong. Please try again.";

@@ -23,6 +23,21 @@ const supervisorName = sessionStorage.getItem("name");
 
 document.getElementById("nav-user").textContent = "Logged in as: " + supervisorName;
 
+// ── Dual-role: only show "Switch to Teacher View" when this account's
+//    underlying DB role really is "teacher" (set by login.js at sign-in
+//    time) — a PURE supervisor account (role="supervisor", no matching
+//    teacher record/SEF to view) correctly gets no such link. ──
+if (sessionStorage.getItem("dbRole") === "teacher") {
+  const switchBtn = document.getElementById("switch-to-teacher-btn");
+  if (switchBtn) {
+    switchBtn.style.display = "inline-block";
+    switchBtn.addEventListener("click", () => {
+      sessionStorage.setItem("role", "teacher");
+      window.location.href = "teacher.html";
+    });
+  }
+}
+
 // ── Which faculty this supervisor can see (2026-10-12 rewrite) ──
 // Previously this was a department-string match (.eq("users.department",
 // supervisorDepartment)) — exactly one supervisor per department, so
