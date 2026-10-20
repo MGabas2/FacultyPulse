@@ -424,7 +424,7 @@ async function login() {
       if (authError) { errorMsg.textContent = "Incorrect email or password."; return; }
 
       const { data: userRow, error: userError } = await supabase
-        .from("users").select("role, name, id, is_supervisor").eq("email", username).single();
+        .from("users").select("role, name, id, is_supervisor, is_executive").eq("email", username).single();
 
       if (userError || !userRow) {
         errorMsg.textContent = "Account not found in system. Contact admin.";
@@ -432,15 +432,18 @@ async function login() {
         return;
       }
 
-      // Dual-role case: a real department chair is a TEACHER account
-      // (students evaluate them like any faculty) who ALSO supervises
-      // other faculty's SEF — same email/password, same users row, no
-      // second account. is_supervisor on that teacher row is what lets
-      // them in via the Supervisor tab with those same credentials.
-      const dualSupervisorLogin =
-        activeRole === "supervisor" && userRow.role === "teacher" && userRow.is_supervisor === true;
+      // Multi-role case: a real department chair/dean is a TEACHER account
+      // (students evaluate them like any faculty) who ALSO supervises other
+      // faculty's SEF and/or sits on the executive/management dashboard —
+      // same email/password, same users row, no second account. is_supervisor
+      // / is_executive on that teacher row are what let them in via the
+      // Supervisor / Management tabs with those same credentials.
+      const dualRoleLogin =
+        userRow.role === "teacher" &&
+        ((activeRole === "supervisor" && userRow.is_supervisor === true) ||
+         (activeRole === "executive" && userRow.is_executive === true));
 
-      if (userRow.role !== activeRole && !dualSupervisorLogin) {
+      if (userRow.role !== activeRole && !dualRoleLogin) {
         errorMsg.textContent = `This account is not a ${activeRole}. Switch to the correct tab.`;
         await supabase.auth.signOut();
         return;
@@ -448,14 +451,15 @@ async function login() {
 
       // "role" is which DASHBOARD they're entering (what the rest of the
       // app's guards check), not necessarily their DB role — those only
-      // diverge for the dual-role case above. dbRole/isSupervisor are kept
-      // separately so teacher.html/supervisor.html can show a "Switch to
-      // ___ View" link without re-querying the DB.
+      // diverge for the multi-role case above. dbRole/isSupervisor/isExecutive
+      // are kept separately so teacher.html/supervisor.html/executive.html can
+      // show "Switch to ___ View" links without re-querying the DB.
       sessionStorage.setItem("role",         activeRole);
       sessionStorage.setItem("name",         userRow.name);
       sessionStorage.setItem("userId",       userRow.id);
       sessionStorage.setItem("dbRole",       userRow.role);
       sessionStorage.setItem("isSupervisor", String(userRow.is_supervisor === true));
+      sessionStorage.setItem("isExecutive",  String(userRow.is_executive === true));
 
       if (activeRole === "teacher")    window.location.href = "pages/teacher.html";
       if (activeRole === "admin")      window.location.href = "pages/admin.html";

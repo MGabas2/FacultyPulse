@@ -513,6 +513,7 @@
                   <option value="teacher">Teacher</option>
                   <option value="supervisor">Supervisor</option>
                   <option value="admin">Admin</option>
+                  <option value="executive">Management</option>
                 </select>
               </div>
               <div class="form-group">
@@ -1159,6 +1160,13 @@
           </label>
           <p class="field-hint">Grants supervisor login/access on top of the Teacher account. You'll still need to assign them to faculty via Supervisor Assignments import.</p>
         </div>
+        <div class="form-group" id="new-is-executive-group" style="display:none;">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input type="checkbox" id="new-is-executive" style="width:auto;" />
+            Also Management/Executive?
+          </label>
+          <p class="field-hint">Grants Management dashboard login/access on top of the Teacher account, same email/password.</p>
+        </div>
       </div>
       <p id="add-error" class="error"></p>
       <div style="display:flex; gap:10px; margin-top:16px;">
@@ -1206,6 +1214,18 @@
         <select id="edit-section-id">
           <option value="">-- Select Section --</option>
         </select>
+      </div>
+      <div class="form-group" id="edit-is-supervisor-group" style="display:none;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+          <input type="checkbox" id="edit-is-supervisor" style="width:auto;" />
+          Also a supervisor?
+        </label>
+      </div>
+      <div class="form-group" id="edit-is-executive-group" style="display:none;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+          <input type="checkbox" id="edit-is-executive" style="width:auto;" />
+          Also Management/Executive?
+        </label>
       </div>
       <div class="form-group">
         <label>Status</label>

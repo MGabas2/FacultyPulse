@@ -23,10 +23,11 @@ const supervisorName = sessionStorage.getItem("name");
 
 document.getElementById("nav-user").textContent = "Logged in as: " + supervisorName;
 
-// ── Dual-role: only show "Switch to Teacher View" when this account's
-//    underlying DB role really is "teacher" (set by login.js at sign-in
-//    time) — a PURE supervisor account (role="supervisor", no matching
-//    teacher record/SEF to view) correctly gets no such link. ──
+// ── Multi-role: only show "Switch to Teacher View" / "Switch to Management
+//    View" when this account's underlying DB role really is "teacher" (set
+//    by login.js at sign-in time) and the matching flag is set — a PURE
+//    supervisor account (role="supervisor", no linked teacher record) gets
+//    neither link. ──
 if (sessionStorage.getItem("dbRole") === "teacher") {
   const switchBtn = document.getElementById("switch-to-teacher-btn");
   if (switchBtn) {
@@ -35,6 +36,16 @@ if (sessionStorage.getItem("dbRole") === "teacher") {
       sessionStorage.setItem("role", "teacher");
       window.location.href = "teacher.html";
     });
+  }
+  if (sessionStorage.getItem("isExecutive") === "true") {
+    const switchExecBtn = document.getElementById("switch-to-executive-btn");
+    if (switchExecBtn) {
+      switchExecBtn.style.display = "inline-block";
+      switchExecBtn.addEventListener("click", () => {
+        sessionStorage.setItem("role", "executive");
+        window.location.href = "executive.html";
+      });
+    }
   }
 }
 

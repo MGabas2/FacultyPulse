@@ -55,6 +55,7 @@
           <option value="student">Student</option>
           <option value="teacher">Teacher</option>
           <option value="supervisor">Supervisor</option>
+          <option value="executive">Management</option>
         </select>
 
         <!-- Filter by section -->
@@ -88,7 +89,7 @@
         <button id="import-faculty-btn" class="btn-secondary" title="Bulk-create or update faculty accounts from the Faculty Profile template">
           📥 Import Faculty
         </button>
-        <input type="file" id="faculty-import-file-input" accept=".xlsx" style="display:none;" />
+        <input type="file" id="faculty-roster-import-file-input" accept=".xlsx" style="display:none;" />
         <button id="add-user-btn">+ Add User</button>
       </div>
 
@@ -136,9 +137,20 @@
       <!-- Student fields -->
       <div id="student-fields" class="role-fields hidden">
         <div class="form-group">
+          <label>Full Name</label>
+          <input type="text" id="new-student-name" placeholder="e.g. Dela Cruz, Juan M." />
+        </div>
+        <div class="form-group">
           <label>Student ID</label>
           <input type="text" id="new-student-id" placeholder="e.g. 2023-1154-AB" maxlength="13" oninput="autoUppercase(this)" />
           <p class="field-hint">Format: 4 digits - 4 digits - 2 uppercase letters</p>
+        </div>
+        <div class="form-group">
+          <label>Department</label>
+          <select id="new-student-department" onchange="onNewStudentDepartmentChange()">
+            <option value="">-- Select Department --</option>
+          </select>
+          <p class="field-hint">Narrows the Section list below. Leave blank to see all sections.</p>
         </div>
         <div class="form-group">
           <label>Section</label>
@@ -186,6 +198,17 @@
             either the Teacher or Supervisor tab. You still need to assign
             WHICH faculty they supervise afterward, via the Supervisor
             Assignments import.
+          </p>
+        </div>
+        <div class="form-group" id="new-is-executive-group" style="display:none;">
+          <label style="display:flex; align-items:center; gap:8px; font-weight:400;">
+            <input type="checkbox" id="new-is-executive" style="width:auto;" />
+            Also Management/Executive (views executive dashboards)
+          </label>
+          <p class="field-hint">
+            For a dean or VP who also teaches/supervises. They'll log in with
+            the same email/password via the Teacher, Supervisor, or Management
+            tab, whichever boxes are checked.
           </p>
         </div>
         <div class="form-group" id="new-rank-group" style="display:none;">
@@ -253,6 +276,18 @@
         <select id="edit-section-id">
           <option value="">-- Select Section --</option>
         </select>
+      </div>
+      <div class="form-group" id="edit-is-supervisor-group" style="display:none;">
+        <label style="display:flex; align-items:center; gap:8px; font-weight:400;">
+          <input type="checkbox" id="edit-is-supervisor" style="width:auto;" />
+          Also a supervisor (reviews other faculty's SEF)
+        </label>
+      </div>
+      <div class="form-group" id="edit-is-executive-group" style="display:none;">
+        <label style="display:flex; align-items:center; gap:8px; font-weight:400;">
+          <input type="checkbox" id="edit-is-executive" style="width:auto;" />
+          Also Management/Executive (views executive dashboards)
+        </label>
       </div>
       <div class="form-group">
         <label>Status</label>
@@ -339,7 +374,7 @@
         reading; it is ignored by this importer.
       </p>
       <button id="faculty-import-choose-file-btn">Choose File…</button>
-      <p id="faculty-import-status" style="font-size:13px; color:#475569; min-height:18px; margin-top:8px;"></p>
+      <p id="faculty-roster-import-status" style="font-size:13px; color:#475569; min-height:18px; margin-top:8px;"></p>
       <div id="faculty-import-summary"></div>
       <div style="display:flex; gap:10px; margin-top:20px;">
         <button class="btn-secondary" id="close-faculty-import-btn">Close</button>

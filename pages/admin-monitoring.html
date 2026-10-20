@@ -161,7 +161,7 @@
   <div class="container">
     <h2 style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
       Submission Monitoring
-      <button id="refresh-btn" style="font-size:13px; padding:6px 12px;">🔄 Refresh</button>
+      <button id="refresh-btn-mon" style="font-size:13px; padding:6px 12px;">🔄 Refresh</button>
     </h2>
     <p>Track who has submitted evaluations, who hasn't, and login activity. Student comments are in the 💬 Student Comments tab.</p>
 
@@ -199,7 +199,7 @@
     <div class="section">
       <!-- Search on its own line -->
       <div class="toolbar search-row">
-        <input type="text" id="search-input" placeholder="🔍 Search Student ID..." />
+        <input type="text" id="mon-search-input" placeholder="🔍 Search Student ID..." />
       </div>
       <!-- Filters on their own line (wrap if narrow) -->
       <div class="toolbar">
@@ -209,9 +209,12 @@
           <option value="not-submitted">Not Yet Submitted</option>
           <option value="never-login">Never Logged In</option>
         </select>
+        <select id="filter-program">
+          <option value="">All Programs</option>
+        </select>
         <input list="faculty-datalist" id="filter-faculty" placeholder="All Faculty" autocomplete="off" />
         <datalist id="faculty-datalist"></datalist>
-        <select id="filter-section">
+        <select id="mon-filter-section">
           <option value="">All Sections</option>
         </select>
         <select id="filter-subject">

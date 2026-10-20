@@ -19,6 +19,32 @@ if (!sessionStorage.getItem("role") || sessionStorage.getItem("role") !== "execu
 const name = sessionStorage.getItem("name");
 document.getElementById("nav-user").textContent = "Logged in as: " + name;
 
+// ── Multi-role: only shown when this account's underlying DB role really
+//    is "teacher" (set by login.js at sign-in time) — a PURE executive
+//    account (role="executive", no linked teacher record) gets neither
+//    link. isSupervisor/isExecutive gate each button independently since
+//    a dean/chair may have one flag without the other. ──
+if (sessionStorage.getItem("dbRole") === "teacher") {
+  const switchTeachBtn = document.getElementById("switch-to-teacher-btn");
+  if (switchTeachBtn) {
+    switchTeachBtn.style.display = "inline-block";
+    switchTeachBtn.addEventListener("click", () => {
+      sessionStorage.setItem("role", "teacher");
+      window.location.href = "teacher.html";
+    });
+  }
+  if (sessionStorage.getItem("isSupervisor") === "true") {
+    const switchSupBtn = document.getElementById("switch-to-supervisor-btn");
+    if (switchSupBtn) {
+      switchSupBtn.style.display = "inline-block";
+      switchSupBtn.addEventListener("click", () => {
+        sessionStorage.setItem("role", "supervisor");
+        window.location.href = "supervisor.html";
+      });
+    }
+  }
+}
+
 // CMO No. 19 s.2025 SEF rating bands — kept in sync with js/admin.js,
 // teacher.js, supervisor.js (each page keeps its own copy; no shared
 // module in this codebase). If you change one, change all four.

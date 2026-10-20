@@ -16,9 +16,9 @@ const name   = sessionStorage.getItem("name");
 document.getElementById("welcome-name").textContent = name;
 document.getElementById("nav-user").textContent     = "Logged in as: " + name;
 
-// ── Dual-role: show the switch link only for a teacher account that also
-//    has is_supervisor=true (set by login.js at sign-in time). Clicking it
-//    flips sessionStorage.role to "supervisor" and reloads into that
+// ── Multi-role: show each switch link only for a teacher account that also
+//    has is_supervisor / is_executive = true (set by login.js at sign-in
+//    time). Clicking one flips sessionStorage.role and reloads into that
 //    dashboard with the SAME login — no second sign-in. ──
 if (sessionStorage.getItem("isSupervisor") === "true") {
   const switchBtn = document.getElementById("switch-to-supervisor-btn");
@@ -27,6 +27,16 @@ if (sessionStorage.getItem("isSupervisor") === "true") {
     switchBtn.addEventListener("click", () => {
       sessionStorage.setItem("role", "supervisor");
       window.location.href = "supervisor.html";
+    });
+  }
+}
+if (sessionStorage.getItem("isExecutive") === "true") {
+  const switchExecBtn = document.getElementById("switch-to-executive-btn");
+  if (switchExecBtn) {
+    switchExecBtn.style.display = "inline-block";
+    switchExecBtn.addEventListener("click", () => {
+      sessionStorage.setItem("role", "executive");
+      window.location.href = "executive.html";
     });
   }
 }

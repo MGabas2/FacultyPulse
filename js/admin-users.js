@@ -213,7 +213,7 @@ async function loadUsers() {
 
   const { data, error } = await supabase
     .from("users")
-    .select("id, student_id, role, name, email, section_id, is_active, academic_rank, employment_type, department, major, sections(name)");
+    .select("id, student_id, role, name, email, section_id, is_active, academic_rank, employment_type, department, major, is_supervisor, is_executive, sections(name)");
 
   if (error) {
     tbody.innerHTML = `<tr><td colspan="6">Error loading users.</td></tr>`;
@@ -295,7 +295,14 @@ function renderTable() {
     if (u.role === "admin") return false;   // admins not shown in user management
     const nameOrId     = `${u.name || ""} ${u.student_id || ""} ${u.email || ""}`.toLowerCase();
     const matchSearch  = !search        || nameOrId.includes(search);
-    const matchRole    = !filterRole    || u.role === filterRole;
+    // A teacher row with is_supervisor/is_executive=true (a dual/triple-role
+    // chair or dean) must show up under the Supervisor / Management filter
+    // too, not just under Teacher — otherwise they're invisible from this
+    // screen unless you already know to search by name instead.
+    const matchRole    = !filterRole
+      || u.role === filterRole
+      || (filterRole === "supervisor" && u.is_supervisor === true)
+      || (filterRole === "executive"  && u.is_executive  === true);
     const matchSection = !filterSection || u.section_id === filterSection;
     const isActive     = u.is_active !== false;
     const matchStatus  = !filterStatus
@@ -349,6 +356,13 @@ function renderTable() {
     const roleLabel   = u.role.charAt(0).toUpperCase() + u.role.slice(1);
     const section     = u.sections?.name || "—";
     const isActive    = u.is_active !== false;
+    // Small tags so a dual/triple-role account's EXTRA access is visible
+    // right in the table, not just discoverable by opening Edit — this is
+    // exactly what was invisible when a supervisor/exec is really a
+    // role="teacher" row underneath (see matchRole above).
+    const roleTags =
+      (u.is_supervisor ? ` <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:9.5px;padding:1px 5px;">+Supervisor</span>` : "") +
+      (u.is_executive  ? ` <span class="badge" style="background:#fef3c7;color:#92400e;font-size:9.5px;padding:1px 5px;">+Mgmt</span>` : "");
 
     // col1 = Name, col2 = ID/StudentID, col3 = rank/role/section, col4 = email/type
     let col1, col2, col3, col4;
@@ -366,15 +380,15 @@ function renderTable() {
       } else {
         col2 = `<span style="color:#cbd5e1; font-size:11px;">—</span>`;
       }
-      col3 = `<span class="badge ${getRoleBadgeClass(u.role)}">${roleLabel}</span>`;
+      col3 = `<span class="badge ${getRoleBadgeClass(u.role)}">${roleLabel}</span>${roleTags}`;
       col4 = u.email || "—";
 
     } else if (filterRole === "teacher") {
       col1 = `<b>${escHtml(u.name || "—")}</b>`;
       col2 = teacherIdPlaceholder;
-      col3 = u.academic_rank
+      col3 = (u.academic_rank
         ? `<span class="badge ${getRoleBadgeClass(u.role)}" style="font-size:11px;">${escHtml(u.academic_rank)}</span>`
-        : "—";
+        : "—") + roleTags;
       col4 = u.email || "—";
 
     } else if (filterRole === "student") {
@@ -388,10 +402,13 @@ function renderTable() {
       col4 = u.email || "—";
 
     } else {
-      // supervisor / admin — no ID column, use col2 for email, col3 for role badge
+      // supervisor / admin / executive — no ID column, use col2 for email,
+      // col3 for role badge. roleLabel shows the account's REAL underlying
+      // role (e.g. "Teacher") even when it matched this filter via a
+      // is_supervisor/is_executive flag — roleTags is what explains why.
       col1 = `<b>${escHtml(u.name || "—")}</b>`;
       col2 = u.email || "—";
-      col3 = `<span class="badge ${getRoleBadgeClass(u.role)}">${roleLabel}</span>`;
+      col3 = `<span class="badge ${getRoleBadgeClass(u.role)}">${roleLabel}</span>${roleTags}`;
       col4 = "—";
     }
 
@@ -520,12 +537,14 @@ function onNewRoleChange() {
   const rankGroup      = document.getElementById("new-rank-group");
   const deptGroup      = document.getElementById("new-department-group");
   const supervisorGroup = document.getElementById("new-is-supervisor-group");
+  const executiveGroup  = document.getElementById("new-is-executive-group");
 
   studentFields.classList.add("hidden");
   staffFields.classList.add("hidden");
   if (rankGroup) rankGroup.style.display = "none";
   if (deptGroup) deptGroup.style.display = "none";
   if (supervisorGroup) supervisorGroup.style.display = "none";
+  if (executiveGroup) executiveGroup.style.display = "none";
 
   if (role === "student") {
     studentFields.classList.remove("hidden");
@@ -543,11 +562,12 @@ function onNewRoleChange() {
     const empGroup = document.getElementById("new-employment-group");
     if (role === "teacher" && empGroup) empGroup.style.display = "block";
     else if (empGroup) empGroup.style.display = "none";
-    // "Also a supervisor" only makes sense for a TEACHER account (the
-    // dual-role case — a chair who also teaches). Picking role=Supervisor
-    // already creates a dedicated supervisor-only account; no separate
-    // flag needed there.
+    // "Also a supervisor" / "Also Management" only make sense for a
+    // TEACHER account (the multi-role case — a chair/dean who also
+    // teaches). Picking role=Supervisor or role=Executive already creates
+    // a dedicated single-purpose account; no separate flag needed there.
     if (role === "teacher" && supervisorGroup) supervisorGroup.style.display = "block";
+    if (role === "teacher" && executiveGroup)  executiveGroup.style.display  = "block";
   }
 }
 
@@ -662,10 +682,12 @@ async function saveUser() {
       // only for supervisors — it plays no role in who they can see or
       // supervise; that's entirely determined by supervisor_assignments.
 
-      // Dual-role: a teacher account that's ALSO a supervisor (a chair who
-      // also teaches) — same login via either tab, see login.js. Only
-      // meaningful for role==="teacher"; the checkbox is hidden otherwise.
+      // Multi-role: a teacher account that's ALSO a supervisor and/or sits
+      // on the executive/management dashboard (a chair or dean who also
+      // teaches) — same login via any of those tabs, see login.js. Only
+      // meaningful for role==="teacher"; the checkboxes are hidden otherwise.
       const isSupervisor = role === "teacher" && document.getElementById("new-is-supervisor")?.checked;
+      const isExecutive  = role === "teacher" && document.getElementById("new-is-executive")?.checked;
 
       const insertData = {
         role, name, email,
@@ -673,6 +695,7 @@ async function saveUser() {
         employment_type: employmentType || null,
         department:      (role === "teacher" || role === "supervisor") ? department : null,
         is_supervisor:   isSupervisor,
+        is_executive:    isExecutive,
       };
 
       const { error: insertError } = await supabase.from("users").insert(insertData);
@@ -722,7 +745,10 @@ async function saveUser() {
           `Still need to assign WHICH faculty they supervise — run a Supervisor Assignments import with their email, ` +
           `or they'll see an empty faculty list until then.`
         : "";
-      await fpAlert(`User "${name}" added to the system.${authOutcomeMsg}${supervisorNote}`, authOutcomeMsg.includes("⚠️") ? "warning" : "success");
+      const executiveNote = isExecutive
+        ? `\n\nThey can now log in to the Management dashboard via the same email/password through the Management tab.`
+        : "";
+      await fpAlert(`User "${name}" added to the system.${authOutcomeMsg}${supervisorNote}${executiveNote}`, authOutcomeMsg.includes("⚠️") ? "warning" : "success");
     }
 
     closeAddModal();
@@ -759,6 +785,10 @@ function openAddModal() {
     document.getElementById("new-is-supervisor-group").style.display = "none";
   if (document.getElementById("new-is-supervisor"))
     document.getElementById("new-is-supervisor").checked = false;
+  if (document.getElementById("new-is-executive-group"))
+    document.getElementById("new-is-executive-group").style.display = "none";
+  if (document.getElementById("new-is-executive"))
+    document.getElementById("new-is-executive").checked = false;
   onNewStudentDepartmentChange(); // resets the section list to unfiltered, and (via its own
                                    // call to onNewSectionChange) resets the Subjects list too
   document.getElementById("add-modal").classList.remove("hidden");
@@ -800,6 +830,18 @@ function openEditModal(userId) {
   document.getElementById("edit-name-row").style.display        = isStudent ? "none"  : "block";
   document.getElementById("edit-email-row").style.display       = isStudent ? "none"  : "block";
 
+  // Multi-role flags: only meaningful for a TEACHER account (the dual/
+  // triple-role case — a chair/dean who also teaches). Pre-check from the
+  // row's current value so re-opening Edit doesn't silently reset them.
+  const editSupGroup  = document.getElementById("edit-is-supervisor-group");
+  const editExecGroup = document.getElementById("edit-is-executive-group");
+  if (editSupGroup)  editSupGroup.style.display  = isTeacher ? "block" : "none";
+  if (editExecGroup) editExecGroup.style.display = isTeacher ? "block" : "none";
+  if (document.getElementById("edit-is-supervisor"))
+    document.getElementById("edit-is-supervisor").checked = u.is_supervisor === true;
+  if (document.getElementById("edit-is-executive"))
+    document.getElementById("edit-is-executive").checked = u.is_executive === true;
+
   document.getElementById("edit-modal").classList.remove("hidden");
 
 
@@ -836,31 +878,24 @@ async function saveEdit() {
     const dept = document.getElementById("edit-department")?.value || "";
     if (!dept) { errorEl.textContent = "Please select a department."; return; }
 
-    // Same one-supervisor-per-department guard as Add User, but excluding
-    // this supervisor's own row — otherwise they'd permanently fail this
-    // check the moment they're saved once (matching themselves).
-    if (u.role === "supervisor" && dept !== u.department) {
-      const { data: existingSup, error: checkError } = await supabase
-        .from("users")
-        .select("id, name")
-        .eq("role", "supervisor")
-        .eq("department", dept)
-        .eq("is_active", true)
-        .neq("id", editTargetId)
-        .maybeSingle();
-      if (checkError) {
-        errorEl.textContent = "Failed to check existing supervisors: " + checkError.message;
-        return;
-      }
-      if (existingSup) {
-        errorEl.textContent =
-          `${existingSup.name} is already the active supervisor for ${dept}. ` +
-          `Archive them first if you're replacing them, or pick a different department.`;
-        return;
-      }
-    }
-
+    // NOTE: this used to enforce "exactly one active supervisor per
+    // department" here too — the same stale department-match access-control
+    // holdover removed from saveUser() (Add User) on 2026-10-12, when the
+    // model moved to supervisor_assignments (which explicitly supports
+    // multiple supervisors per department and multiple supervisors on the
+    // same faculty member). It was never removed from THIS function, so
+    // editing an existing supervisor's department was still silently
+    // blocking valid real-world cases. Department is kept below as a
+    // descriptive/display field only for supervisors — supervisor_assignments
+    // is what actually governs who they can see/supervise.
     updates.department = dept;
+  }
+
+  // Multi-role flags — only meaningful/saved for a TEACHER account; the
+  // checkboxes are hidden (and thus never checked) for every other role.
+  if (u.role === "teacher") {
+    updates.is_supervisor = document.getElementById("edit-is-supervisor")?.checked === true;
+    updates.is_executive  = document.getElementById("edit-is-executive")?.checked === true;
   }
 
   if (u.role === "student") {
