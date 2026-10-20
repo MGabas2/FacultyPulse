@@ -1225,6 +1225,69 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
       from += PAGE;
     }
 
+    // ── 2b. Resolve email collisions BEFORE inserting — an email already
+    //    claimed is dropped to blank rather than blocking the whole row,
+    //    since a student can still be added with no email and fill it in
+    //    themselves later. Two kinds of collision, both "first one wins,
+    //    everyone else goes blank":
+    //      (a) against a NON-student account (teacher/supervisor/admin) —
+    //          this is the gap that let a roster email silently overwrite
+    //          a real faculty email with zero warning; now it's blocked
+    //          and reported instead.
+    //      (b) against another row in THIS SAME file, or an already-
+    //          existing student in the DB — "the one on top" (first row
+    //          encountered, or whoever already has it in the DB) keeps
+    //          the email; every later claimant is blanked.
+    //    This only ever touches NEW inserts' email field — promotions
+    //    never touch email (see step 5), so an existing student's email
+    //    they already have is never taken away by a later roster row. ──
+    const emailWarnings = [];
+    if (dedupedParsed.some(p => p.email)) {
+      const { data: existingEmailUsers, error: emailLookupError } = await fetchAllRows("users", "email, role");
+      if (emailLookupError) throw new Error("Email collision check failed: " + emailLookupError.message);
+
+      const nonStudentEmails = new Set(
+        (existingEmailUsers || [])
+          .filter(u => u.role !== "student" && u.email)
+          .map(u => u.email.toLowerCase())
+      );
+      // Existing students' emails — "first one wins" against the DB too,
+      // so a roster re-import can't silently reassign an email that's
+      // already attached to a different student_id.
+      const studentEmailOwner = new Map(); // email -> student_id already holding it
+      (existingEmailUsers || [])
+        .filter(u => u.role === "student" && u.email)
+        .forEach(u => studentEmailOwner.set(u.email.toLowerCase(), u.student_id));
+
+      const claimedThisRun = new Set();
+      for (const p of dedupedParsed) {
+        if (!p.email) continue;
+        const emailLc = p.email.toLowerCase();
+
+        if (nonStudentEmails.has(emailLc)) {
+          emailWarnings.push({ row: "-", studentId: p.studentId, issues: `email "${p.email}" already belongs to a non-student account — student added without it` });
+          p.email = null;
+          continue;
+        }
+        const owner = studentEmailOwner.get(emailLc);
+        if (owner && owner !== p.studentId) {
+          emailWarnings.push({ row: "-", studentId: p.studentId, issues: `email "${p.email}" already belongs to student ${owner} — this student added without it` });
+          p.email = null;
+          continue;
+        }
+        if (claimedThisRun.has(emailLc)) {
+          emailWarnings.push({ row: "-", studentId: p.studentId, issues: `email "${p.email}" is repeated earlier in this file — this student added without it (first row keeps it)` });
+          p.email = null;
+          continue;
+        }
+        claimedThisRun.add(emailLc);
+      }
+    }
+    // NOT pushed into `errors` — these rows are NOT skipped, the student
+    // IS added/promoted normally, just without that one roster email.
+    // Mixing them into `errors` would mislabel them as failures in the
+    // summary below ("row(s) skipped due to issues"), which they aren't.
+
     // ── 3. Split into new inserts vs. promotions (section_id update only) ──
     const toInsert = [];
     const toPromote = [];
@@ -1372,7 +1435,7 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
     // keep this paginated version in sync with admin.js's if it changes).
     const syncResult = await syncEnrolledCountsAfterImport();
 
-    renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted, duplicateRows, subjectsCreated, enrollmentsLinked, errors, totalRows: rows.length, syncResult });
+    renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted, duplicateRows, subjectsCreated, enrollmentsLinked, errors, emailWarnings, totalRows: rows.length, syncResult });
 
     await loadSections();
     await loadDepartments();
@@ -1458,7 +1521,7 @@ async function syncEnrolledCountsAfterImport() {
   return { updated };
 }
 
-function renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted, duplicateRows = 0, subjectsCreated = 0, enrollmentsLinked = 0, errors, totalRows, syncResult = {} }) {
+function renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted, duplicateRows = 0, subjectsCreated = 0, enrollmentsLinked = 0, errors, emailWarnings = [], totalRows, syncResult = {} }) {
   setImportStatus(`Done — processed ${totalRows} row(s).`);
   const box = document.getElementById("import-summary");
   if (!box) return;
@@ -1476,9 +1539,26 @@ function renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted,
           ? `Enrolled-count sync failed: ${escHtml(syncResult.error)} — run "Sync Enrolled" manually from the Dashboard.`
           : `Enrolled counts auto-synced (${syncResult.updated ?? 0} subject${syncResult.updated === 1 ? "" : "s"} updated) — no manual sync needed.`}
       </li>
+      ${emailWarnings.length > 0 ? `<li style="color:#b45309;">${emailWarnings.length} student(s) added WITHOUT their roster email — it already belonged to someone else; they can add it once they log in</li>` : ""}
       <li style="${errors.length ? "color:#dc2626;" : ""}">${errors.length} row(s) skipped due to issues</li>
     </ul>
   `;
+
+  if (emailWarnings.length > 0) {
+    const shownWarn = emailWarnings.slice(0, 50);
+    html += `
+      <p style="font-size:12px; font-weight:600; margin:14px 0 6px; color:#b45309;">
+        Added without their roster email${emailWarnings.length > shownWarn.length ? ` (showing first ${shownWarn.length} of ${emailWarnings.length})` : ""}:
+      </p>
+      <div style="max-height:160px; overflow-y:auto; border:1px solid #fde68a; border-radius:6px; padding:8px 10px; background:#fffbeb;">
+        ${shownWarn.map(e => `
+          <div style="font-size:11px; color:#92400e; margin-bottom:4px;">
+            <code>${escHtml(e.studentId)}</code>: ${escHtml(e.issues)}
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
 
   if (errors.length > 0) {
     const shown = errors.slice(0, 50);
