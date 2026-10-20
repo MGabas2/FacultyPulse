@@ -2605,6 +2605,25 @@ function populateYearLevelOptions() {
   else subjectAssignYearLevel = "";
 }
 
+// sections.department holds a DEGREE PROGRAM code (BEED, BSA, BSED, BSHM,
+// BSIT, BSInfoTech, BSTM, PEU — what the Subject Assignment filter shows),
+// but users.department holds an ORG DEPARTMENT code (Agri, HTM, ICT, IT,
+// TEd — a department can cover more than one program). They are NOT the
+// same vocabulary, so filtering teachers with .eq("department", <program
+// code>) against users.department always returned zero rows for any
+// specific selection — confirmed against the real Faculty Profile import
+// file's own "*Reference" column, which already recorded this exact
+// mapping. PEU (general ed/PE) has no single owning department, so it's
+// intentionally left unmapped — picking it in the filter shows ALL
+// teachers rather than guessing one department to blame it on.
+const PROGRAM_TO_ORG_DEPARTMENT = {
+  BEED: "TEd", BSED: "TEd",
+  BSHM: "HTM", BSTM: "HTM",
+  BSIT: "IT",
+  BSInfoTech: "ICT",
+  BSA: "Agri",
+};
+
 async function loadDepartmentsForAssignment() {
   const sel = document.getElementById("subject-assign-department");
   if (!sel) return;
@@ -2619,16 +2638,22 @@ async function loadTeachersForAssignment(department) {
   const sel = document.getElementById("subject-assign-teacher");
   if (!sel) return;
 
-  // "All Departments" now loads every active teacher, not a disabled
-  // placeholder — assigning across departments in one batch is a valid
-  // (if less common) workflow, so the teacher list should support it.
+  // "department" here is actually a PROGRAM code (see
+  // PROGRAM_TO_ORG_DEPARTMENT above) — translate it before filtering
+  // users.department, which speaks a different vocabulary entirely.
+  const orgDepartment = department ? (PROGRAM_TO_ORG_DEPARTMENT[department] || null) : null;
+
+  // "All Departments" (or an unmapped program like PEU) now loads every
+  // active teacher, not a disabled placeholder — assigning across
+  // departments in one batch is a valid (if less common) workflow, so
+  // the teacher list should support it.
   let query = supabase
     .from("users")
     .select("id, name")
     .eq("role", "teacher")
     .neq("is_active", false)
     .order("name");
-  if (department) query = query.eq("department", department);
+  if (orgDepartment) query = query.eq("department", orgDepartment);
 
   const { data } = await query;
   teachersForAssignment = data || [];
@@ -2941,10 +2966,20 @@ function parseSuffix(rawCode) {
 // itself contains a hyphen ("2026-2027"), so this must NOT just split on
 // "-" positionally — program and yearLevel are the first two segments,
 // whatever remains is the academic year.
+// Roman -> Arabic, matching admin-users.js's ROMAN_YEAR_LEVELS mapping
+// exactly (the one that actually builds these section names: "BSA-I-
+// 2026-2027", not "BSA-1-2026-2027"). parseInt("I", 10) is NaN, so this
+// was silently dropping EVERY section from the Subject Assignment match
+// map — 100% of rows failed with "course code not found" regardless of
+// what the roster file said, because the lookup table behind it was
+// empty, not because any course code was actually wrong.
+const ROMAN_TO_ARABIC_YEAR = { "I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6 };
+
 function parseSectionName(name) {
   const parts = (name || "").split("-");
   if (parts.length < 2) return null;
-  const yl = parseInt(parts[1], 10);
+  const raw = String(parts[1]).trim().toUpperCase();
+  const yl = ROMAN_TO_ARABIC_YEAR[raw] ?? parseInt(raw, 10);
   if (!Number.isFinite(yl)) return null;
   return { program: parts[0], yearLevel: yl };
 }
