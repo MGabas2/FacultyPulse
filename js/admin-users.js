@@ -514,16 +514,18 @@ function toggleSortDir() {
 //  ADD USER MODAL
 // ══════════════════════════════════════════════════════════════
 function onNewRoleChange() {
-  const role          = document.getElementById("new-role").value;
-  const studentFields = document.getElementById("student-fields");
-  const staffFields   = document.getElementById("staff-fields");
-  const rankGroup     = document.getElementById("new-rank-group");
-  const deptGroup     = document.getElementById("new-department-group");
+  const role           = document.getElementById("new-role").value;
+  const studentFields  = document.getElementById("student-fields");
+  const staffFields    = document.getElementById("staff-fields");
+  const rankGroup      = document.getElementById("new-rank-group");
+  const deptGroup      = document.getElementById("new-department-group");
+  const supervisorGroup = document.getElementById("new-is-supervisor-group");
 
   studentFields.classList.add("hidden");
   staffFields.classList.add("hidden");
   if (rankGroup) rankGroup.style.display = "none";
   if (deptGroup) deptGroup.style.display = "none";
+  if (supervisorGroup) supervisorGroup.style.display = "none";
 
   if (role === "student") {
     studentFields.classList.remove("hidden");
@@ -531,16 +533,21 @@ function onNewRoleChange() {
     staffFields.classList.remove("hidden");
     if (role === "teacher" && rankGroup) rankGroup.style.display = "block";
     // Department applies to teacher AND supervisor — not admin, who isn't
-    // scoped to any one department. For supervisors, Department IS their
-    // assignment: exactly one supervisor per department (the program
-    // chair), enforced at save time — there's no separate "which section"
-    // concept for supervisors anymore.
+    // scoped to any one department. It's descriptive/display only for
+    // supervisors now — supervisor_assignments (not department) is what
+    // actually governs who they can see/review; see admin-users.js's
+    // runSupervisorAssignmentImport for that model.
     if ((role === "teacher" || role === "supervisor") && deptGroup) {
       deptGroup.style.display = "block";
     }
     const empGroup = document.getElementById("new-employment-group");
     if (role === "teacher" && empGroup) empGroup.style.display = "block";
     else if (empGroup) empGroup.style.display = "none";
+    // "Also a supervisor" only makes sense for a TEACHER account (the
+    // dual-role case — a chair who also teaches). Picking role=Supervisor
+    // already creates a dedicated supervisor-only account; no separate
+    // flag needed there.
+    if (role === "teacher" && supervisorGroup) supervisorGroup.style.display = "block";
   }
 }
 
@@ -655,11 +662,17 @@ async function saveUser() {
       // only for supervisors — it plays no role in who they can see or
       // supervise; that's entirely determined by supervisor_assignments.
 
+      // Dual-role: a teacher account that's ALSO a supervisor (a chair who
+      // also teaches) — same login via either tab, see login.js. Only
+      // meaningful for role==="teacher"; the checkbox is hidden otherwise.
+      const isSupervisor = role === "teacher" && document.getElementById("new-is-supervisor")?.checked;
+
       const insertData = {
         role, name, email,
         academic_rank:   academicRank || null,
         employment_type: employmentType || null,
         department:      (role === "teacher" || role === "supervisor") ? department : null,
+        is_supervisor:   isSupervisor,
       };
 
       const { error: insertError } = await supabase.from("users").insert(insertData);
@@ -704,7 +717,12 @@ async function saveUser() {
         }
       }
 
-      await fpAlert(`User "${name}" added to the system.${authOutcomeMsg}`, authOutcomeMsg.includes("⚠️") ? "warning" : "success");
+      const supervisorNote = isSupervisor
+        ? `\n\nThey can now log in as a supervisor via the same email/password through the Supervisor tab. ` +
+          `Still need to assign WHICH faculty they supervise — run a Supervisor Assignments import with their email, ` +
+          `or they'll see an empty faculty list until then.`
+        : "";
+      await fpAlert(`User "${name}" added to the system.${authOutcomeMsg}${supervisorNote}`, authOutcomeMsg.includes("⚠️") ? "warning" : "success");
     }
 
     closeAddModal();
@@ -737,6 +755,10 @@ function openAddModal() {
     document.getElementById("new-department-group").style.display = "none";
   if (document.getElementById("new-department"))
     document.getElementById("new-department").value = "";
+  if (document.getElementById("new-is-supervisor-group"))
+    document.getElementById("new-is-supervisor-group").style.display = "none";
+  if (document.getElementById("new-is-supervisor"))
+    document.getElementById("new-is-supervisor").checked = false;
   onNewStudentDepartmentChange(); // resets the section list to unfiltered, and (via its own
                                    // call to onNewSectionChange) resets the Subjects list too
   document.getElementById("add-modal").classList.remove("hidden");
