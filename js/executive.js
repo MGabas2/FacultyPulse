@@ -662,7 +662,8 @@ async function openFacultyReport(teacherId, teacherName) {
       </table>
       <p style="font-size:10px; margin-bottom:16px; font-style:italic;">*Note: SEF rating is given by the supervisor using the SEF instrument.</p>
 
-      <!-- Category Breakdown -->
+      <!-- Category Breakdown — extra (not in CMO Annex C): hidden on print / PDF -->
+      <div class="no-print">
       <p style="font-size:11px; font-weight:bold; margin-bottom:6px;">Category Breakdown</p>
       <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:16px;">
         <thead>
@@ -690,6 +691,7 @@ async function openFacultyReport(teacherId, teacherName) {
           </tr>
         </tbody>
       </table>
+      </div>
 
       <!-- D. Summary of Qualitative Comments and Suggestions -->
       <p style="font-weight:bold; font-size:12px; margin-bottom:4px;">D. Summary of Qualitative Comments and Suggestions</p>

@@ -903,7 +903,8 @@ async function viewReport(teacherId, teacherName) {
         *Note: rating given by the supervisor using the SEF instrument
       </p>
 
-      <!-- Category Breakdown -->
+      <!-- Category Breakdown — extra (not in CMO Annex C): hidden on print / PDF -->
+      <div class="no-print">
       <p style="font-size:11px; color:#000; font-weight:bold; margin-bottom:6px;">Category Breakdown</p>
       <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:16px;">
         <thead>
@@ -931,6 +932,7 @@ async function viewReport(teacherId, teacherName) {
           </tr>
         </tbody>
       </table>
+      </div>
 
       <!-- D. Summary of Qualitative Comments and Suggestions -->
       <p style="font-weight:bold; font-size:12px; margin-bottom:4px;">D. Summary of Qualitative Comments and Suggestions</p>
@@ -1451,29 +1453,28 @@ async function forwardToSupervisor() {
   const semesterId  = window._reportSemesterId;
   if (!teacherId || !semesterId) return;
 
-  // Supervisor assignment is now by DEPARTMENT match (exactly one
-  // supervisor per department — the program chair), not the old
-  // users.supervisor_id link, which nothing in the admin UI ever
-  // actually set. Look up this teacher's own department, then find
-  // whichever active supervisor shares it.
-  const { data: teacherRow } = await supabase
-    .from("users")
-    .select("department")
-    .eq("id", teacherId)
-    .maybeSingle();
+  // Who can actually SEE this report is decided ONLY by supervisor_assignments
+  // (supervisor.js filters report_releases by it) — not by department. The old
+  // department-match lookup here could name a supervisor who can't see the
+  // report at all, and said nothing when NO supervisor was linked, so a
+  // forward "succeeded" while the report appeared for nobody.
+  const { data: asnRows } = await supabase
+    .from("supervisor_assignments")
+    .select("supervisor_id")
+    .eq("teacher_id", teacherId);
 
-  let supervisorName = "No supervisor assigned to this department yet";
-  if (teacherRow?.department) {
-    const { data: supRow } = await supabase
-      .from("users")
-      .select("name")
-      .eq("role", "supervisor")
-      .eq("department", teacherRow.department)
-      .eq("is_active", true)
-      .maybeSingle();
-    if (supRow?.name) supervisorName = supRow.name;
+  let supervisorName;
+  if (!asnRows || asnRows.length === 0) {
+    supervisorName =
+      "⚠️ NONE LINKED — no supervisor is assigned to this faculty, so nobody will see " +
+      "this report until you run the Supervisor Assignments import (or fix the link)";
   } else {
-    supervisorName = "This faculty member has no department set — assign one in User Management first";
+    const { data: supUsers } = await supabase
+      .from("users")
+      .select("name, is_active")
+      .in("id", asnRows.map(r => r.supervisor_id));
+    const names = (supUsers || []).map(u => u.name + (u.is_active === false ? " (archived)" : ""));
+    supervisorName = names.length ? names.join(", ") : "⚠️ Linked supervisor account not found";
   }
 
   const { data: subjectsForCount } = await supabase
