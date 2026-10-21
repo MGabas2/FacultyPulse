@@ -4,10 +4,9 @@
 //  CMO No. 19, s. 2025
 //  15 Annex B questions (differ from SET Annex A), formula: (score/75) x 100
 //
-//  NOTE: the supervisor deliberately does NOT see the students' SET
-//  score anywhere on this page. The SEF must be an independent
-//  assessment; showing the SET result would anchor the supervisor's
-//  ratings to it.
+//  NOTE: the faculty's overall SET score IS shown on each faculty card
+//  (panel requirement). Trade-off: the supervisor sees it before rating,
+//  so the SEF is no longer fully independent of the students' result.
 // ============================================================
 
 import { supabase } from "./supabase.js";
@@ -256,8 +255,17 @@ async function loadForwardedReports() {
   document.getElementById("count-done").textContent    = done;
   document.getElementById("count-total").textContent   = releases.length;
 
+  const setByTeacher = await loadSetScores(releases.map(r => r.teacher_id), semester.id);
+
   container.innerHTML = "";
   for (const release of releases) {
+    const setInfo     = setByTeacher.get(release.teacher_id);
+    const setPill     = setInfo
+      ? `<span title="Overall SET (student ratings) — ${setInfo.respondents} respondent${setInfo.respondents !== 1 ? "s" : ""}"
+          style="font-size:12px; font-weight:600; padding:4px 10px; border-radius:999px; white-space:nowrap;
+                 background:#fff; border:1px solid ${getRatingColor(setInfo.score)}; color:${getRatingColor(setInfo.score)};">
+          SET ${setInfo.score.toFixed(2)} · ${getRatingLabel(setInfo.score)}</span>`
+      : `<span style="font-size:12px; padding:4px 10px; border-radius:999px; white-space:nowrap; background:#f1f5f9; color:#64748b;">SET: no responses</span>`;
     const teacherName = release.users?.name || "Unknown Faculty";
     const teacherRank = release.users?.academic_rank || "";
     const teacherDept = release.users?.department || "";
@@ -270,13 +278,15 @@ async function loadForwardedReports() {
     const card = document.createElement("div");
     card.className = "faculty-card";
     card.id = `card-${safeId}`;
-    // No SET score is shown here on purpose — see header note.
+    // SET score is shown here per the panel's requirement (it used to be
+    // hidden to keep the SEF independent — see header note).
     card.innerHTML = `
       <div class="faculty-card-info">
         <h3>${escapeHtml(teacherName)}</h3>
         <p>${escapeHtml(teacherRank || "Faculty")}</p>
       </div>
       <div class="faculty-card-actions">
+        ${setPill}
         <span class="stage-badge ${isDone ? "stage-done" : "stage-forwarded"}">
           ${isDone ? "✅ SEF Submitted" : "📋 Pending SEF"}
         </span>
@@ -290,6 +300,59 @@ async function loadForwardedReports() {
     `;
     container.appendChild(card);
   }
+}
+
+// ── Overall SET per teacher (same CMO Annex C formula as admin.js's
+//    computeWeightedSET: per-subject average rating, weighted by number of
+//    respondents, divided by total respondents). Read-only; returns a Map of
+//    teacher_id -> { score, respondents }; teachers with no responses are
+//    simply absent. Pages through evaluation_scores because Supabase caps a
+//    single response at 1000 rows. ──
+async function loadSetScores(teacherIds, semesterId) {
+  const result = new Map();
+  if (!teacherIds.length) return result;
+
+  const { data: subs } = await supabase
+    .from("subjects").select("id, teacher_id")
+    .eq("semester_id", semesterId).in("teacher_id", teacherIds);
+  if (!subs || subs.length === 0) return result;
+
+  const teacherOfSubject = new Map(subs.map(s => [s.id, s.teacher_id]));
+  const subjectIds = subs.map(s => s.id);
+
+  const evals = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from("evaluation_scores").select("subject_id, scores")
+      .eq("semester_id", semesterId).in("subject_id", subjectIds)
+      .order("submitted_at", { ascending: true }).range(from, from + 999);
+    if (error || !data) break;
+    evals.push(...data);
+    if (data.length < 1000) break;
+  }
+
+  // teacher -> subject -> { sum, n }
+  const acc = new Map();
+  for (const e of evals) {
+    const tid = teacherOfSubject.get(e.subject_id);
+    if (!tid) continue;
+    const rating = (Object.values(e.scores || {}).reduce((s, v) => s + v, 0) / 75) * 100;
+    if (!acc.has(tid)) acc.set(tid, new Map());
+    const bySub = acc.get(tid);
+    const cur = bySub.get(e.subject_id) || { sum: 0, n: 0 };
+    cur.sum += rating; cur.n++;
+    bySub.set(e.subject_id, cur);
+  }
+
+  for (const [tid, bySub] of acc) {
+    let weighted = 0, respondents = 0;
+    for (const { sum, n } of bySub.values()) {
+      weighted    += parseFloat((sum / n).toFixed(2)) * n;
+      respondents += n;
+    }
+    if (respondents > 0) result.set(tid, { score: parseFloat((weighted / respondents).toFixed(2)), respondents });
+  }
+  return result;
 }
 
 // ── Fill Course Code/Title from the teacher's actual subjects this
