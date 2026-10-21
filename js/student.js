@@ -174,10 +174,10 @@ async function init() {
     supabase
       .from("evaluation_tracking")
       .select("subject_id")
-      // student_id here is the uuid (users.id), same as submit_evaluation's
-      // p_student_id — the unique constraint error proved it. Filtering by
-      // the text Student ID matched nothing, so already-submitted subjects
-      // looked "not submitted" after every reload.
+      // evaluation_tracking.student_id is a TEXT column that stores the
+      // student's uuid (users.id) as a string — confirmed from real rows.
+      // The text Student ID ("2023-1154-AB") never matches anything there,
+      // which is why submitted subjects weren't recognised after reload.
       .eq("student_id", sessionStorage.getItem("userId"))
       .eq("semester_id", semester.id),
   ]);
