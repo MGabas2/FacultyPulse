@@ -749,6 +749,7 @@ async function submitAll() {
 
   let successCount = 0;
   let failCount    = 0;
+  let lastError    = "";
 
   for (const sub of toSubmit) {
     const draft = drafts[sub.id];
@@ -775,14 +776,24 @@ async function submitAll() {
       });
 
       if (submitError) {
+        // 23505 = unique violation. It only means "already submitted" if a
+        // tracking row really exists. Previously this branch assumed so and
+        // DELETED the draft without checking — if the unique violation came
+        // from somewhere else inside the RPC, nothing was saved but the
+        // student's answers were wiped ("resets to zero"). Verify first.
         if (submitError.code === "23505") {
-          // Already submitted — mark done and continue
-          submittedIds.add(sub.id);
-          delete drafts[sub.id];
-          successCount++;
-          continue;
+          const { data: trk } = await supabase
+            .from("evaluation_tracking").select("subject_id")
+            .eq("student_id", studentId).eq("subject_id", sub.id)
+            .eq("semester_id", activeSemId).limit(1);
+          if (trk && trk.length > 0) {
+            submittedIds.add(sub.id);
+            delete drafts[sub.id];
+            successCount++;
+            continue;
+          }
         }
-        throw new Error(submitError.message);
+        throw new Error(`${submitError.code || ""} ${submitError.message}`.trim());
       }
 
       submittedIds.add(sub.id);
@@ -792,6 +803,7 @@ async function submitAll() {
     } catch (err) {
       console.error("Failed to submit", sub.name, err);
       failCount++;
+      lastError = err.message;
     }
   }
 
@@ -802,7 +814,7 @@ async function submitAll() {
 
   if (failCount > 0) {
     await fpAlert(
-      `${successCount} evaluation(s) submitted successfully.\n${failCount} failed — please try again.`,
+      `${successCount} evaluation(s) submitted successfully.\n${failCount} failed — your answers are kept, please try again.\n\nReason: ${lastError}`,
       "error"
     );
   } else {
