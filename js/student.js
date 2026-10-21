@@ -580,9 +580,23 @@ function onNext() {
       }
     });
 
-    // Scroll to first missed question
-    const firstMissed = document.getElementById("row-" + missed[0].id)
-      || document.getElementById("mrow-" + missed[0].id);
+    // Scroll to first missed question. Both the desktop row (row-X) and
+    // mobile card (mrow-X) exist in the DOM at all times — only CSS
+    // (.mobile-questions, display:none/block by media query) decides which
+    // one is actually visible. A plain `||` here always picked row-X first
+    // since getElementById doesn't care about display:none, so on mobile
+    // it scrolled a hidden element (a silent no-op in every browser) while
+    // the highlight below — applied unconditionally to both — correctly
+    // painted the visible mrow-X card. Net effect: the question turned red
+    // but never scrolled into view. offsetParent is null for an element (or
+    // an ancestor) under display:none, so it reliably picks whichever one
+    // is actually rendered/visible right now.
+    const rowEl   = document.getElementById("row-" + missed[0].id);
+    const cardEl  = document.getElementById("mrow-" + missed[0].id);
+    const firstMissed =
+      (rowEl  && rowEl.offsetParent  !== null) ? rowEl  :
+      (cardEl && cardEl.offsetParent !== null) ? cardEl :
+      (rowEl || cardEl);
     if (firstMissed) firstMissed.scrollIntoView({ behavior: "smooth", block: "center" });
 
     // Show inline banner
