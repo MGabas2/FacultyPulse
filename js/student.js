@@ -174,7 +174,11 @@ async function init() {
     supabase
       .from("evaluation_tracking")
       .select("subject_id")
-      .eq("student_id", studentId)
+      // student_id here is the uuid (users.id), same as submit_evaluation's
+      // p_student_id — the unique constraint error proved it. Filtering by
+      // the text Student ID matched nothing, so already-submitted subjects
+      // looked "not submitted" after every reload.
+      .eq("student_id", sessionStorage.getItem("userId"))
       .eq("semester_id", semester.id),
   ]);
 
@@ -784,7 +788,7 @@ async function submitAll() {
         if (submitError.code === "23505") {
           const { data: trk } = await supabase
             .from("evaluation_tracking").select("subject_id")
-            .eq("student_id", studentId).eq("subject_id", sub.id)
+            .eq("student_id", sessionStorage.getItem("userId")).eq("subject_id", sub.id)
             .eq("semester_id", activeSemId).limit(1);
           if (trk && trk.length > 0) {
             submittedIds.add(sub.id);
