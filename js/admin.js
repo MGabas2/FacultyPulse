@@ -1430,8 +1430,9 @@ function updateReleaseButton() {
 function goToMonitoringFiltered(teacherId, teacherName) {
   document.querySelectorAll(".modal").forEach(m => m.classList.add("hidden"));
 
-  if (typeof switchPanel === "function") {
-    switchPanel("panel-monitoring");
+  // switchPanel is defined in admin.html's module script and exposed on window.
+  if (typeof window.switchPanel === "function") {
+    window.switchPanel("panel-monitoring");
   }
 
   let attempts = 0;

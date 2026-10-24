@@ -1279,7 +1279,7 @@
   </div>
 
 
-  <script>
+  <script type="module">
     // ── On-demand script loader (cached per src). Used for the two heavy
     //    libraries that most sessions never need: SheetJS (only for the
     //    student import) and html2pdf (only when saving an IFER as PDF). ──
@@ -1300,12 +1300,14 @@
 
     const loaded = { dashboard: true, users: false, monitoring: false };
 
-    function injectScript(src) {
-      const s = document.createElement("script");
-      s.type = "module";
-      s.src = src;
-      document.head.appendChild(s);
-    }
+    // admin-users.js / admin-monitoring.js are loaded on demand with a dynamic
+    // import() so Vite bundles them as separate lazy chunks (a runtime
+    // <script src="../js/..."> tag would point at a file that no longer
+    // exists after the build).
+    const panelModules = {
+      users:      () => import("../js/admin-users.js"),
+      monitoring: () => import("../js/admin-monitoring.js"),
+    };
 
     function switchPanel(targetPanelId) {
       document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
@@ -1320,17 +1322,23 @@
         // SheetJS is ~880 KB — only fetch it once User Management is opened.
         window.fpLoadScript("../js/vendor/xlsx.full.min.js")
           .catch(err => console.error(err))
-          .then(() => injectScript("../js/admin-users.js"));
+          .then(() => panelModules.users())
+          .catch(err => console.error("Failed to load User Management:", err));
       }
       if (targetPanelId === "panel-monitoring" && !loaded.monitoring) {
         loaded.monitoring = true;
-        injectScript("../js/admin-monitoring.js");
+        panelModules.monitoring()
+          .catch(err => console.error("Failed to load Monitoring:", err));
       }
 
       // Tell admin.js which panel just opened so it can load that panel's
       // data on first visit instead of everything at page load.
       window.dispatchEvent(new CustomEvent("fp:panel", { detail: targetPanelId }));
     }
+
+    // admin.js calls switchPanel() as a global; module scripts have their own
+    // scope, so expose it explicitly.
+    window.switchPanel = switchPanel;
 
     document.getElementById("nav-dashboard").addEventListener("click", () => switchPanel("panel-dashboard"));
     document.getElementById("nav-users").addEventListener("click", () => switchPanel("panel-users"));

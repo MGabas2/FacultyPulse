@@ -7,3 +7,5 @@ supabase.config.js
 .vercel
 node_modules
 .env*
+# Vite build output
+dist
