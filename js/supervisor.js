@@ -283,16 +283,14 @@ async function loadForwardedReports() {
       <div class="faculty-card-info">
         <h3>${escapeHtml(teacherName)}</h3>
         <p>${escapeHtml(teacherRank || "Faculty")}</p>
+        <div class="faculty-card-meta">${setPill}</div>
       </div>
       <div class="faculty-card-actions">
-        ${setPill}
-        <span class="stage-badge ${isDone ? "stage-done" : "stage-forwarded"}">
-          ${isDone ? "✅ SEF Submitted" : "📋 Pending SEF"}
-        </span>
+        ${isDone ? `<span class="stage-badge stage-done">✓ SEF Submitted</span>` : ""}
         <button
           onclick="openReview('${safeId}', '${safeName}', ${isDone}, '${safeRank}', '${safeDept}')"
           ${isDone ? 'class="btn-secondary"' : ""}
-          style="font-size:13px; padding:6px 14px;">
+          >
           ${isDone ? "View Submission" : "Complete SEF →"}
         </button>
       </div>

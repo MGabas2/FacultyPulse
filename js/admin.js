@@ -233,13 +233,13 @@ let rankGroupByEmployment = true;
 async function loadRankings(opts = {}) {
   const preserve = opts.preserve === true;
   const tbody = document.getElementById("rankings-tbody");
-  if (!preserve) tbody.innerHTML = `<tr><td colspan="4">Loading...</td></tr>`;
+  if (!preserve) tbody.innerHTML = `<tr><td colspan="5">Loading...</td></tr>`;
 
   const { data: semester } = await supabase
     .from("semesters").select("id").eq("is_active", true).maybeSingle();
 
   if (!semester) {
-    tbody.innerHTML = `<tr><td colspan="4">No active semester.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5">No active semester.</td></tr>`;
     return;
   }
 
@@ -249,7 +249,7 @@ async function loadRankings(opts = {}) {
   const teachers = (allTeachers || []).filter(t => t.employment_type !== "COS");
 
   if (!teachers || teachers.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4">No faculty found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5">No faculty found.</td></tr>`;
     return;
   }
 
@@ -267,6 +267,54 @@ async function loadRankings(opts = {}) {
     .from("report_releases")
     .select("teacher_id, stage")
     .eq("semester_id", semester.id);
+
+  // ── Students-taught progress (the "12/20" column) ──────────────────────
+  // expected  = distinct students enrolled in any of the teacher's subjects
+  //             (live from student_subjects — not the cached enrolled_count)
+  // submitted = of those, students who evaluated EVERY one of that teacher's
+  //             subjects they are enrolled in.
+  // Tracking rows hold the student's uuid; student_subjects holds the text
+  // Student ID, so map text id → uuid via users.
+  const pagedAll = async (build) => {
+    const PAGE = 1000; let all = [], from = 0;
+    while (true) {
+      const { data, error } = await build().range(from, from + PAGE - 1);
+      if (error) { console.warn("progress query failed:", error.message); return null; }
+      all = all.concat(data || []);
+      if (!data || data.length < PAGE) break;
+      from += PAGE;
+    }
+    return all;
+  };
+  const [enrollRows, trackRows, studentRows] = await Promise.all([
+    pagedAll(() => supabase.from("student_subjects").select("student_id, subject_id").eq("semester_id", semester.id).order("student_id").order("subject_id")),
+    pagedAll(() => supabase.from("evaluation_tracking").select("student_id, subject_id").eq("semester_id", semester.id).order("student_id").order("subject_id")),
+    pagedAll(() => supabase.from("users").select("id, student_id").eq("role", "student").order("id")),
+  ]);
+  const progressAvailable = !!(enrollRows && trackRows && studentRows);
+  const uuidByStudentCode = new Map((studentRows || []).map(u => [u.student_id, u.id]));
+  const trackedPairs = new Set((trackRows || []).map(r => `${r.student_id}|${r.subject_id}`));
+  // teacherId -> Map(studentCode -> [subjectIds])
+  const teacherOfSubject = new Map((allSubjects || []).map(s => [s.id, s.teacher_id]));
+  const taughtByTeacher = {};
+  (enrollRows || []).forEach(r => {
+    const tid = teacherOfSubject.get(r.subject_id);
+    if (!tid) return;
+    ((taughtByTeacher[tid] ||= new Map()).get(r.student_id)
+      || (taughtByTeacher[tid].set(r.student_id, []), taughtByTeacher[tid].get(r.student_id))
+    ).push(r.subject_id);
+  });
+  const progressFor = (teacherId) => {
+    const m = taughtByTeacher[teacherId];
+    if (!progressAvailable || !m) return null;
+    let done = 0;
+    m.forEach((subIds, code) => {
+      const uuid = uuidByStudentCode.get(code);
+      const all = subIds.every(sid => trackedPairs.has(`${uuid}|${sid}`) || trackedPairs.has(`${code}|${sid}`));
+      if (all) done++;
+    });
+    return { done, expected: m.size };
+  };
 
   const releaseStageByTeacher = {};
   (allReleases || []).forEach(r => {
@@ -322,6 +370,7 @@ async function loadRankings(opts = {}) {
       rank:           teacher.academic_rank || "—",
       overallSET,
       respondents:    totalRespondents,
+      progress:       progressFor(teacher.id),
       program,
       employmentType: teacher.employment_type || "—",
       stage:          releaseStageByTeacher[teacher.id] || "pending",
@@ -349,6 +398,24 @@ async function loadRankings(opts = {}) {
   populateReportFacultySelect(ranked);
 
   renderDonutChart(ranked, { silent: preserve });
+}
+
+// "12/20 students" + a thin progress bar. done = students who evaluated all
+// of this teacher's subjects they are enrolled in; expected = students taught.
+function evalProgressHtml(p) {
+  if (!p || p.expected <= 0) return `<span style="font-size:12px;color:#64748b;">—</span>`;
+  const d = p.done, e = p.expected;
+  const pct = Math.min(100, Math.round((d / e) * 100));
+  const color = pct >= 75 ? "#16a34a" : pct >= 40 ? "#d97706" : "#dc2626";
+  return `
+    <div style="min-width:120px;" title="${d} of ${e} students have finished evaluating this faculty (${pct}%)">
+      <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:3px;">
+        <span>${d}/${e} students</span><span style="color:#64748b;font-weight:500;">${pct}%</span>
+      </div>
+      <div style="height:6px;border-radius:4px;background:#e5e7eb;overflow:hidden;">
+        <div style="width:${pct}%;height:100%;background:${color};"></div>
+      </div>
+    </div>`;
 }
 
 function renderRankingsPage(silent = false) {
@@ -379,7 +446,7 @@ function renderRankingsPage(silent = false) {
   renderBarChart(filtered, { silent });
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4">No evaluation data ${progFilter ? "for this program" : "yet"}.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5">No evaluation data ${progFilter ? "for this program" : "yet"}.</td></tr>`;
     document.getElementById("rank-page-info").textContent = "";
     document.getElementById("rank-page-buttons").innerHTML = "";
     return;
@@ -410,7 +477,7 @@ function renderRankingsPage(silent = false) {
       if (prevGroup !== null && t.employmentType !== prevGroup) {
         tbody.innerHTML += `
           <tr>
-            <td colspan="4" style="padding:6px 8px; background:#f1f5f9; text-align:center;
+            <td colspan="5" style="padding:6px 8px; background:#f1f5f9; text-align:center;
               font-size:10px; font-weight:700; color:#64748b; letter-spacing:.03em;">
               ${escHtml(t.employmentType)}
             </td>
@@ -419,7 +486,7 @@ function renderRankingsPage(silent = false) {
       } else if (prevGroup === null) {
         tbody.innerHTML += `
           <tr>
-            <td colspan="4" style="padding:6px 8px; background:#f1f5f9; text-align:center;
+            <td colspan="5" style="padding:6px 8px; background:#f1f5f9; text-align:center;
               font-size:10px; font-weight:700; color:#64748b; letter-spacing:.03em;">
               ${escHtml(t.employmentType)}
             </td>
@@ -432,6 +499,7 @@ function renderRankingsPage(silent = false) {
       <tr>
         <td>${t._displayRank}</td>
         <td>${t.name}</td>
+        <td>${evalProgressHtml(t.progress)}</td>
         <td>${getReportStageBadge(t.stage)}</td>
         <td>
           <button onclick="viewReport('${t.id}','${t.name.replace(/'/g,"\\'")}')">
