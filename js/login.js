@@ -106,10 +106,9 @@ function finalizeStudentLogin(userRow, studentId) {
   sessionStorage.setItem("email",     userRow.email || "");
   sessionStorage.setItem("needsEmailPrompt", userRow.email ? "false" : "true");
 
+  // Database function instead of a direct table update (users is locked down).
   supabase
-    .from("users")
-    .update({ last_login: new Date().toISOString() })
-    .eq("id", userRow.id)
+    .rpc("record_student_login", { p_user_id: userRow.id })
     .then(() => {});
 
   window.location.href = "pages/student.html";
@@ -516,8 +515,11 @@ if (forgotLink) {
     }
 
     forgotLink.textContent = "Checking...";
-    const { data: emailRow } = await supabase
-      .from("users").select("email").eq("student_id", studentId).eq("role", "student").maybeSingle();
+    // Database function: returns just this one student's email (or null), so
+    // the browser can't read the users table to look people up.
+    const { data: foundEmail } = await supabase
+      .rpc("get_student_reset_email", { p_student_id: studentId });
+    const emailRow = foundEmail ? { email: foundEmail } : null;
     forgotLink.textContent = "Forgot password?";
 
     if (!emailRow?.email) {

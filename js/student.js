@@ -165,24 +165,24 @@ async function init() {
   // together instead of one after another. That cuts one full network
   // round trip off every dashboard load (noticeable from a high-latency
   // connection, where each sequential round trip adds up).
-  const [{ data: enrollmentRows, error }, { data: done }] = await Promise.all([
-    supabase
-      .from("student_subjects")
-      .select("subjects(id, name, users(name), sections(name, department))")
-      .eq("student_id", studentId)
-      .eq("semester_id", semester.id),
-    supabase
-      .from("evaluation_tracking")
-      .select("subject_id")
-      // evaluation_tracking.student_id is a TEXT column that stores the
-      // student's uuid (users.id) as a string — confirmed from real rows.
-      // The text Student ID ("2023-1154-AB") never matches anything there,
-      // which is why submitted subjects weren't recognised after reload.
-      .eq("student_id", sessionStorage.getItem("userId"))
-      .eq("semester_id", semester.id),
-  ]);
+  // One database function returns BOTH the student's enrolled subjects (with
+  // teacher + section info) and which of them they already submitted. The
+  // browser no longer reads student_subjects / users / evaluation_tracking
+  // directly — those tables are locked down (RLS), and a single call is also
+  // one network round trip instead of two.
+  const { data: dash, error } = await supabase.rpc("get_student_dashboard", {
+    p_student_id:  studentId,                         // text Student ID (enrollments)
+    p_user_id:     sessionStorage.getItem("userId"),  // uuid as text (submissions)
+    p_semester_id: semester.id,
+  });
 
-  const subs = (enrollmentRows || []).map(r => r.subjects).filter(Boolean);
+  const subs = ((dash && dash.subjects) || []).map(s => ({
+    id: s.id,
+    name: s.name,
+    users: { name: s.teacher_name },
+    sections: { name: s.section_name, department: s.department },
+  }));
+  const done = ((dash && dash.submitted) || []).map(id => ({ subject_id: id }));
 
   if (error || !subs || subs.length === 0) {
     document.getElementById("progress-section").style.display = "block";
@@ -813,11 +813,12 @@ async function submitAll() {
         // from somewhere else inside the RPC, nothing was saved but the
         // student's answers were wiped ("resets to zero"). Verify first.
         if (submitError.code === "23505") {
-          const { data: trk } = await supabase
-            .from("evaluation_tracking").select("subject_id")
-            .eq("student_id", sessionStorage.getItem("userId")).eq("subject_id", sub.id)
-            .eq("semester_id", activeSemId).limit(1);
-          if (trk && trk.length > 0) {
+          const { data: alreadyDone } = await supabase.rpc("has_submitted_subject", {
+            p_user_id:     sessionStorage.getItem("userId"),
+            p_subject_id:  sub.id,
+            p_semester_id: activeSemId,
+          });
+          if (alreadyDone === true) {
             submittedIds.add(sub.id);
             delete drafts[sub.id];
             successCount++;
