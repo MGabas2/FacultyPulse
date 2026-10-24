@@ -1112,11 +1112,19 @@
           <select id="new-student-department" onchange="onNewStudentDepartmentChange()">
             <option value="">-- Select Department --</option>
           </select>
-          <p class="field-hint">Narrows the Section list below. Leave blank to see all sections.</p>
+          <p class="field-hint">Narrows the Section list and shows this department's courses below.</p>
         </div>
         <div class="form-group">
           <label>Section</label>
-          <select id="new-section-id"><option value="">-- Select Section --</option></select>
+          <select id="new-section-id" onchange="onNewSectionChange()"><option value="">-- Select Section --</option></select>
+        </div>
+        <div class="form-group">
+          <label>Courses</label>
+          <input type="text" id="new-student-subject-search" placeholder="Search courses…" style="margin-bottom:6px;" />
+          <div id="new-student-subjects-list" style="max-height:220px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:8px; padding:8px 10px; font-size:13px;">
+            <p style="color:#888; margin:0;">Select a department to see its courses.</p>
+          </div>
+          <p class="field-hint">Includes this department's courses plus minor / general courses. Picking a section ticks its usual courses; tick or untick as needed. Optional — you can enroll later from Subject Assignment.</p>
         </div>
       </div>
       <div id="staff-fields" class="role-fields hidden">

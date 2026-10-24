@@ -4,6 +4,7 @@
 // ============================================================
 
 import { supabase } from "./supabase.js";
+import { PROGRAM_TO_ORG_DEPARTMENT } from "./departments.js";
 import { fpAlert, fpConfirm, fpLoading } from "./modal.js";
 
 // ── Lazy panels: a panel's data loads the first time its sidebar tab is
@@ -2618,13 +2619,8 @@ function populateYearLevelOptions() {
 // mapping. PEU (general ed/PE) has no single owning department, so it's
 // intentionally left unmapped — picking it in the filter shows ALL
 // teachers rather than guessing one department to blame it on.
-const PROGRAM_TO_ORG_DEPARTMENT = {
-  BEED: "TEd", BSED: "TEd",
-  BSHM: "HTM", BSTM: "HTM",
-  BSIT: "IT",
-  BSInfoTech: "ICT",
-  BSA: "Agri",
-};
+// (PROGRAM_TO_ORG_DEPARTMENT now lives in ./departments.js, shared with
+// admin-users.js so the two can never drift apart.)
 
 async function loadDepartmentsForAssignment() {
   const sel = document.getElementById("subject-assign-department");

@@ -10,6 +10,7 @@ function escHtml(str) {
 }
 import { supabase } from "./supabase.js";
 import { fpAlert, fpConfirm } from "./modal.js";
+import { ORG_DEPARTMENTS, departmentLabel, orgDepartmentOf } from "./departments.js";
 
 // ── Guard ──
 if (!sessionStorage.getItem("role") || sessionStorage.getItem("role") !== "admin") {
@@ -46,7 +47,7 @@ const ACADEMIC_RANKS = [
 // a specific program (e.g. "BSIT") will show no teachers. Use "All
 // Departments" there and find the teacher by name/search until that panel is
 // updated to understand the org-department -> program mapping too.
-const ORG_DEPARTMENTS = ["Agri", "HTM", "ICT", "IT", "TEd"];
+// (ORG_DEPARTMENTS now comes from ./departments.js — shared with admin.js.)
 
 // ── State ──
 let allUsers        = [];
@@ -70,14 +71,6 @@ async function loadDepartments() {
   if (error) { console.error("Failed to load departments:", error); return; }
 
   departments = [...new Set((data || []).map(r => r.department).filter(Boolean))].sort();
-
-  const studentSel = document.getElementById("new-student-department");
-  if (studentSel) {
-    const current = studentSel.value;
-    studentSel.innerHTML = `<option value="">-- Select Department --</option>` +
-      departments.map(d => `<option value="${escHtml(d)}">${escHtml(d)}</option>`).join("");
-    if (departments.includes(current)) studentSel.value = current;
-  }
 
   ["new-department", "edit-department"].forEach(id => {
     const sel = document.getElementById(id);
@@ -116,6 +109,8 @@ async function loadSections() {
     });
   }
 
+  populateStudentDepartmentOptions();
+
   // Populate academic rank dropdowns
   ["new-academic-rank", "edit-academic-rank"].forEach(id => {
     const sel = document.getElementById(id);
@@ -127,82 +122,151 @@ async function loadSections() {
   });
 }
 
-// Narrows the student-add Section dropdown to the chosen department (or
-// shows every section again when cleared). Purely a UI filter — students
-// don't have their own department column, department lives on the
-// section they're assigned to.
+// ── Add Student: Department → Section → Courses ─────────────────────────
+// The Department dropdown shows real DEPARTMENT names (IT, HTM, TEd, …), not
+// program codes. A department's courses are the subjects offered to every
+// section whose program maps to it (departments.js). "Minor / general"
+// courses are subjects of sections whose program has NO owning department
+// (PEU = general ed / PE, or anything unmapped) — those are offered under
+// every department. Subjects belong to sections (subjects.section_id), and
+// students enroll individually through student_subjects.
+let newStudentPicked = new Set();   // subject ids currently ticked in the Add form
+let newStudentSubjects = [];        // subjects loaded for the current department
+
+const sectionDept = (s) => orgDepartmentOf(s.department);
+
+function populateStudentDepartmentOptions() {
+  const sel = document.getElementById("new-student-department");
+  if (!sel) return;
+  const current = sel.value;
+  const present = [...new Set(sections.map(sectionDept).filter(Boolean))]
+    .sort((a, b) => ORG_DEPARTMENTS.indexOf(a) - ORG_DEPARTMENTS.indexOf(b));
+  sel.innerHTML = `<option value="">-- Select Department --</option>` +
+    present.map(d => `<option value="${escHtml(d)}">${escHtml(departmentLabel(d))}</option>`).join("");
+  if (present.includes(current)) sel.value = current;
+}
+
+// Narrows the Section dropdown to the chosen department (all sections when
+// blank), then reloads the course checklist.
 function onNewStudentDepartmentChange() {
   const dept = document.getElementById("new-student-department")?.value || "";
   const sel  = document.getElementById("new-section-id");
   if (!sel) return;
 
   const currentValue = sel.value;
-  const pool = dept ? sections.filter(s => s.department === dept) : sections;
+  const pool = dept ? sections.filter(s => sectionDept(s) === dept) : sections;
 
   sel.innerHTML = `<option value="">-- Select Section --</option>` +
     pool.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join("");
+  if ([...sel.options].some(o => o.value === currentValue)) sel.value = currentValue;
 
-  if ([...sel.options].some(o => o.value === currentValue)) {
-    sel.value = currentValue;
-  }
-
-  // Section may have just reset (department changed to one that doesn't
-  // contain the previously-picked section) — keep the Subjects list in
-  // sync rather than leaving it showing a stale section's subjects.
-  onNewSectionChange();
+  newStudentPicked = new Set();
+  loadNewStudentSubjects();
 }
 window.onNewStudentDepartmentChange = onNewStudentDepartmentChange;
 
-// Subjects are scoped to a specific section + semester (see student_subjects
-// design elsewhere in this codebase — two sections in the same department
-// can offer different subjects), so the Subjects checklist in the Add
-// Student form loads from the chosen SECTION, not the department filter
-// above it, once a section is actually picked.
-async function onNewSectionChange() {
+// Picking a section ticks that section's own courses (the student's usual
+// load); the admin can then add or untick anything from the department list
+// or the minor/general list.
+function onNewSectionChange() {
   const sectionId = document.getElementById("new-section-id")?.value || "";
-  const container  = document.getElementById("new-student-subjects-list");
-  if (!container) return;
+  newStudentPicked = new Set(
+    newStudentSubjects.filter(s => s.section_id === sectionId).map(s => s.id)
+  );
+  renderNewStudentSubjects();
+}
+window.onNewSectionChange = onNewSectionChange;
 
-  if (!sectionId) {
-    container.innerHTML = `<p style="color:#888; margin:0;">Select a section first.</p>`;
+async function loadNewStudentSubjects() {
+  const container = document.getElementById("new-student-subjects-list");
+  if (!container) return;
+  const dept = document.getElementById("new-student-department")?.value || "";
+
+  newStudentSubjects = [];
+  if (!dept) {
+    container.innerHTML = `<p style="color:#888; margin:0;">Select a department to see its courses.</p>`;
     return;
   }
 
-  container.innerHTML = `<p style="color:#888; margin:0;">Loading subjects…</p>`;
+  container.innerHTML = `<p style="color:#888; margin:0;">Loading courses…</p>`;
 
   const { data: sem } = await supabase
     .from("semesters").select("id, label").eq("is_active", true).maybeSingle();
-
   if (!sem) {
     container.innerHTML = `<p style="color:#b91c1c; margin:0;">No active semester — set one in Semester Management first.</p>`;
     return;
   }
 
+  const deptSectionIds  = sections.filter(s => sectionDept(s) === dept).map(s => s.id);
+  const minorSectionIds = sections.filter(s => !sectionDept(s)).map(s => s.id);
+  const ids = [...deptSectionIds, ...minorSectionIds];
+  if (ids.length === 0) {
+    container.innerHTML = `<p style="color:#888; margin:0;">No sections found for this department.</p>`;
+    return;
+  }
+
   const { data: subs, error } = await supabase
-    .from("subjects")
-    .select("id, name")
-    .eq("section_id", sectionId)
-    .eq("semester_id", sem.id)
-    .order("name");
-
+    .from("subjects").select("id, name, section_id")
+    .eq("semester_id", sem.id).in("section_id", ids).order("name").limit(1000);
   if (error) {
-    container.innerHTML = `<p style="color:#b91c1c; margin:0;">Failed to load subjects: ${escHtml(error.message)}</p>`;
+    container.innerHTML = `<p style="color:#b91c1c; margin:0;">Failed to load courses: ${escHtml(error.message)}</p>`;
     return;
   }
 
-  if (!subs || subs.length === 0) {
-    container.innerHTML = `<p style="color:#888; margin:0;">No subjects offered to this section yet for ${escHtml(sem.label)}.</p>`;
-    return;
-  }
-
-  container.innerHTML = subs.map(s => `
-    <label style="display:flex; align-items:center; gap:6px; padding:3px 0; cursor:pointer;">
-      <input type="checkbox" class="new-student-subject-cb" value="${s.id}" />
-      ${escHtml(s.name)}
-    </label>
-  `).join("");
+  const minorSet = new Set(minorSectionIds);
+  newStudentSubjects = (subs || []).map(s => ({ ...s, minor: minorSet.has(s.section_id) }));
+  newStudentSubjects.semLabel = sem.label;
+  onNewSectionChange(); // pre-ticks the chosen section's subjects (if any) and renders
 }
-window.onNewSectionChange = onNewSectionChange;
+
+function renderNewStudentSubjects() {
+  const container = document.getElementById("new-student-subjects-list");
+  if (!container) return;
+  const dept = document.getElementById("new-student-department")?.value || "";
+  if (!dept) return;
+
+  if (newStudentSubjects.length === 0) {
+    container.innerHTML = `<p style="color:#888; margin:0;">No courses offered for this department yet${newStudentSubjects.semLabel ? " in " + escHtml(newStudentSubjects.semLabel) : ""}.</p>`;
+    return;
+  }
+
+  const q = (document.getElementById("new-student-subject-search")?.value || "").trim().toLowerCase();
+  const secName = Object.fromEntries(sections.map(s => [s.id, s.name]));
+  const visible = newStudentSubjects.filter(s =>
+    !q || s.name.toLowerCase().includes(q) || (secName[s.section_id] || "").toLowerCase().includes(q));
+
+  const group = (title, list) => {
+    if (list.length === 0) return "";
+    const bySection = {};
+    list.forEach(s => (bySection[s.section_id] ||= []).push(s));
+    return `<div style="font-weight:600; font-size:12px; margin:10px 0 2px; color:#475569;">${escHtml(title)}</div>` +
+      Object.entries(bySection).map(([sid, items]) => `
+        <div style="font-size:11px; color:#94a3b8; margin:6px 0 1px;">${escHtml(secName[sid] || "—")}</div>
+        ${items.map(s => `
+          <label style="display:flex; align-items:center; gap:6px; padding:2px 0; cursor:pointer;">
+            <input type="checkbox" class="new-student-subject-cb" value="${s.id}"
+              ${newStudentPicked.has(s.id) ? "checked" : ""} />
+            ${escHtml(s.name)}
+          </label>`).join("")}`).join("");
+  };
+
+  const html =
+    group(`${departmentLabel(dept)} courses`, visible.filter(s => !s.minor)) +
+    group("Minor / general courses", visible.filter(s => s.minor));
+  container.innerHTML = html || `<p style="color:#888; margin:0;">No courses match "${escHtml(q)}".</p>`;
+}
+
+// Keep the picked set in sync with the checkboxes (the list re-renders on
+// search, and ticks must survive that). Delegated: the list is rebuilt often.
+document.addEventListener("change", (e) => {
+  const cb = e.target;
+  if (cb?.classList?.contains("new-student-subject-cb")) {
+    cb.checked ? newStudentPicked.add(cb.value) : newStudentPicked.delete(cb.value);
+  }
+});
+document.addEventListener("input", (e) => {
+  if (e.target?.id === "new-student-subject-search") renderNewStudentSubjects();
+});
 
 // ══════════════════════════════════════════════════════════════
 //  LOAD USERS
@@ -619,8 +683,9 @@ async function saveUser() {
       // creation that already succeeded above — it's reported as a
       // separate warning instead, same pattern as the Auth-account
       // creation fallback below for staff.
-      const checkedSubjectIds = [...document.querySelectorAll(".new-student-subject-cb:checked")]
-        .map(cb => cb.value);
+      // Read from the picked set, not the DOM: ticked courses hidden by the
+      // search box aren't rendered, so querying checkboxes would drop them.
+      const checkedSubjectIds = [...newStudentPicked];
 
       if (checkedSubjectIds.length > 0) {
         const { data: sem } = await supabase
@@ -789,8 +854,10 @@ function openAddModal() {
     document.getElementById("new-is-executive-group").style.display = "none";
   if (document.getElementById("new-is-executive"))
     document.getElementById("new-is-executive").checked = false;
-  onNewStudentDepartmentChange(); // resets the section list to unfiltered, and (via its own
-                                   // call to onNewSectionChange) resets the Subjects list too
+  const subjSearch = document.getElementById("new-student-subject-search");
+  if (subjSearch) subjSearch.value = "";
+  if (document.getElementById("new-student-department")) document.getElementById("new-student-department").value = "";
+  onNewStudentDepartmentChange(); // resets the section list and the course checklist
   document.getElementById("add-modal").classList.remove("hidden");
 }
 
