@@ -668,12 +668,29 @@ async function saveUser() {
       }
       if (!sectionId) { errorEl.textContent = "Please select a section."; return; }
 
+      // Optional email. Blank is fine (saved as NULL). If given: must look
+      // like an email and must not already belong to ANY account — users.email
+      // is UNIQUE, and the student login uses it for the email-code step.
+      const email = (document.getElementById("new-student-email")?.value || "").trim().toLowerCase();
+      if (email) {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          errorEl.textContent = "That email doesn't look valid (e.g. name@gmail.com)."; return;
+        }
+        const owner = allUsers.find(u => u.email && u.email.toLowerCase() === email);
+        if (owner) {
+          errorEl.textContent = `That email already belongs to ${owner.name || "another account"}.`; return;
+        }
+      }
+
       const { error } = await supabase.from("users").insert({
         name, student_id: studentId, role: "student", section_id: sectionId,
+        email: email || null,
       });
       if (error) {
         errorEl.textContent = error.code === "23505"
-          ? "That Student ID already exists." : "Failed to save: " + error.message;
+          ? (/email/i.test(error.message) ? "That email is already used by another account."
+                                            : "That Student ID already exists.")
+          : "Failed to save: " + error.message;
         return;
       }
 
@@ -854,6 +871,7 @@ function openAddModal() {
     document.getElementById("new-is-executive-group").style.display = "none";
   if (document.getElementById("new-is-executive"))
     document.getElementById("new-is-executive").checked = false;
+  if (document.getElementById("new-student-email")) document.getElementById("new-student-email").value = "";
   const subjSearch = document.getElementById("new-student-subject-search");
   if (subjSearch) subjSearch.value = "";
   if (document.getElementById("new-student-department")) document.getElementById("new-student-department").value = "";

@@ -1108,6 +1108,11 @@
           <p class="field-hint">Format: 4 digits - 4 digits - 2 uppercase letters</p>
         </div>
         <div class="form-group">
+          <label>Email <span style="font-weight:400; color:#94a3b8;">(optional)</span></label>
+          <input type="email" id="new-student-email" placeholder="e.g. juan.delacruz@gmail.com" autocomplete="off" />
+          <p class="field-hint">Leave blank if the student has no email yet. It can be added later (Edit User). Double-check spelling — a typo here means the student can't receive login codes.</p>
+        </div>
+        <div class="form-group">
           <label>Department</label>
           <select id="new-student-department" onchange="onNewStudentDepartmentChange()">
             <option value="">-- Select Department --</option>
