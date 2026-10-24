@@ -104,7 +104,6 @@ function finalizeStudentLogin(userRow, studentId) {
   sessionStorage.setItem("sectionId", userRow.section_id);
   sessionStorage.setItem("name",      userRow.name || studentId);
   sessionStorage.setItem("email",     userRow.email || "");
-  sessionStorage.setItem("needsEmailPrompt", userRow.email ? "false" : "true");
 
   // Database function instead of a direct table update (users is locked down).
   supabase
@@ -416,14 +415,16 @@ async function login() {
       startOtpCooldownCountdown(userRow.email, document.getElementById("otp-resend-btn"));
 
     } else {
+      // Emails are stored lowercase (Supabase Auth lowercases them, and the
+      // database policies compare lowercase) — so normalise what was typed.
       const { error: authError } = await supabase.auth.signInWithPassword({
-        email: username, password: password,
+        email: username.toLowerCase(), password: password,
       });
 
       if (authError) { errorMsg.textContent = "Incorrect email or password."; return; }
 
       const { data: userRow, error: userError } = await supabase
-        .from("users").select("role, name, id, is_supervisor, is_executive").eq("email", username).single();
+        .from("users").select("role, name, id, is_supervisor, is_executive").eq("email", username.toLowerCase()).single();
 
       if (userError || !userRow) {
         errorMsg.textContent = "Account not found in system. Contact admin.";

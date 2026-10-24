@@ -920,6 +920,202 @@ document.getElementById("cp-submit-btn")?.addEventListener("click", async () => 
   setTimeout(() => document.getElementById("change-password-modal").classList.add("hidden"), 1500);
 });
 
+// ══════════════════════════════════════════════════════════════
+//  EMAIL — add or change your own email (verified by a code)
+//
+//  Why it is built this way: your email is where login codes and
+//  password-reset codes go, so a typo locks you out. Before anything is
+//  saved we (1) re-check your password, (2) email a code to the NEW
+//  address and make you type it — so a misspelled or someone-else's
+//  address can never be saved — and (3) the database function re-checks
+//  both. See sql: student_email_change.sql
+// ══════════════════════════════════════════════════════════════
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EM_RESEND_MS = 60 * 1000;
+const EM_MAX_SENDS = 5;               // per page session — protects the email quota
+let emStep = "form";                  // "form" | "code"
+let emPending = null;                 // { email, password } — held in memory only while the modal is open
+let emSends = 0;
+let emResendUntil = 0;
+let emTimer = null;
+
+const emEl = (id) => document.getElementById(id);
+
+function maskEmail(email) {
+  const [local, domain] = String(email).split("@");
+  if (!domain) return email;
+  return `${local.slice(0, 2)}${"*".repeat(Math.max(local.length - 2, 3))}@${domain}`;
+}
+function currentEmail() { return (sessionStorage.getItem("email") || "").trim(); }
+
+function renderEmailCard() {
+  const card = emEl("email-card");
+  if (!card) return;
+  const email = currentEmail();
+  card.style.display = "flex";
+  card.classList.toggle("needs", !email);
+  if (email) {
+    emEl("email-card-title").textContent = "Email: " + maskEmail(email);
+    emEl("email-card-sub").textContent =
+      "Your login code and password-reset code are sent here. If it is wrong or you no longer use it, update it. " +
+      "⚠️ A misspelled email can lock you out of your account.";
+    emEl("email-card-btn").textContent = "Change email";
+  } else {
+    emEl("email-card-title").textContent = "Add your email address (optional)";
+    emEl("email-card-sub").textContent =
+      "Without an email you can't reset a forgotten password. " +
+      "⚠️ Type it very carefully — a misspelled email can lock you out of your account.";
+    emEl("email-card-btn").textContent = "Add email";
+  }
+}
+
+function emError(msg) { emEl("em-error").textContent = msg || ""; }
+
+function emShow(step) {
+  emStep = step;
+  emEl("em-step-form").style.display = step === "form" ? "block" : "none";
+  emEl("em-step-code").style.display = step === "code" ? "block" : "none";
+  emEl("em-primary-btn").textContent = step === "form" ? "Send verification code" : "Verify & save";
+  emEl("em-title").textContent = currentEmail() ? "Change your email" : "Add your email";
+  emError("");
+}
+
+function emResendTick() {
+  const btn = emEl("em-resend");
+  const left = emResendUntil - Date.now();
+  if (left <= 0) { btn.disabled = false; btn.textContent = "Resend code"; clearInterval(emTimer); return; }
+  btn.disabled = true; btn.textContent = `Resend in ${Math.ceil(left / 1000)}s`;
+}
+
+function emMessage(code) {
+  return ({
+    bad_password:  "Incorrect password.",
+    invalid_email: "That doesn't look like a valid email address.",
+    same_email:    "That is already your email address.",
+    email_taken:   "That email is already linked to another account. Use a different address, or ask the QA office for help.",
+    not_verified:  "We couldn't confirm that address. Please start again.",
+  })[code] || "Something went wrong. Please try again.";
+}
+
+function openEmailModal() {
+  ["em-new", "em-confirm", "em-pw", "em-code"].forEach(id => { emEl(id).value = ""; });
+  emEl("em-success").style.display = "none";
+  emPending = null;
+  clearInterval(emTimer);
+  emEl("em-primary-btn").disabled = false;
+  emShow("form");
+  emEl("email-modal").classList.remove("hidden");
+  emEl("em-new").focus();
+}
+function closeEmailModal() {
+  emPending = null;
+  clearInterval(emTimer);
+  emEl("email-modal").classList.add("hidden");
+}
+
+async function emSendCode() {
+  const email = emPending.email;
+  if (emSends >= EM_MAX_SENDS) { emError("Too many codes requested. Please try again later."); return false; }
+  const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+  if (error) {
+    const limited = error.status === 429 || /rate|seconds|too many/i.test(error.message || "");
+    emError(limited ? "Too many codes requested. Wait a few minutes, then try again."
+                    : "Couldn't send the code: " + error.message);
+    return false;
+  }
+  emSends++;
+  emResendUntil = Date.now() + EM_RESEND_MS;
+  clearInterval(emTimer); emResendTick(); emTimer = setInterval(emResendTick, 1000);
+  return true;
+}
+
+async function emSubmitForm() {
+  const email   = emEl("em-new").value.trim().toLowerCase();
+  const confirm = emEl("em-confirm").value.trim().toLowerCase();
+  const pw      = emEl("em-pw").value;
+  if (!EMAIL_RE.test(email))  { emError("Enter a valid email address."); return; }
+  if (email !== confirm)      { emError("The two email addresses don't match — check the spelling."); return; }
+  if (!pw)                    { emError("Enter your password to confirm it's you."); return; }
+
+  const { data: res, error } = await supabase.rpc("check_student_email_change", {
+    p_student_id: studentId, p_password: pw, p_new_email: email,
+  });
+  if (error) { emError("Couldn't check that right now: " + error.message); return; }
+  if (res !== "ok") { emError(emMessage(res)); return; }
+
+  emPending = { email, password: pw };
+  if (!(await emSendCode())) { emPending = null; return; }
+  emEl("em-target").textContent = email;
+  emEl("em-code").value = "";
+  emShow("code");
+  emEl("em-code").focus();
+}
+
+async function emSubmitCode() {
+  const token = emEl("em-code").value.trim();
+  if (!emPending) { emShow("form"); return; }
+  if (!token) { emError("Enter the code from your email."); return; }
+
+  const { email, password } = emPending;
+  const { error: vErr } = await supabase.auth.verifyOtp({ email, token, type: "email" });
+  if (vErr) {
+    emError("Incorrect or expired code. If no code ever arrived, the email may be misspelled — go back and check it.");
+    return;
+  }
+
+  // The code proved the address is real and theirs; now the database
+  // re-checks the password + that proof, and saves it.
+  const { data: res, error } = await supabase.rpc("set_student_email", {
+    p_student_id: studentId, p_password: password, p_new_email: email,
+  });
+  await supabase.auth.signOut();   // drop the temporary session the code created
+
+  if (error || res !== "ok") {
+    emPending = null;
+    emShow("form");
+    emError(error ? "Couldn't save: " + error.message : emMessage(res));
+    return;
+  }
+
+  sessionStorage.setItem("email", email);
+  emPending = null;
+  renderEmailCard();
+  const ok = emEl("em-success");
+  ok.textContent = `Saved. From now on, your login code will be sent to ${maskEmail(email)}.`;
+  ok.style.display = "block";
+  emEl("em-step-code").style.display = "none";
+  emEl("em-primary-btn").disabled = true;
+  emError("");
+  setTimeout(closeEmailModal, 2500);
+}
+
+emEl("email-btn")?.addEventListener("click", openEmailModal);
+emEl("email-card-btn")?.addEventListener("click", openEmailModal);
+emEl("em-cancel-btn")?.addEventListener("click", closeEmailModal);
+emEl("em-back")?.addEventListener("click", () => { emPending = null; clearInterval(emTimer); emShow("form"); emEl("em-new").focus(); });
+emEl("em-resend")?.addEventListener("click", async () => {
+  if (!emPending || Date.now() < emResendUntil) return;
+  emError("");
+  if (await emSendCode()) emError("A new code was sent.");
+});
+emEl("em-primary-btn")?.addEventListener("click", async () => {
+  const btn = emEl("em-primary-btn");
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "Please wait…";
+  try {
+    if (emStep === "form") await emSubmitForm(); else await emSubmitCode();
+  } finally {
+    if (!emEl("em-success").style.display || emEl("em-success").style.display === "none") {
+      btn.disabled = false;
+      btn.textContent = emStep === "form" ? "Send verification code" : "Verify & save";
+    }
+  }
+});
+emEl("email-modal")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !emEl("em-primary-btn").disabled) { e.preventDefault(); emEl("em-primary-btn").click(); }
+});
+renderEmailCard();
+
 // ── Events ──
 document.getElementById("next-btn").addEventListener("click", onNext);
 document.getElementById("cancel-btn").addEventListener("click", () => {

@@ -194,10 +194,38 @@
     .all-done-section h2 { font-family: 'Source Serif 4', serif; font-weight: 500; color: var(--success); margin: 0 0 8px; }
     .all-done-section p  { font-size: 14px; color: var(--slate); max-width: 420px; margin: 0 auto; line-height: 1.7; }
 
-    /* Banners injected by student.js (email nudge / rejection) live in .container */
-    #email-nudge-banner, #email-rejection-banner { border-radius: 10px !important; }
-    #email-nudge-banner button, #email-rejection-ack-btn { border-radius: 7px !important; cursor: pointer; }
-    #email-nudge-add-btn { background: var(--navy); color: #fff; border: none; }
+    /* ── Email card (dashboard) + Email modal ── */
+    .email-card {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+      background: #fff; border: 1px solid var(--hairline); border-left: 4px solid var(--navy);
+      border-radius: 12px; padding: 14px 18px; margin-bottom: 18px; box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    }
+    .email-card.needs { border-left-color: var(--gold); background: #fffaf0; }
+    .email-card-text { flex: 1; min-width: 220px; }
+    .email-card-title { margin: 0 0 3px; font-weight: 600; font-size: 14px; color: var(--ink); }
+    .email-card-sub { margin: 0; font-size: 12.5px; color: var(--slate); line-height: 1.55; }
+    .email-card button {
+      background: var(--navy); color: #fff; border: none; border-radius: 8px; cursor: pointer;
+      padding: 9px 18px; font-size: 13px; font-weight: 600; font-family: 'Inter', Arial, sans-serif;
+    }
+    .email-card button:hover { background: var(--navy-deep); }
+    .email-warn {
+      background: #fff7e6; border: 1px solid #f1d9a6; border-left: 4px solid var(--gold);
+      border-radius: 8px; padding: 12px 14px; font-size: 12.5px; color: #6b4208; margin: 0 0 16px; line-height: 1.55;
+    }
+    .email-warn ul { margin: 6px 0 0 18px; padding: 0; }
+    .email-warn li { margin-bottom: 3px; }
+    #email-modal .modal-box { padding: 26px; max-width: 460px; width: 95vw; max-height: 92vh; overflow-y: auto; }
+    #em-error { color: var(--error); font-size: 12.5px; min-height: 16px; margin: 0 0 10px; }
+    #em-primary-btn {
+      background: var(--gold); color: var(--gold-dp); border: none; border-radius: 8px; cursor: pointer;
+      padding: 11px; font-weight: 600; font-size: 14px; font-family: 'Inter', Arial, sans-serif; transition: background 0.15s;
+    }
+    #em-primary-btn:hover { background: var(--gold-hv); }
+    #em-primary-btn:disabled { background: var(--mist); color: #fff; cursor: not-allowed; }
+    #em-code { text-align: center; font-size: 22px; letter-spacing: 0.3em; font-weight: 600; }
+    .em-link { background: none; border: none; color: var(--navy); text-decoration: underline; cursor: pointer; font-size: 12.5px; padding: 0; font-family: 'Inter', Arial, sans-serif; }
+    .em-link:disabled { color: var(--mist); text-decoration: none; cursor: default; }
 
     /* ── Modals ── */
     .modal-box {
@@ -401,6 +429,7 @@
     </div>
     <div class="nav-actions">
       <span id="nav-user"></span>
+      <button class="nav-btn" id="email-btn">Email</button>
       <button class="nav-btn" id="change-password-btn">Password</button>
       <a href="../index.html" id="logout-btn">Logout</a>
     </div>
@@ -415,6 +444,15 @@
   </header>
 
   <div class="container">
+
+    <!-- Email (filled in by student.js) -->
+    <div class="email-card" id="email-card" style="display:none;">
+      <div class="email-card-text">
+        <p class="email-card-title" id="email-card-title"></p>
+        <p class="email-card-sub" id="email-card-sub"></p>
+      </div>
+      <button type="button" id="email-card-btn">Add email</button>
+    </div>
 
     <!-- Progress -->
     <div class="progress-section" id="progress-section" style="display:none;">
@@ -442,6 +480,58 @@
       <p>Thank you for completing your faculty evaluations. Your responses have been recorded anonymously and submitted to the QA Office to help improve instruction at Batanes State College.</p>
     </div>
 
+  </div>
+
+  <!-- Email Modal -->
+  <div id="email-modal" class="modal hidden">
+    <div class="modal-box">
+      <h3 style="margin:0 0 14px;" id="em-title">Add your email</h3>
+
+      <!-- Step 1: enter the address -->
+      <div id="em-step-form">
+        <div class="email-warn">
+          <b>⚠️ Read this before you save</b>
+          <ul>
+            <li>Your login code and password-reset code are sent to this address.</li>
+            <li><b>A misspelled email can lock you out of your account.</b> Type it carefully and double-check every letter.</li>
+            <li>We will send a code to the new address. You must enter that code to save it — if no code arrives, the address is wrong and nothing is changed.</li>
+          </ul>
+        </div>
+        <div style="margin-bottom:14px;">
+          <label class="field-label" for="em-new">New email address</label>
+          <input type="email" id="em-new" class="field-input" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="yourname@gmail.com" />
+        </div>
+        <div style="margin-bottom:14px;">
+          <label class="field-label" for="em-confirm">Type it again to confirm</label>
+          <input type="email" id="em-confirm" class="field-input" autocomplete="off" autocapitalize="none" spellcheck="false" />
+        </div>
+        <div style="margin-bottom:16px;">
+          <label class="field-label" for="em-pw">Your password (to confirm it's you)</label>
+          <input type="password" id="em-pw" class="field-input" autocomplete="current-password" />
+        </div>
+      </div>
+
+      <!-- Step 2: enter the code that was emailed -->
+      <div id="em-step-code" style="display:none;">
+        <p class="modal-lead">We sent a code to <b id="em-target"></b>. Enter it below to confirm the address is yours.
+          Nothing is saved until you do. <b>No code after a minute or two?</b> Check the spelling — go back and fix it.</p>
+        <div style="margin-bottom:12px;">
+          <input type="text" id="em-code" class="field-input" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="••••••" />
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:14px;">
+          <button type="button" class="em-link" id="em-back">← Fix the email</button>
+          <button type="button" class="em-link" id="em-resend">Resend code</button>
+        </div>
+      </div>
+
+      <p id="em-error" class="error" role="alert"></p>
+      <div id="em-success" class="modal-success"></div>
+
+      <div style="display:flex; gap:10px;">
+        <button id="em-primary-btn" style="flex:1;">Send verification code</button>
+        <button class="btn-secondary" id="em-cancel-btn">Cancel</button>
+      </div>
+    </div>
   </div>
 
   <!-- Change Password Modal -->

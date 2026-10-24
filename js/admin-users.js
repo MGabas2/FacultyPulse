@@ -913,7 +913,12 @@ function openEditModal(userId) {
   const deptRow = document.getElementById("edit-department-row");
   if (deptRow) deptRow.style.display = (isTeacher || isSupervisor) ? "block" : "none";
   document.getElementById("edit-name-row").style.display        = isStudent ? "none"  : "block";
-  document.getElementById("edit-email-row").style.display       = isStudent ? "none"  : "block";
+  // Students: email is OPTIONAL and only used for their login/reset code, so
+  // the admin can set, correct or clear it here (a student locked out by a
+  // misspelled email can't fix it themselves).
+  document.getElementById("edit-email-row").style.display       = "block";
+  document.getElementById("edit-email").placeholder =
+    isStudent ? "Optional — leave blank for no email" : "";
 
   // Multi-role flags: only meaningful for a TEACHER account (the dual/
   // triple-role case — a chair/dean who also teaches). Pre-check from the
@@ -952,6 +957,23 @@ async function saveEdit() {
     if (!email) { errorEl.textContent = "Email is required."; return; }
     updates.name  = name;
     updates.email = email;
+  } else {
+    const newEmail = document.getElementById("edit-email").value.trim().toLowerCase();
+    if (newEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+      errorEl.textContent = "That doesn't look like a valid email address.";
+      return;
+    }
+    if (newEmail !== (u.email || "").toLowerCase()) {
+      const ok = await fpConfirm(
+        newEmail
+          ? `Change this student's email to "${newEmail}"?\n\nTheir login code and password-reset code will be sent to this address. ` +
+            `A misspelled email locks the student out of their account — please double-check every letter.`
+          : "Remove this student's email?\n\nThey will log in with Student ID and password only, and won't be able to reset a forgotten password themselves.",
+        { confirmLabel: newEmail ? "Yes, change it" : "Yes, remove it" }
+      );
+      if (!ok) return;
+    }
+    updates.email = newEmail || null;
   }
 
   if (u.role === "teacher") {
