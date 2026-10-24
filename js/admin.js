@@ -204,9 +204,9 @@ async function computeWeightedSET(teacherId, semesterId) {
 // ══════════════════════════════════════════════════════════════
 async function loadSummary() {
   const { count: facultyCount } = await supabase
-    .from("users").select("*", { count: "exact", head: true }).eq("role", "teacher");
+    .from("users").select("id", { count: "exact", head: true }).eq("role", "teacher");
   const { count: studentCount } = await supabase
-    .from("users").select("*", { count: "exact", head: true }).eq("role", "student");
+    .from("users").select("id", { count: "exact", head: true }).eq("role", "student");
   const { count: evalCount } = await supabase
     .from("evaluation_scores").select("*", { count: "exact", head: true });
 
