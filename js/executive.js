@@ -481,7 +481,7 @@ async function computeWeightedSET(teacherId, semesterId) {
     if (evals.length === 0) {
       classData.push({
         course: subject.name, section: subject.sections?.name || "—",
-        noStudents: subject.enrolled_count || 0, avgSETRating: 0, weightedScore: 0, respondents: 0,
+        noStudents: 0, avgSETRating: 0, weightedScore: 0, respondents: 0,
       });
       continue;
     }
@@ -503,13 +503,14 @@ async function computeWeightedSET(teacherId, semesterId) {
 
     const respondents  = evals.length;
     const avgSETRating = parseFloat((sumRatings / respondents).toFixed(2));
-    let enrolled = subject.enrolled_count || 0;
-    if (enrolled < respondents) enrolled = respondents;
-    const weightedScore = parseFloat((enrolled * avgSETRating).toFixed(2));
+    // Weight/divisor = respondents (students who actually answered), NOT the
+    // roster size — identical to admin.js computeWeightedSET() and teacher.js,
+    // so every role sees the same SET for the same faculty.
+    const weightedScore = parseFloat((respondents * avgSETRating).toFixed(2));
 
-    classData.push({ course: subject.name, section: subject.sections?.name || "—", noStudents: enrolled, avgSETRating, weightedScore, respondents });
+    classData.push({ course: subject.name, section: subject.sections?.name || "—", noStudents: respondents, avgSETRating, weightedScore, respondents });
     totalWeighted += weightedScore;
-    totalEnrolled += enrolled;
+    totalEnrolled += respondents;
   }
 
   const overallSET = totalEnrolled > 0 ? parseFloat((totalWeighted / totalEnrolled).toFixed(2)) : 0;
