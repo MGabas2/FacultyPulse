@@ -261,11 +261,10 @@ async function loadForwardedReports() {
   for (const release of releases) {
     const setInfo     = setByTeacher.get(release.teacher_id);
     const setPill     = setInfo
-      ? `<span title="Overall SET (student ratings) — ${setInfo.respondents} respondent${setInfo.respondents !== 1 ? "s" : ""}"
-          style="font-size:12px; font-weight:600; padding:4px 10px; border-radius:999px; white-space:nowrap;
-                 background:#fff; border:1px solid ${getRatingColor(setInfo.score)}; color:${getRatingColor(setInfo.score)};">
+      ? `<span class="set-pill" style="--c:${getRatingColor(setInfo.score)};"
+          title="Overall SET (student ratings) — ${setInfo.respondents} respondent${setInfo.respondents !== 1 ? "s" : ""}">
           SET ${setInfo.score.toFixed(2)} · ${getRatingLabel(setInfo.score)}</span>`
-      : `<span style="font-size:12px; padding:4px 10px; border-radius:999px; white-space:nowrap; background:#f1f5f9; color:#64748b;">SET: no responses</span>`;
+      : `<span class="set-pill none">SET: no responses</span>`;
     const teacherName = release.users?.name || "Unknown Faculty";
     const teacherRank = release.users?.academic_rank || "";
     const teacherDept = release.users?.department || "";
