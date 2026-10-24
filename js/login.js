@@ -104,6 +104,8 @@ function finalizeStudentLogin(userRow, studentId) {
   sessionStorage.setItem("sectionId", userRow.section_id);
   sessionStorage.setItem("name",      userRow.name || studentId);
   sessionStorage.setItem("email",     userRow.email || "");
+  // Still on the default password? student.js then makes them choose a new one.
+  sessionStorage.setItem("mustChange", userRow.must_change_password ? "1" : "0");
 
   // Database function instead of a direct table update (users is locked down).
   supabase

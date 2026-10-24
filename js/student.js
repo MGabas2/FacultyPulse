@@ -767,6 +767,11 @@ async function submitAll() {
     return;
   }
 
+  if (mustChangePassword()) {
+    openForcedPasswordChange();
+    return;
+  }
+
   const toSubmit = subjects.filter(s => !submittedIds.has(s.id) && isDraftComplete(s.id));
 
   if (toSubmit.length === 0) {
@@ -912,13 +917,38 @@ document.getElementById("cp-submit-btn")?.addEventListener("click", async () => 
   btn.textContent = "Change Password"; btn.disabled = false;
 
   if (error || !success) {
-    errEl.textContent = success === false ? "Current password is incorrect." : "Failed: " + (error?.message || "please try again.");
+    errEl.textContent = success === false
+      ? "Current password is incorrect (after 10 wrong tries the account is locked for 15 minutes)."
+      : "Failed: " + (error?.message || "please try again.");
     return;
   }
 
+  sessionStorage.setItem("mustChange", "0");
   document.getElementById("cp-success").style.display = "block";
-  setTimeout(() => document.getElementById("change-password-modal").classList.add("hidden"), 1500);
+  setTimeout(() => {
+    document.getElementById("change-password-modal").classList.add("hidden");
+    setForcedPasswordMode(false);
+  }, 1500);
 });
+
+// ── Forced change: students still on the default password must replace it first ──
+function setForcedPasswordMode(on) {
+  const note   = document.getElementById("cp-forced-note");
+  const cancel = document.getElementById("cp-cancel-btn");
+  if (note)   note.style.display   = on ? "block" : "none";
+  if (cancel) cancel.style.display = on ? "none"  : "";
+}
+function mustChangePassword() { return sessionStorage.getItem("mustChange") === "1"; }
+function openForcedPasswordChange() {
+  document.getElementById("cp-old-pw").value       = "";
+  document.getElementById("cp-new-pw").value       = "";
+  document.getElementById("cp-confirm-pw").value   = "";
+  document.getElementById("cp-error").textContent  = "";
+  document.getElementById("cp-success").style.display = "none";
+  setForcedPasswordMode(true);
+  document.getElementById("change-password-modal").classList.remove("hidden");
+}
+if (mustChangePassword()) openForcedPasswordChange();
 
 // ══════════════════════════════════════════════════════════════
 //  EMAIL — add or change your own email (verified by a code)
