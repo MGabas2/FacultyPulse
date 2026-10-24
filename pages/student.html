@@ -274,6 +274,9 @@
       transition: background 0.15s;
     }
     #next-btn:hover { background: var(--gold-hv); }
+    /* Last evaluation: the Next button becomes a green "Done ✓" */
+    #next-btn.is-done { background: #16a34a; color: #fff; }
+    #next-btn.is-done:hover { background: #15803d; }
     #cancel-btn.btn-secondary, #review-close-btn.btn-secondary, #cp-cancel-btn {
       background: #fff; color: var(--navy); border: 1px solid var(--hairline); border-radius: 8px;
       cursor: pointer; font-family: 'Inter', Arial, sans-serif; padding: 11px 20px; font-size: 14px;

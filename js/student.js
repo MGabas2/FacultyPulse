@@ -485,6 +485,19 @@ function openEval(idx) {
   });
 
   updateTotalScoreDisplay();
+
+  // If no other subject still needs an evaluation, this is the last one:
+  // the button says "Review & Submit ✓" (green) instead of "Next →". Behaviour is the
+  // same either way — validate, save the draft, close — only the label and
+  // colour change, because there is nothing left to advance to.
+  const nextBtn = document.getElementById("next-btn");
+  if (nextBtn) {
+    const othersLeft = subjects.some((s, i) =>
+      i !== idx && !submittedIds.has(s.id) && !isDraftComplete(s.id));
+    nextBtn.textContent = othersLeft ? "Next →" : "Review & Submit ✓";
+    nextBtn.classList.toggle("is-done", !othersLeft);
+  }
+
   document.getElementById("eval-modal").classList.remove("hidden");
 
   // Reset scroll position. On desktop #eval-modal-scroll is the scrollable
@@ -651,6 +664,20 @@ function onNext() {
   if (nextIdx !== -1) {
     // Small delay so the modal close animation finishes first
     setTimeout(() => openEval(nextIdx), 200);
+  } else {
+    // Last evaluation finished: nothing is saved to the database until the
+    // student presses "Submit All Evaluations", so bring that button into
+    // view (and flash it briefly) instead of leaving them on the list.
+    const submitSection = document.getElementById("submit-all-section");
+    if (submitSection && submitSection.classList.contains("visible")) {
+      setTimeout(() => {
+        submitSection.scrollIntoView({ behavior: "smooth", block: "center" });
+        submitSection.animate(
+          [{ boxShadow: "0 0 0 0 rgba(22,163,74,0.55)" }, { boxShadow: "0 0 0 14px rgba(22,163,74,0)" }],
+          { duration: 1100, iterations: 2 }
+        );
+      }, 250);
+    }
   }
 }
 
