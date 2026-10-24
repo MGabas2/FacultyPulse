@@ -325,7 +325,9 @@ async function loadSetScores(teacherIds, semesterId) {
     const { data, error } = await supabase
       .from("evaluation_scores").select("subject_id, scores")
       .eq("semester_id", semesterId).in("subject_id", subjectIds)
-      .order("submitted_at", { ascending: true }).range(from, from + 999);
+      .order("submitted_at", { ascending: true })
+      .order("id", { ascending: true }) // tiebreak: timestamps are date-only, so many rows tie
+      .range(from, from + 999);
     if (error || !data) break;
     evals.push(...data);
     if (data.length < 1000) break;
