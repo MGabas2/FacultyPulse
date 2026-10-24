@@ -163,8 +163,10 @@ async function loadMonitoring() {
     const subject = subjectById.get(en.subject_id);
     if (!student || !subject) return; // orphaned enrollment row — skip rather than crash
 
-    const key   = `${en.student_id}|${en.subject_id}`;
-    const track = trackMap.get(key);
+    // Tracking rows store the student's uuid (users.id) as text; older rows
+    // may hold the text Student ID — accept either.
+    const track = trackMap.get(`${student.id}|${en.subject_id}`)
+               || trackMap.get(`${en.student_id}|${en.subject_id}`);
 
     rows.push({
       studentId:   en.student_id,
