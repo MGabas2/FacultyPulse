@@ -15,7 +15,7 @@ function ensureCard() {
   if (!wrap) return null;
   card = document.createElement("div");
   card.id = "brevo-usage-card";
-  card.style.cssText = "margin:14px 0 18px;padding:14px 16px;border:1px solid var(--hairline,#e5e7eb);border-radius:10px;background:var(--panel,#fff);";
+  card.style.cssText = "margin:10px 0 14px;padding:8px 12px;border:1px solid var(--hairline,#e5e7eb);border-radius:8px;background:var(--panel,#fff);";
   const row = wrap.querySelector(".icon-stats-row");
   if (row && row.nextSibling) wrap.insertBefore(card, row.nextSibling); else wrap.appendChild(card);
   return card;
@@ -29,20 +29,17 @@ function render(d) {
   const hasLimit = d.limit != null;
   const pct = hasLimit && d.limit > 0 ? Math.min(100, Math.round((d.sent / d.limit) * 100)) : 0;
   const color = !hasLimit ? "#16a34a" : pct >= 90 ? "#dc2626" : pct >= 65 ? "#f59e0b" : "#16a34a";
-  const headline = hasLimit
-    ? `<b style="font-size:22px">${d.sent}</b> / ${d.limit} emails sent today`
-    : `<b style="font-size:22px">${d.sent}</b> emails sent today <span style="color:#64748b">(paid plan — no daily cap)</span>`;
+  const tip = `Every student login with an email, resend and password reset uses one email. Delivered ${d.delivered}${d.bounced ? ", problems " + d.bounced : ""}. Brevo's day may reset at a different hour than Manila time. Updated ${new Date(d.updatedAt).toLocaleTimeString()}.`;
   const warn = hasLimit && pct >= 90
-    ? `<div style="margin-top:8px;font-size:12.5px;color:#dc2626"><b>Nearly out.</b> Students without a login code can't log in until Brevo's daily limit resets. Spread the remaining logins to another day.</div>`
+    ? `<div style="margin-top:4px;font-size:12px;color:#dc2626"><b>Nearly out.</b> Students without a login code can't log in until Brevo's daily limit resets. Spread the remaining logins to another day.</div>`
     : "";
   paint(`
-    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
-      <div style="font-weight:600;font-size:13px">Login-code emails (Brevo)</div>
-      <div style="font-size:11px;color:#64748b">updated ${esc(new Date(d.updatedAt).toLocaleTimeString())}</div>
+    <div title="${esc(tip)}" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px">
+      <span style="font-weight:600">Login-code emails</span>
+      <span><b style="font-size:15px">${d.sent}</b>${hasLimit ? ` / ${d.limit}` : ""} today</span>
+      ${hasLimit ? `<span style="flex:1;min-width:80px;max-width:220px;height:6px;background:#e5e7eb;border-radius:99px;overflow:hidden"><span style="display:block;width:${pct}%;height:100%;background:${color}"></span></span><span style="color:${color}">${d.remaining} left</span>` : `<span style="color:#64748b">(no daily cap)</span>`}
+      ${d.bounced ? `<span style="color:#b45309">· ${d.bounced} problems</span>` : ""}
     </div>
-    <div style="margin:6px 0 8px">${headline}${hasLimit ? ` &nbsp;·&nbsp; <span style="color:${color}">${d.remaining} left</span>` : ""}</div>
-    ${hasLimit ? `<div style="height:8px;background:#e5e7eb;border-radius:99px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${color}"></div></div>` : ""}
-    <div style="margin-top:8px;font-size:11.5px;color:#64748b">Every student login with an email, resend and password reset uses one email. Delivered ${d.delivered}${d.bounced ? ` · problems ${d.bounced}` : ""}. Brevo's day may reset at a different hour than Manila time.</div>
     ${warn}`);
 }
 
