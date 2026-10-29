@@ -79,9 +79,9 @@
     }
     .hero select option { color: #111; }
 
-    .container { max-width: 1040px; margin: -56px auto 0; padding: 0 32px 56px; position: relative; z-index: 2; }
+    body .container { max-width: 1040px; margin: -56px auto 0; padding: 0 32px 56px; position: relative; z-index: 2; }
 
-    .cards-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 22px; }
+    body .cards-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 22px; }
     .stat-card {
       background: #fff; border-left: 1px solid var(--hairline); border-right: 1px solid var(--hairline);
       border-top: 4px solid var(--maroon); border-bottom: 4px solid var(--gold);
@@ -173,16 +173,16 @@
       .nav-role, #nav-user { display: none; }
       .hero { padding: 26px 20px 76px; }
       .hero h2 { font-size: 22px; }
-      .container { padding: 0 16px 40px; }
-      .cards-row { grid-template-columns: repeat(2, 1fr); }
+      body .container { padding: 0 16px 40px; }
+      body .cards-row { grid-template-columns: repeat(2, 1fr); }
     }
     @media (max-width: 640px) {
       .nav-logo { padding: 4px 8px; border-radius: 50%; }
       .nav-logo .logo-full { display: none; }
       .nav-logo .logo-mark { display: block; }
       .nav-btn, nav a#logout-btn { padding: 5px 9px; font-size: 11.5px; }
-      .container { padding: 0 12px 32px; }
-      .cards-row { grid-template-columns: 1fr 1fr; gap: 8px; }
+      body .container { padding: 0 12px 32px; }
+      body .cards-row { grid-template-columns: 1fr 1fr; gap: 8px; }
       .stat-card { padding: 12px 6px; }
       .stat-card .card-value { font-size: 22px; }
       .stat-card .card-label { font-size: 11px; }
