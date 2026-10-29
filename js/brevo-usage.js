@@ -33,7 +33,7 @@ function render(d) {
     ? `<b style="font-size:22px">${d.sent}</b> / ${d.limit} emails sent today`
     : `<b style="font-size:22px">${d.sent}</b> emails sent today <span style="color:#64748b">(paid plan — no daily cap)</span>`;
   const warn = hasLimit && pct >= 90
-    ? `<div style="margin-top:8px;font-size:12.5px;color:#dc2626"><b>Nearly out.</b> Students without a login code can't log in until Brevo's daily limit resets. Pause logins for today.</div>`
+    ? `<div style="margin-top:8px;font-size:12.5px;color:#dc2626"><b>Nearly out.</b> Students without a login code can't log in until Brevo's daily limit resets. Spread the remaining logins to another day.</div>`
     : "";
   paint(`
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
