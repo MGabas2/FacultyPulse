@@ -751,7 +751,28 @@ document.getElementById("review-close-btn").addEventListener("click", closeRevie
 // ══════════════════════════════════════════════════════════════
 //  SUBMIT ALL — write all completed drafts to Supabase
 // ══════════════════════════════════════════════════════════════
+// Guard against double-clicks: the button is disabled on the FIRST click,
+// before any network call, and further clicks are ignored while a submit
+// is running. (Previously it was only disabled after the pause check's
+// network round trip, so a second click could start a second run that
+// found the drafts already cleared and reported a false failure.)
+let submitting = false;
 async function submitAll() {
+  if (submitting) return;
+  submitting = true;
+  const btn = document.getElementById("submit-all-btn");
+  btn.disabled    = true;
+  btn.textContent = "Submitting...";
+  try {
+    await doSubmitAll();
+  } finally {
+    submitting      = false;
+    btn.disabled    = false;
+    btn.textContent = "Submit All Evaluations";
+  }
+}
+
+async function doSubmitAll() {
   // Re-check pause state right before writing — blocks a race where
   // the page was loaded before QA paused the semester.
   const { data: semCheck } = await supabase
@@ -789,6 +810,7 @@ async function submitAll() {
 
   for (const sub of toSubmit) {
     const draft = drafts[sub.id];
+    if (!draft) continue;   // already submitted/cleared — nothing to send
     try {
       // All three writes (tracking + scores + comment) happen inside one
       // Postgres transaction via the submit_evaluation() RPC — either all
