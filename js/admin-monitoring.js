@@ -221,7 +221,7 @@ function refreshCommentsFilters() {
   });
 
   rebuildFacultyDatalist(facList, facPairs);
-  rebuildSelect(subSel, "All Subjects", subPairs, sub);
+  rebuildSelect(subSel, "All Courses", subPairs, sub);
 }
 
 // ── Interdependent (faceted) filters for the Submission Status tab ──
@@ -267,7 +267,7 @@ function refreshDependentFilters() {
   rebuildSelect(progSel, "All Programs", progPairs, prog);
   rebuildFacultyDatalist(facList, facPairs);          // narrow suggestions
   rebuildSelect(sectionSel, "All Sections", secPairs, sec);
-  rebuildSelect(subjectSel, "All Subjects", subPairs, sub);
+  rebuildSelect(subjectSel, "All Courses", subPairs, sub);
 }
 
 // Rebuild a <select> from an id→name Map, preserving the current value
@@ -602,13 +602,13 @@ function renderComments() {
   const policyNote =
     `<div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px;
                  padding:8px 12px; margin-bottom:14px; font-size:12px; color:#1e40af;">
-       🔒 To protect student anonymity, comments are shown only for subjects with
+       🔒 To protect student anonymity, comments are shown only for courses with
        at least ${MIN_RESPONSES} responses.
      </div>`;
 
   if (visible.length === 0) {
     const msg = hiddenSubjects.size > 0
-      ? `Comments exist, but every matching subject has fewer than ${MIN_RESPONSES} responses, so they are hidden to protect anonymity.`
+      ? `Comments exist, but every matching course has fewer than ${MIN_RESPONSES} responses, so they are hidden to protect anonymity.`
       : `No comments match the filters.`;
     container.innerHTML = policyNote +
       `<p style="color:#94a3b8; padding:8px 0;">${msg}</p>`;

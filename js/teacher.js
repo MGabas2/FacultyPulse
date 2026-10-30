@@ -288,7 +288,7 @@ async function loadScores(semesterId) {
     const recCard = document.getElementById("rec-card");
     if (recCard) recCard.style.display = "none";
     const tbody = document.getElementById("class-tbody");
-    if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">No subjects recorded for this semester.</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">No courses recorded for this semester.</td></tr>`;
     return;
   }
 
@@ -689,7 +689,7 @@ async function loadSubjects(semesterId) {
   if (!list) return;
 
   if (!subjects || subjects.length === 0) {
-    list.innerHTML = `<p style="color:#94a3b8; font-size:13px;">No subjects found.</p>`;
+    list.innerHTML = `<p style="color:#94a3b8; font-size:13px;">No courses found.</p>`;
     return;
   }
 

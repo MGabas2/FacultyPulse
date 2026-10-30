@@ -710,7 +710,7 @@ async function saveUser() {
 
         if (!sem) {
           await fpAlert(
-            `Student "${name}" added, but couldn't enroll them in subjects — no active semester found. Enroll them manually once a semester is active.`,
+            `Student "${name}" added, but couldn't enroll them in courses — no active semester found. Enroll them manually once a semester is active.`,
             "warning"
           );
         } else {
@@ -723,11 +723,11 @@ async function saveUser() {
             })));
           if (enrollError) {
             await fpAlert(
-              `Student "${name}" added, but subject enrollment failed: ${enrollError.message}` +
+              `Student "${name}" added, but course enrollment failed: ${enrollError.message}` +
               (enrollError.message?.includes("does not exist")
                 ? " — the student_subjects table hasn't been created yet. Run the migration first."
                 : "") +
-              `\n\nEnroll them manually from Subject Assignment.`,
+              `\n\nEnroll them manually from Course Assignment.`,
               "warning"
             );
           }
@@ -1511,7 +1511,7 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
     });
 
     // ── 6. Create subject placeholders from the course columns ──
-    setImportStatus("Resolving course subjects…");
+    setImportStatus("Resolving courses…");
     const subjectMap = new Map(); // "course|sectionId" -> row
     for (const p of dedupedParsed) {
       const sectionId = sectionMap[p.sectionName];
@@ -1535,7 +1535,7 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
           .select("id, name, section_id");
         if (error) {
           throw new Error(
-            "Subject creation failed: " + error.message +
+            "Course creation failed: " + error.message +
             (error.message?.includes("no unique or exclusion constraint")
               ? ' — run: ALTER TABLE subjects ADD CONSTRAINT subjects_name_section_semester_unique UNIQUE (name, section_id, semester_id);'
               : "")
@@ -1551,7 +1551,7 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
     }
 
     // ── 7. Link each student to the SPECIFIC subjects they take ──
-    setImportStatus("Linking students to their specific subjects…");
+    setImportStatus("Linking students to their specific courses…");
     const enrollmentRows = [];
     for (const p of dedupedParsed) {
       const sectionId = sectionMap[p.sectionName];
@@ -1575,7 +1575,7 @@ async function runImport(rows, colMap, courseColumns, semesterId, academicYear) 
         .upsert(batch, { onConflict: "student_id,subject_id,semester_id", ignoreDuplicates: true });
       if (error) {
         throw new Error(
-          "Student-subject linking failed: " + error.message +
+          "Student-course linking failed: " + error.message +
           (error.message?.includes("does not exist")
             ? " — the student_subjects table hasn't been created yet. Run the migration first."
             : "")
@@ -1696,12 +1696,12 @@ function renderImportSummary({ sectionsCreated, studentsAdded, studentsPromoted,
       <li>${studentsAdded} new student(s) added</li>
       <li>${studentsPromoted} returning student(s) moved to their new section</li>
       ${duplicateRows > 0 ? `<li>${duplicateRows} duplicate row(s) for the same student collapsed to one</li>` : ""}
-      <li>${subjectsCreated} course subject(s) resolved — <b>no teacher assigned yet</b>, that still needs to be done manually</li>
-      <li>${enrollmentsLinked} student-to-subject enrollment(s) recorded</li>
+      <li>${subjectsCreated} course(s) resolved — <b>no teacher assigned yet</b>, that still needs to be done manually</li>
+      <li>${enrollmentsLinked} student-to-course enrollment(s) recorded</li>
       <li style="${syncResult.error ? "color:#dc2626;" : ""}">
         ${syncResult.error
           ? `Enrolled-count sync failed: ${escHtml(syncResult.error)} — run "Sync Enrolled" manually from the Dashboard.`
-          : `Enrolled counts auto-synced (${syncResult.updated ?? 0} subject${syncResult.updated === 1 ? "" : "s"} updated) — no manual sync needed.`}
+          : `Enrolled counts auto-synced (${syncResult.updated ?? 0} course${syncResult.updated === 1 ? "" : "s"} updated) — no manual sync needed.`}
       </li>
       ${emailWarnings.length > 0 ? `<li style="color:#b45309;">${emailWarnings.length} student(s) added WITHOUT their roster email — it already belonged to someone else; they can add it once they log in</li>` : ""}
       <li style="${errors.length ? "color:#dc2626;" : ""}">${errors.length} row(s) skipped due to issues</li>

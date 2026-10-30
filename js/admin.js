@@ -2390,7 +2390,7 @@ const syncEnrolledBtn = document.getElementById("sync-enrolled-btn");
 if (syncEnrolledBtn) {
   syncEnrolledBtn.addEventListener("click", async () => {
     const confirmed = await fpConfirm(
-      "Sync enrolled counts?\n\nThis will update the enrolled student count for all subjects based on the actual number of active students in each section.\n\nRun this before generating IFERs to ensure accurate numbers."
+      "Sync enrolled counts?\n\nThis will update the enrolled student count for all courses based on the actual number of active students in each section.\n\nRun this before generating IFERs to ensure accurate numbers."
     );
     if (!confirmed) return;
 
@@ -2408,7 +2408,7 @@ if (syncEnrolledBtn) {
     }
 
     await fpAlert(
-      `Enrolled counts synced.\n${data.updated} subject(s) updated.\n\nYou can now generate IFERs with accurate student counts.`,
+      `Enrolled counts synced.\n${data.updated} course(s) updated.\n\nYou can now generate IFERs with accurate student counts.`,
       "success"
     );
     loadRankings();
@@ -2492,7 +2492,7 @@ async function activateSemester(semesterId, semesterLabel) {
     `Activate "${semesterLabel}"?\n\n` +
     `• This will become the active evaluation semester\n` +
     `• The current active semester will be set to inactive (its data is preserved, not locked — you can still reactivate it later)\n` +
-    `• Students will only be able to submit evaluations for subjects in this semester\n\n` +
+    `• Students will only be able to submit evaluations for courses in this semester\n\n` +
     `Proceed?`,
     { confirmLabel: "Activate", confirmStyle: "fp-btn-primary" }
   );
@@ -2795,7 +2795,7 @@ async function loadSubjectsForAssignment() {
   const { data, error } = await query;
   if (error) {
     const tbody = document.getElementById("subjects-assign-tbody");
-    if (tbody) tbody.innerHTML = `<tr><td colspan="5">Error loading subjects: ${escHtml(error.message)}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="5">Error loading courses: ${escHtml(error.message)}</td></tr>`;
     return;
   }
 
@@ -2841,9 +2841,9 @@ function renderSubjectAssignPage() {
     : deptLabel;
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5">No subjects match in ${escHtml(scopeLabel)}.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5">No courses match in ${escHtml(scopeLabel)}.</td></tr>`;
     document.getElementById("subject-assign-count").textContent =
-      `No subjects found in ${scopeLabel}. (${totalUnassigned} unassigned in ${deptLabel})`;
+      `No courses found in ${scopeLabel}. (${totalUnassigned} unassigned in ${deptLabel})`;
     renderPager("subject-assign-page-buttons", 0, 1, () => {});
     return;
   }
@@ -2970,7 +2970,7 @@ document.getElementById("subject-assign-btn")?.addEventListener("click", async (
   const ids = [...selectedSubjectIds];
 
   const confirmed = await fpConfirm(
-    `Assign ${ids.length} subject(s) to ${teacherName}?`,
+    `Assign ${ids.length} course(s) to ${teacherName}?`,
     { confirmLabel: "Assign", confirmStyle: "fp-btn-primary" }
   );
   if (!confirmed) return;
@@ -2984,7 +2984,7 @@ document.getElementById("subject-assign-btn")?.addEventListener("click", async (
 
   if (error) { await fpAlert("Failed to assign: " + error.message, "error"); return; }
 
-  await fpAlert(`Assigned ${ids.length} subject(s) to ${teacherName}.`, "success");
+  await fpAlert(`Assigned ${ids.length} course(s) to ${teacherName}.`, "success");
   await loadSubjectsForAssignment();
 });
 
@@ -2993,7 +2993,7 @@ document.getElementById("subject-unassign-btn")?.addEventListener("click", async
   const ids = [...selectedSubjectIds];
 
   const confirmed = await fpConfirm(
-    `Clear the teacher assignment from ${ids.length} subject(s)?`,
+    `Clear the teacher assignment from ${ids.length} course(s)?`,
     { confirmLabel: "Clear", confirmStyle: "fp-btn-danger" }
   );
   if (!confirmed) return;
@@ -3001,7 +3001,7 @@ document.getElementById("subject-unassign-btn")?.addEventListener("click", async
   const { error } = await supabase.from("subjects").update({ teacher_id: null }).in("id", ids);
   if (error) { await fpAlert("Failed: " + error.message, "error"); return; }
 
-  await fpAlert(`Cleared ${ids.length} subject(s).`, "success");
+  await fpAlert(`Cleared ${ids.length} course(s).`, "success");
   await loadSubjectsForAssignment();
 });
 
@@ -3203,7 +3203,7 @@ function matchFacultyRow(row, subjectsByCourse) {
   const norm = normalizeCourseCode(base);
   const candidates = subjectsByCourse.get(norm);
   if (!candidates || candidates.length === 0) {
-    return { status: "unmatched", reason: `Course code "${row.courseCode}" not found in this semester's subjects.` };
+    return { status: "unmatched", reason: `Course code "${row.courseCode}" not found in this semester's courses.` };
   }
 
   const ylNum = extractYearLevel(row.yearLevelRaw);
@@ -3276,7 +3276,7 @@ async function runFacultyImportMatch(file, parseFn = parseFacultyWorkbook) {
     return;
   }
 
-  statusEl.textContent = "Matching against this semester's subjects…";
+  statusEl.textContent = "Matching against this semester's courses…";
 
   // Always match against the CURRENT semester filter, re-loaded fresh so
   // a stale in-memory list can't cause a wrong assignment.
@@ -3345,7 +3345,7 @@ async function applyFacultyImportMatches() {
 
   const confirmed = await fpConfirm(
     `Apply ${matched.length} teacher assignment(s) from this file?\n\n` +
-    `This updates the "teacher" field on each matched subject. Subjects that already have a ` +
+    `This updates the "teacher" field on each matched course. Courses that already have a ` +
     `different teacher assigned will be overwritten.`,
     { confirmLabel: "Apply", confirmStyle: "fp-btn-primary" }
   );
@@ -3363,9 +3363,9 @@ async function applyFacultyImportMatches() {
   }
 
   if (failures.length > 0) {
-    await fpAlert(`Applied ${applied} subject assignment(s), but ${failures.length} failed:\n\n${failures.join("\n")}`, "error");
+    await fpAlert(`Applied ${applied} course assignment(s), but ${failures.length} failed:\n\n${failures.join("\n")}`, "error");
   } else {
-    await fpAlert(`Applied ${applied} subject assignment(s) across ${matched.length} teaching-load row(s).`, "success");
+    await fpAlert(`Applied ${applied} course assignment(s) across ${matched.length} teaching-load row(s).`, "success");
   }
 
   document.getElementById("faculty-import-preview").style.display = "none";

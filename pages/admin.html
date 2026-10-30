@@ -45,7 +45,7 @@
         <span class="nav-icon">🗓️</span> Semester Management
       </button>
       <button class="sidebar-nav-item" data-panel="panel-subjects" id="nav-subjects">
-        <span class="nav-icon">🎓</span> Subject Assignment
+        <span class="nav-icon">🎓</span> Course Assignment
       </button>
       <button class="sidebar-nav-item" data-panel="panel-trends" id="nav-trends">
         <span class="nav-icon">📈</span> Faculty Trends
@@ -271,7 +271,7 @@
                 <option value="">— select semester —</option>
               </select>
               <p class="field-hint">
-                Sections and course subjects created by this import are tagged with
+                Sections and courses created by this import are tagged with
                 the semester you pick here. Create one first in Semester Management
                 if none exist yet.
               </p>
@@ -319,7 +319,7 @@
             reading; it is ignored by this importer.
           </p>
           <p style="font-size:12px; color:#92400e; background:var(--gold-bg); border:1px solid #fde68a; border-radius:6px; padding:8px 10px; margin-bottom:10px;">
-            ⚠️ Known effect: once faculty use these org departments, Subject
+            ⚠️ Known effect: once faculty use these org departments, Course
             Assignment's "filter teachers by department" dropdown won't find
             them when filtered by a program code (e.g. "BSIT"). Use "All
             Departments" there and find the teacher by name/search until that
@@ -403,7 +403,7 @@
                   <option value="">All Sections</option>
                 </select>
                 <select id="filter-subject">
-                  <option value="">All Subjects</option>
+                  <option value="">All Courses</option>
                 </select>
                 <button id="reset-filters" class="btn-secondary" style="padding:7px 14px; white-space:nowrap;">↺ Reset</button>
               </div>
@@ -417,7 +417,7 @@
                   <tr>
                     <th>Student ID</th>
                     <th>Section</th>
-                    <th>Subject</th>
+                    <th>Course</th>
                     <th>Last Login</th>
                     <th>Status</th>
                     <th>Submitted At</th>
@@ -437,13 +437,13 @@
           <div id="view-comments" style="display:none;">
             <div class="section">
               <div class="toolbar search-row">
-                <input type="text" id="comments-search" placeholder="🔍 Search faculty or subject..." />
+                <input type="text" id="comments-search" placeholder="🔍 Search faculty or course..." />
               </div>
               <div class="toolbar">
                 <input list="comments-faculty-datalist" id="comments-faculty" placeholder="All Faculty" autocomplete="off" />
                 <datalist id="comments-faculty-datalist"></datalist>
                 <select id="comments-subject">
-                  <option value="">All Subjects</option>
+                  <option value="">All Courses</option>
                 </select>
                 <button id="comments-reset" class="btn-secondary" style="flex:none; padding:5px 10px; white-space:nowrap;">↺ Reset</button>
                 <span style="font-size:12px; color:var(--slate);" id="comments-count"></span>
@@ -557,7 +557,7 @@
       <div id="panel-subjects" class="panel">
         <div class="container">
           <h2 style="display:flex; align-items:center; gap:10px;">
-            Subject Assignment
+            Course Assignment
             <button id="refresh-btn-subjects" style="font-size:12px; padding:5px 10px;">🔄 Refresh</button>
           </h2>
 
@@ -571,18 +571,18 @@
           <div class="section" style="padding:14px 16px; margin-bottom:12px;">
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
               <button id="faculty-import-btn" class="btn-secondary" style="white-space:nowrap;"
-                title="Match teachers to subjects straight from the raw FACULTY_INFORMATION.xlsx registrar export">
+                title="Match teachers to courses straight from the raw FACULTY_INFORMATION.xlsx registrar export">
                 📥 Import from Registrar Export
               </button>
               <input type="file" id="faculty-import-file-input" accept=".xlsx" style="display:none;" />
               <button id="faculty-template-import-btn" class="btn-secondary" style="white-space:nowrap;"
-                title="Match teachers to subjects from the Faculty Profile Import Template (Course Code1, Year Level and Section1, Program Suffix1, ...)">
+                title="Match teachers to courses from the Faculty Profile Import Template (Course Code1, Year Level and Section1, Program Suffix1, ...)">
                 📥 Import from Manual Template
               </button>
               <input type="file" id="faculty-template-import-file-input" accept=".xlsx" style="display:none;" />
             </div>
             <p style="font-size:11.5px; color:var(--slate); margin:8px 0 0;">
-              Both match against <b>this semester's</b> subjects by course code, year level, and program
+              Both match against <b>this semester's</b> courses by course code, year level, and program
               — nothing is written until you review the preview below and click Apply. Rows that can't
               be matched automatically (unknown course code, no teacher account with that name, wrong
               year level/program) are listed for manual review instead of being skipped silently.
@@ -631,10 +631,10 @@
               <select id="subject-assign-teacher" style="min-width:220px;">
                 <option value="">— select teacher —</option>
               </select>
-              <span id="subject-assign-btn-wrap" title="Check at least one subject below">
+              <span id="subject-assign-btn-wrap" title="Check at least one course below">
                 <button id="subject-assign-btn" style="font-size:12px; padding:6px 14px; background:var(--gold); color:var(--gold-dp);">Assign to Selected</button>
               </span>
-              <span id="subject-unassign-btn-wrap" title="Check at least one subject below">
+              <span id="subject-unassign-btn-wrap" title="Check at least one course below">
                 <button id="subject-unassign-btn" class="btn-secondary" style="font-size:12px; padding:6px 14px;">Clear Teacher</button>
               </span>
             </div>
@@ -791,7 +791,7 @@
           <div id="new-student-subjects-list" style="max-height:220px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:8px; padding:8px 10px; font-size:13px;">
             <p style="color:#888; margin:0;">Select a department to see its courses.</p>
           </div>
-          <p class="field-hint">Includes this department's courses plus minor / general courses. Picking a section ticks its usual courses; tick or untick as needed. Optional — you can enroll later from Subject Assignment.</p>
+          <p class="field-hint">Includes this department's courses plus minor / general courses. Picking a section ticks its usual courses; tick or untick as needed. Optional — you can enroll later from Course Assignment.</p>
         </div>
       </div>
       <div id="staff-fields" class="role-fields hidden">

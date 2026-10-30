@@ -80,7 +80,7 @@
           <option value="">All Sections</option>
         </select>
         <select id="filter-subject">
-          <option value="">All Subjects</option>
+          <option value="">All Courses</option>
         </select>
         <button id="reset-filters" class="btn-secondary" style="flex:none; padding:6px 12px; white-space:nowrap;">↺ Reset</button>
         <span style="font-size:12px; color:#666;" id="row-count"></span>
@@ -91,7 +91,7 @@
           <tr>
             <th>Student ID</th>
             <th>Section</th>
-            <th>Subject</th>
+            <th>Course</th>
             <th>Last Login</th>
             <th>Status</th>
             <th>Submitted At</th>
@@ -114,14 +114,14 @@
       <div class="section">
         <!-- Search on its own line -->
         <div class="toolbar search-row">
-          <input type="text" id="comments-search" placeholder="🔍 Search faculty or subject..." />
+          <input type="text" id="comments-search" placeholder="🔍 Search faculty or course..." />
         </div>
         <!-- Filters on their own line -->
         <div class="toolbar">
           <input list="comments-faculty-datalist" id="comments-faculty" placeholder="All Faculty" autocomplete="off" />
           <datalist id="comments-faculty-datalist"></datalist>
           <select id="comments-subject">
-            <option value="">All Subjects</option>
+            <option value="">All Courses</option>
           </select>
           <button id="comments-reset" class="btn-secondary" style="flex:none; padding:6px 12px; white-space:nowrap;">↺ Reset</button>
           <span style="font-size:12px; color:#666;" id="comments-count"></span>

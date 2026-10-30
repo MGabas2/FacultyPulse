@@ -131,7 +131,7 @@ async function loadProgramSummary(semesterId) {
     .eq("semester_id", semesterId);
 
   if (subjError) {
-    container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Error loading subjects: ${escHtml(subjError.message)}</p></div>`;
+    container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Error loading courses: ${escHtml(subjError.message)}</p></div>`;
     resetCards();
     currentFacultyRows = [];
     renderFacultyTable([]);
@@ -141,7 +141,7 @@ async function loadProgramSummary(semesterId) {
   const subjectsWithTeacher = (subjects || []).filter(s => s.teacher_id && s.sections?.department);
 
   if (subjectsWithTeacher.length === 0) {
-    container.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>No subjects with an assigned teacher yet for this semester.</p></div>`;
+    container.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>No courses with an assigned teacher yet for this semester.</p></div>`;
     resetCards();
     currentFacultyRows = [];
     renderFacultyTable([]);
@@ -334,7 +334,7 @@ function renderProgramTable(container, rows) {
         <tr>
           <th>Program</th>
           <th>Faculty</th>
-          <th>Subjects</th>
+          <th>Courses</th>
           <th>Respondents</th>
           <th>SET Rating</th>
           <th>SEF Rating</th>
@@ -384,7 +384,7 @@ function renderFacultyTable(facultyRows, errorMessage) {
         <tr>
           <th>Faculty</th>
           <th>Program(s)</th>
-          <th>Subjects</th>
+          <th>Courses</th>
           <th>Respondents</th>
           <th>SET Rating</th>
           <th>SEF Rating</th>
