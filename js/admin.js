@@ -26,7 +26,7 @@ function escHtml(str) {
 
 // ── Guard ──
 if (!sessionStorage.getItem("role") || sessionStorage.getItem("role") !== "admin") {
-  window.location.href = "../index.html";
+  window.location.href = "../staff.html";
 }
 
 document.getElementById("nav-user").textContent = "Logged in as: " + sessionStorage.getItem("name");
@@ -203,12 +203,25 @@ async function computeWeightedSET(teacherId, semesterId) {
 //  LOAD SUMMARY COUNTS
 // ══════════════════════════════════════════════════════════════
 async function loadSummary() {
-  const { count: facultyCount } = await supabase
-    .from("users").select("id", { count: "exact", head: true }).eq("role", "teacher");
-  const { count: studentCount } = await supabase
-    .from("users").select("id", { count: "exact", head: true }).eq("role", "student");
-  const { count: evalCount } = await supabase
-    .from("evaluation_scores").select("*", { count: "exact", head: true });
+  // Every card is scoped to the ACTIVE semester, so a freshly activated,
+  // not-yet-imported semester correctly reads 0 / 0 / 0 (and the numbers
+  // climb as you import — a quick sanity check on the import itself).
+  const { data: activeSem } = await supabase
+    .from("semesters").select("id").eq("is_active", true).maybeSingle();
+
+  let facultyCount = 0, studentCount = 0, evalCount = 0;
+  if (activeSem) {
+    const [counts, evals] = await Promise.all([
+      supabase.rpc("admin_semester_counts", { p_semester_id: activeSem.id }),
+      supabase.from("evaluation_scores")
+        .select("*", { count: "exact", head: true })
+        .eq("semester_id", activeSem.id),
+    ]);
+    const row = Array.isArray(counts.data) ? counts.data[0] : counts.data;
+    facultyCount = counts.error ? null : Number(row?.faculty ?? 0);
+    studentCount = counts.error ? null : Number(row?.students ?? 0);
+    evalCount    = evals.count ?? 0;
+  }
 
   document.getElementById("count-faculty").textContent  = facultyCount  ?? "—";
   document.getElementById("count-students").textContent = studentCount  ?? "—";
@@ -230,16 +243,35 @@ let rankGroupByEmployment = true;
 // number or the faculty/program filter selections an admin may be mid-
 // using. A manual click of "🔄 Refresh" (opts omitted) still resets to
 // page 1 like before — that's an explicit action, not a background tick.
+let rankingsLoadToken = 0;
+
+// Wipe everything the dashboard derives from the ranked list, so an early
+// exit (no active semester, no faculty) can't leave the PREVIOUS semester's
+// table, bar chart or donut chart on screen.
+function clearRankingsData(message) {
+  allRanked = [];
+  rankPage  = 1;
+  renderRankingsPage();          // also redraws the bar chart (empty)
+  renderDonutChart([]);
+  populateDashFacultyFilter();
+  populateReportFacultySelect([]);
+  const tbody = document.getElementById("rankings-tbody");
+  if (tbody) tbody.innerHTML = `<tr><td colspan="5">${message}</td></tr>`;
+}
+
 async function loadRankings(opts = {}) {
   const preserve = opts.preserve === true;
+  const myLoad   = ++rankingsLoadToken;
   const tbody = document.getElementById("rankings-tbody");
   if (!preserve) tbody.innerHTML = `<tr><td colspan="5">Loading...</td></tr>`;
 
   const { data: semester } = await supabase
     .from("semesters").select("id").eq("is_active", true).maybeSingle();
 
+  if (myLoad !== rankingsLoadToken) return;   // a newer load started
+
   if (!semester) {
-    tbody.innerHTML = `<tr><td colspan="5">No active semester.</td></tr>`;
+    clearRankingsData("No active semester.");
     return;
   }
 
@@ -249,7 +281,7 @@ async function loadRankings(opts = {}) {
   const teachers = (allTeachers || []).filter(t => t.employment_type !== "COS");
 
   if (!teachers || teachers.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5">No faculty found.</td></tr>`;
+    clearRankingsData("No faculty found.");
     return;
   }
 
@@ -378,12 +410,23 @@ async function loadRankings(opts = {}) {
   }
 
   ranked.sort((a, b) => b.overallSET - a.overallSET);
+
+  // Drop this result if the active semester changed (or another refresh
+  // started) while we were fetching — otherwise a slow auto-refresh for the
+  // OLD semester could overwrite the new semester's dashboard.
+  if (myLoad !== rankingsLoadToken) return;
   allRanked = ranked;
 
+  // Rebuilt on every load (it used to be filled once, so programs from a
+  // previous semester lingered). The current selection is kept only if it
+  // still exists in this semester.
   const progFilter = document.getElementById("dash-program-filter");
-  if (progFilter && progFilter.options.length <= 1) {
+  if (progFilter) {
+    const cur = progFilter.value;
     const programs = [...new Set(ranked.map(t => t.program).filter(p => p && p !== "—"))].sort();
-    programs.forEach(p => { progFilter.innerHTML += `<option value="${p}">${p}</option>`; });
+    progFilter.innerHTML = `<option value="">All Programs</option>` +
+      programs.map(p => `<option value="${escHtml(p)}">${escHtml(p)}</option>`).join("");
+    progFilter.value = programs.includes(cur) ? cur : "";
   }
 
   if (!preserve) rankPage = 1;
@@ -1880,7 +1923,7 @@ document.getElementById("logout-btn").addEventListener("click", (e) => {
   e.preventDefault();
   supabase.auth.signOut();
   sessionStorage.clear();
-  window.location.href = "../index.html";
+  window.location.href = "../staff.html";
 });
 
 function populateReportFacultySelect(list) {

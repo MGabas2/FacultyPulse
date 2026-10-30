@@ -23,6 +23,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index:             page("index.html"),
+        staff:             page("staff.html"),
         student:           page("pages/student.html"),
         teacher:           page("pages/teacher.html"),
         supervisor:        page("pages/supervisor.html"),

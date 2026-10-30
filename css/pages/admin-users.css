@@ -1,0 +1,22 @@
+/* ============================================================
+   FacultyPulse — admin-users page styles
+   Loaded after css/style.css, so these rules win on equal specificity.
+   ============================================================ */
+
+.toolbar {
+  display: flex; gap: 10px; align-items: center;
+  flex-wrap: wrap; margin-bottom: 16px;
+}
+.toolbar input[type="text"] { width: 200px; }
+.toolbar select { width: auto; }
+.sort-btn {
+  background: white; color: #1a56db;
+  border: 1px solid #1a56db;
+  padding: 7px 14px; border-radius: 5px;
+  cursor: pointer; font-size: 13px;
+}
+.sort-btn.active { background: #1a56db; color: white; }
+.sort-arrow { font-size: 11px; margin-left: 4px; }
+.modal-box h3 { margin-bottom: 16px; }
+.role-fields { margin-top: 8px; }
+.field-hint { font-size: 11px; color: #94a3b8; margin-top: 3px; }

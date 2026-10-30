@@ -14,7 +14,7 @@ import { fpAlert } from "./modal.js";
 
 // ── Guard ──
 if (!sessionStorage.getItem("role") || sessionStorage.getItem("role") !== "supervisor") {
-  window.location.href = "../index.html";
+  window.location.href = "../staff.html";
 }
 
 const supervisorId   = sessionStorage.getItem("userId");
@@ -715,7 +715,7 @@ document.getElementById("logout-btn").addEventListener("click", (e) => {
   e.preventDefault();
   supabase.auth.signOut();
   sessionStorage.clear();
-  window.location.href = "../index.html";
+  window.location.href = "../staff.html";
 });
 
 // ── Init ──

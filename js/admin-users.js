@@ -14,7 +14,7 @@ import { ORG_DEPARTMENTS, departmentLabel, orgDepartmentOf } from "./departments
 
 // ── Guard ──
 if (!sessionStorage.getItem("role") || sessionStorage.getItem("role") !== "admin") {
-  window.location.href = "../index.html";
+  window.location.href = "../staff.html";
 }
 
 document.getElementById("nav-user").textContent = "Logged in as: " + sessionStorage.getItem("name");
@@ -2507,7 +2507,7 @@ document.getElementById("logout-btn").addEventListener("click", (e) => {
   e.preventDefault();
   supabase.auth.signOut();
   sessionStorage.clear();
-  window.location.href = "../index.html";
+  window.location.href = "../staff.html";
 });
 
 document.getElementById("search-input").addEventListener("input", renderTable);

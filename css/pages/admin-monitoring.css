@@ -1,0 +1,142 @@
+/* ============================================================
+   FacultyPulse — admin-monitoring page styles
+   Loaded after css/style.css, so these rules win on equal specificity.
+   ============================================================ */
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;       /* wrap to next line instead of a scroll slider */
+  margin-bottom: 12px;
+}
+.search-row { margin-bottom: 10px; }
+.search-row input[type="text"] { width: 100%; max-width: 320px; }
+.toolbar input[type="text"] { width: 180px; flex: none; }
+.toolbar select {
+  width: auto;
+  max-width: 180px;   /* long teacher names can't stretch the row */
+  flex: none;
+}
+.toolbar #row-count,
+.toolbar #comments-count { margin-left: auto; flex: none; }
+
+/* Status badges */
+.badge.submitted   { background:#d1fae5; color:#065f46; }
+.badge.not-submitted { background:#fef3c7; color:#92400e; }
+.badge.never-login { background:#fee2e2; color:#991b1b; }
+
+/* Comment cell */
+.comment-cell {
+  max-width: 260px;
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.4;
+}
+.comment-empty { color: #cbd5e1; font-style: italic; }
+
+/* Verify buttons */
+.verify-btns { display: flex; gap: 6px; }
+.btn-tiny {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid;
+}
+.btn-valid {
+  background: #f0fdf4; color: #166534; border-color: #86efac;
+}
+.btn-valid.active { background: #16a34a; color: white; }
+.btn-invalid {
+  background: #fef2f2; color: #991b1b; border-color: #fca5a5;
+}
+.btn-invalid.active { background: #dc2626; color: white; }
+
+/* Summary cards */
+.monitor-cards {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.monitor-card {
+  flex: 1;
+  min-width: 150px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+.monitor-card .num { font-size: 26px; font-weight: bold; }
+.monitor-card .lbl { font-size: 12px; color: #64748b; margin-top: 4px; }
+
+.progress-bar {
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.progress-fill {
+  height: 100%;
+  background: #16a34a;
+  transition: width 0.3s;
+}
+
+.last-login-cell { font-size: 12px; color: #475569; }
+
+/* Pagination buttons */
+.page-btn {
+  padding: 6px 11px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #1e293b;
+}
+.page-btn:hover:not(:disabled) { background: #fdf0ee; border-color: #671408; }
+.page-btn.active { background: #671408; color: white; border-color: #671408; }
+.page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* View tabs */
+.view-tabs {
+  display: flex; gap: 8px;
+  margin: 16px 0 20px;
+  border-bottom: 2px solid #e2e8f0;
+}
+.view-tab {
+  padding: 10px 18px; border: none; background: none; cursor: pointer;
+  font-size: 14px; font-weight: 600; color: #64748b;
+  border-bottom: 3px solid transparent; margin-bottom: -2px;
+}
+.view-tab.active { color: #671408; border-bottom-color: #671408; }
+.view-tab:hover:not(.active) { color: #1e293b; }
+
+/* Comments view — grouped by faculty → subject */
+.faculty-group { margin-bottom: 28px; }
+.faculty-group > h3 {
+  font-size: 16px; color: #1e293b; margin: 0 0 6px;
+  padding: 10px 14px; background: #f1f5f9;
+  border-left: 4px solid #671408; border-radius: 4px;
+}
+.subject-group { margin: 14px 0 14px 8px; }
+.subject-group > h4 {
+  font-size: 13px; color: #475569; margin: 0 0 8px;
+  padding-bottom: 4px; border-bottom: 1px solid #e2e8f0;
+}
+.comment-card {
+  background: white; border: 1px solid #e2e8f0; border-radius: 8px;
+  padding: 12px 14px; margin-bottom: 10px;
+  display: flex; justify-content: space-between; gap: 14px; align-items: flex-start;
+}
+.comment-card .c-body { flex: 1; }
+.comment-card .c-id { font-size: 12px; font-weight: bold; color: #671408; margin-bottom: 4px; }
+.comment-card .c-text { font-size: 13px; color: #334155; line-height: 1.5; }
+.comment-card .c-actions { flex: none; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.vstatus { font-size: 11px; padding: 3px 8px; border-radius: 10px; white-space: nowrap; }
+.vstatus.valid   { background: #dcfce7; color: #166534; }
+.vstatus.invalid { background: #fee2e2; color: #991b1b; }
+.vstatus.pending { background: #f1f5f9; color: #64748b; }

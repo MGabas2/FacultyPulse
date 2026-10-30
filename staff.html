@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FacultyPulse – Staff Login</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/pages/login.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="login-wrapper">
+
+    <div class="brand-panel">
+      <div class="brand-mark">
+        <div class="brand-logo">
+          <img src="img/fp-logo.png" alt="FacultyPulse — Performance, Insights, Growth" />
+        </div>
+        <img src="img/bsc-logo.png" alt="Batanes State College seal" class="school-seal" />
+      </div>
+
+      <div class="brand-hero">
+        <p class="kicker">Faculty performance analytics</p>
+        <h1>The Faculty Teaching Effectiveness Evaluation System of Batanes State College.</h1>
+        <p>Structured evaluation, transparent reporting, and continuous improvement — aligned with CHED CMO No. 19, s. 2025.</p>
+      </div>
+
+      <div class="brand-footer">
+        For authorized faculty, supervisors, administrators, and management only.
+      </div>
+    </div>
+
+    <div class="form-panel">
+      <div class="login-card">
+      <div class="login-box">
+
+        <h2>Staff sign in</h2>
+        <p class="subtitle">Faculty, supervisors, administrators and management</p>
+
+        <div id="hash-error-banner" style="display:none; background:var(--error-bg); border:1px solid #e3b3ac;
+          border-radius:8px; padding:12px 14px; margin-bottom:16px; font-size:13px; color:var(--error); line-height:1.6;">
+        </div>
+
+        <div id="normal-login-ui">
+
+          <div class="role-tabs">
+            <button class="role-tab active" id="tab-faculty"    data-role="teacher">Faculty</button>
+            <button class="role-tab"        id="tab-supervisor" data-role="supervisor">Supervisor</button>
+            <button class="role-tab"        id="tab-admin"      data-role="admin">Admin</button>
+            <button class="role-tab"        id="tab-management" data-role="executive">Management</button>
+          </div>
+
+          <label class="field-label" id="username-label">Email</label>
+          <input
+            class="field-input"
+            type="email"
+            id="username"
+            placeholder="Enter your email"
+            maxlength="100"
+            autocomplete="username"
+          />
+
+          <label class="field-label">Password</label>
+          <div style="position:relative;">
+            <input
+              class="field-input"
+              type="password"
+              id="password"
+              placeholder="Enter password"
+              autocomplete="off"
+              style="padding-right:44px;"
+            />
+            <button
+              type="button"
+              id="toggle-password"
+              onclick="const p=document.getElementById('password'); const isHidden=p.type==='password'; p.type=isHidden?'text':'password'; this.textContent=isHidden?'Hide':'Show';"
+              style="position:absolute; right:12px; top:50%; transform:translateY(-50%);
+                background:none; border:none; cursor:pointer; font-size:12px; padding:0;
+                color:var(--mist); font-weight:500;"
+              title="Show/hide password"
+            >Show</button>
+          </div>
+
+          <button class="login-submit" id="login-btn">Sign in</button>
+          <div class="login-error" id="error-msg"></div>
+
+          <div id="forgot-wrap" style="text-align:center; margin-top:12px;">
+            <a href="#" id="forgot-link" style="font-size:12.5px; color:var(--navy); text-decoration:none;">
+              Forgot password?
+            </a>
+          </div>
+          <div id="forgot-success" style="display:none; font-size:12px; text-align:center;
+            background:var(--success-bg); border:1px solid #b7dcc7; border-radius:6px;
+            padding:8px 12px; margin-top:10px; color:var(--success);">
+            Password reset email sent. Check your inbox.
+          </div>
+          <p class="alt-login">Student? <a href="index.html">Sign in with your Student ID</a></p>
+        </div>
+
+</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="reset-overlay" style="display:none; position:fixed; inset:0;
+    background:linear-gradient(155deg, #16324f 0%, #0e2338 100%);
+    z-index:9999; min-height:100vh;
+    align-items:center; justify-content:center; padding:20px;">
+
+    <div style="background:#fffdf9; border-radius:14px; padding:44px 38px;
+      width:100%; max-width:420px; box-shadow:0 24px 64px rgba(0,0,0,0.3);">
+
+      <div style="text-align:center; margin-bottom:28px;">
+        <img src="img/fp-logo.png" alt="FacultyPulse"
+          style="height:84px; width:auto; max-width:100%; display:block; margin:0 auto 18px;" />
+        <h2 style="font-family:'Source Serif 4', serif; font-size:21px; font-weight:500; color:#1c2b3a; margin-bottom:6px;">
+          Set new password
+        </h2>
+        <p style="font-size:13px; color:#4a5b6c; line-height:1.6; margin:0;">
+          Choose a strong password for your FacultyPulse account.
+        </p>
+      </div>
+
+      <div id="reset-form-fields">
+        <div style="margin-bottom:14px;">
+          <label style="font-size:12.5px; font-weight:500; color:#4a5b6c;
+            display:block; margin-bottom:6px;">New password</label>
+          <input type="password" id="reset-new-pw"
+            placeholder="At least 8 characters"
+            autocomplete="new-password"
+            style="width:100%; padding:11px 14px; border:1.5px solid #d8dfe5;
+              border-radius:8px; font-size:14px; outline:none; box-sizing:border-box;
+              transition:border-color 0.15s; font-family:'Inter', Arial, sans-serif;"
+            onfocus="this.style.borderColor='#16324f'"
+            onblur="this.style.borderColor='#d8dfe5'" />
+        </div>
+
+        <div style="margin-bottom:22px;">
+          <label style="font-size:12.5px; font-weight:500; color:#4a5b6c;
+            display:block; margin-bottom:6px;">Confirm password</label>
+          <input type="password" id="reset-confirm-pw"
+            placeholder="Re-enter new password"
+            autocomplete="new-password"
+            style="width:100%; padding:11px 14px; border:1.5px solid #d8dfe5;
+              border-radius:8px; font-size:14px; outline:none; box-sizing:border-box;
+              transition:border-color 0.15s; font-family:'Inter', Arial, sans-serif;"
+            onfocus="this.style.borderColor='#16324f'"
+            onblur="this.style.borderColor='#d8dfe5'" />
+        </div>
+
+        <p id="reset-error" style="font-size:13px; color:#a4342a; margin-bottom:12px;
+          min-height:18px; display:none;"></p>
+
+        <button id="reset-save-btn"
+          style="width:100%; padding:13px; background:#16324f; color:white;
+            border:none; border-radius:8px; font-size:14.5px; font-weight:500;
+            cursor:pointer; transition:background 0.15s; font-family:'Inter', Arial, sans-serif;">
+          Update password
+        </button>
+      </div>
+
+      <div id="reset-success" style="display:none; text-align:center; padding-top:8px;">
+        <div style="width:56px; height:56px; border-radius:50%; background:#eef6f1;
+          display:flex; align-items:center; justify-content:center; margin:0 auto 16px;">
+          <span style="font-size:22px; color:#2f6b4f;">✓</span>
+        </div>
+        <h3 style="font-family:'Source Serif 4', serif; font-weight:500; font-size:18px; color:#2f6b4f; margin-bottom:8px;">Password updated</h3>
+        <p style="font-size:13px; color:#4a5b6c; margin-bottom:20px; line-height:1.6;">
+          Your password has been changed successfully.
+        </p>
+        <a href="staff.html"
+          style="display:inline-block; padding:11px 28px; background:#16324f;
+            color:white; border-radius:8px; font-size:14px; font-weight:500;
+            text-decoration:none; font-family:'Inter', Arial, sans-serif;">
+          Back to sign in
+        </a>
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module" src="js/staff-login.js"></script>
+</body>
+</html>

@@ -7,7 +7,7 @@ import { supabase } from "./supabase.js";
 
 // ── Guard ──
 if (!sessionStorage.getItem("role") || sessionStorage.getItem("role") !== "teacher") {
-  window.location.href = "../index.html";
+  window.location.href = "../staff.html";
 }
 
 const userId = sessionStorage.getItem("userId");
@@ -135,12 +135,16 @@ async function populateSemesterOptions() {
 // ══════════════════════════════════════════════════════════════
 //  LOAD SELECTED SEMESTER
 // ══════════════════════════════════════════════════════════════
+let loadToken = 0;
 async function loadSemesterData(semesterId) {
+  const myToken = ++loadToken;
   // Reset both panels every switch — otherwise a released semester's
   // dashboard could stay visible underneath while a not-released one
   // loads, or vice versa.
   document.getElementById("not-released-view").style.display = "none";
   document.getElementById("dashboard-view").style.display    = "none";
+  const rpReset = document.getElementById("rp-card");
+  if (rpReset) rpReset.style.display = "none";
 
   if (!semesterId) {
     document.getElementById("semester-label").textContent = "No semester selected";
@@ -169,6 +173,10 @@ async function loadSemesterData(semesterId) {
     .maybeSingle();
 
   if (!release || release.stage !== "released") {
+    // Response progress is shown ONLY while the report is still unavailable
+    // (students are still submitting). Once QA releases the report the card
+    // stays hidden. Counts only; no student identities.
+    loadResponseProgress(semester.id, myToken);
     showNotReleased();
     return;
   }
@@ -177,8 +185,62 @@ async function loadSemesterData(semesterId) {
   document.getElementById("dashboard-view").style.display = "block";
 
   await loadScores(semester.id);
+  if (myToken !== loadToken) return;   // user switched semesters again mid-load
   await loadSubjects(semester.id);
+  if (myToken !== loadToken) return;
   await loadSupervisorRemarks(semester.id);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  STUDENT RESPONSE PROGRESS — aggregate counts only
+//  Backed by the teacher_response_progress() RPC, which returns, for the
+//  signed-in teacher's OWN subjects only, enrolled vs responded COUNTS.
+//  It never returns or exposes which students have or haven't submitted.
+// ══════════════════════════════════════════════════════════════
+function escHtmlTeacher(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+async function loadResponseProgress(semesterId, myToken) {
+  const card = document.getElementById("rp-card");
+  const body = document.getElementById("rp-body");
+  if (!card || !body) return;
+
+  const { data, error } = await supabase.rpc("teacher_response_progress", { p_semester_id: semesterId });
+  if (myToken !== loadToken) return;            // user switched semester mid-load
+  if (error || !Array.isArray(data) || data.length === 0) {
+    card.style.display = "none";                // nothing to show for this semester
+    return;
+  }
+
+  const barColor = pct => pct >= 75 ? "#2f6b4f" : pct >= 40 ? "#d97706" : "#a4342a";
+  const pctOf = (r, e) => e > 0 ? Math.min(100, Math.round((r / e) * 100)) : 0;
+
+  let totalEnrolled = 0, totalResponded = 0;
+  const rows = data.map(r => {
+    const enrolled  = Number(r.enrolled)  || 0;
+    const responded = Number(r.responded) || 0;
+    totalEnrolled  += enrolled;
+    totalResponded += responded;
+    const pct = pctOf(responded, enrolled);
+    return `
+      <div class="rp-row">
+        <div class="rp-name">${escHtmlTeacher(r.subject_name)}<small>${escHtmlTeacher(r.section_name || "—")}</small></div>
+        <div class="rp-bar"><span style="width:${pct}%; background:${barColor(pct)};"></span></div>
+        <div class="rp-count">${responded} / ${enrolled} <small>(${enrolled > 0 ? pct + "%" : "—"})</small></div>
+      </div>`;
+  }).join("");
+
+  const totalPct = pctOf(totalResponded, totalEnrolled);
+  body.innerHTML = rows + `
+    <div class="rp-row rp-total">
+      <div class="rp-name">All your classes</div>
+      <div class="rp-bar"><span style="width:${totalPct}%; background:${barColor(totalPct)};"></span></div>
+      <div class="rp-count">${totalResponded} / ${totalEnrolled} <small>(${totalEnrolled > 0 ? totalPct + "%" : "—"})</small></div>
+    </div>`;
+  card.style.display = "block";
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -192,7 +254,28 @@ function showNotReleased() {
 // ══════════════════════════════════════════════════════════════
 //  LOAD SCORES — Weighted SET computation (Annex C)
 // ══════════════════════════════════════════════════════════════
+// Blank every score widget. Called at the start of each load so switching to
+// an empty semester can never leave the PREVIOUS semester's numbers on screen.
+function resetScoreDisplay() {
+  ["score-overall", "eval-count", "score-catA", "score-catB", "score-catC"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = "—";
+  });
+  const lbl = document.getElementById("score-label");
+  if (lbl) lbl.textContent = "No data";
+  ["A", "B", "C"].forEach(c => {
+    const bar = document.getElementById(`bar-cat${c}`);
+    if (bar) bar.style.width = "0%";
+  });
+  if (donutChart) { donutChart.destroy(); donutChart = null; }
+  const recCard = document.getElementById("rec-card");
+  if (recCard) recCard.style.display = "none";
+  const tbody = document.getElementById("class-tbody");
+  if (tbody) tbody.innerHTML = "";
+}
+
 async function loadScores(semesterId) {
+  resetScoreDisplay();
   const { data: subjects } = await supabase
     .from("subjects")
     .select("id, name, enrolled_count, sections(name)")
@@ -716,7 +799,7 @@ document.getElementById("logout-btn").addEventListener("click", (e) => {
   e.preventDefault();
   supabase.auth.signOut();
   sessionStorage.clear();
-  window.location.href = "../index.html";
+  window.location.href = "../staff.html";
 });
 
 document.getElementById("semester-filter")?.addEventListener("change", (e) => {

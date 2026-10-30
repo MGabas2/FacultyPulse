@@ -1,99 +1,20 @@
 // ============================================================
-//  FacultyPulse — Login
-//  Student: Student ID + password (RPC-verified, hashed server-side)
+//  FacultyPulse — Student Login (index.html)
+//  Student ID + password (RPC-verified, hashed server-side)
 //    -> email OTP as second factor (skipped if no email on file)
-//  Teacher/Admin/Supervisor: unchanged — Supabase Auth
+//  Faculty / Supervisor / Admin / Management sign in on staff.html
+//  (see js/staff-login.js) — this file is students only.
 // ============================================================
 
 import { supabase } from "./supabase.js";
 
-// ── PASSWORD RECOVERY — staff (unchanged) ──
-supabase.auth.onAuthStateChange((event, session) => {
-  if (event !== "PASSWORD_RECOVERY") return;
-
-  const overlay = document.getElementById("reset-overlay");
-  if (overlay) {
-    overlay.style.display        = "flex";
-    document.body.style.overflow = "hidden";
-  }
-
-  history.replaceState(null, "", window.location.pathname);
-
-  const saveBtn   = document.getElementById("reset-save-btn");
-  const errEl     = document.getElementById("reset-error");
-  const successEl = document.getElementById("reset-success");
-
-  if (!saveBtn) return;
-
-  saveBtn.addEventListener("click", async () => {
-    const newPw  = document.getElementById("reset-new-pw").value;
-    const confPw = document.getElementById("reset-confirm-pw").value;
-
-    errEl.style.display = "none";
-    errEl.textContent   = "";
-
-    if (!newPw || newPw.length < 8) {
-      errEl.textContent   = "Password must be at least 8 characters.";
-      errEl.style.display = "block";
-      return;
-    }
-    if (newPw !== confPw) {
-      errEl.textContent   = "Passwords do not match.";
-      errEl.style.display = "block";
-      return;
-    }
-
-    saveBtn.textContent = "Updating...";
-    saveBtn.disabled    = true;
-
-    const { error } = await supabase.auth.updateUser({ password: newPw });
-
-    saveBtn.textContent = "Update Password";
-    saveBtn.disabled    = false;
-
-    if (error) {
-      errEl.textContent   = "Failed: " + error.message;
-      errEl.style.display = "block";
-      return;
-    }
-
-    document.getElementById("reset-form-fields").style.display = "none";
-    successEl.style.display = "block";
-
-    await supabase.auth.signOut();
-  });
-});
-
-// ── Legacy hash error handler (unchanged) ──
-(function handleHashErrors() {
-  const hash = window.location.hash.substring(1);
-  if (!hash) return;
-  const params = Object.fromEntries(new URLSearchParams(hash));
-  if (!params.error) return;
-  const banner = document.getElementById("hash-error-banner");
-  if (!banner) return;
-  const messages = {
-    otp_expired:   "This password reset link has expired or was already used. Please request a new one.",
-    access_denied: "This link is no longer valid. Please request a new password reset.",
-  };
-  banner.textContent = messages[params.error_code]
-    || decodeURIComponent(params.error_description || "An error occurred. Please request a new reset link.");
-  banner.style.display = "block";
-  history.replaceState(null, "", window.location.pathname);
-})();
-
 const STUDENT_ID_FORMAT = /^\d{4}-\d{4}-[A-Z]{2}$/;
 
-const tabs          = document.querySelectorAll(".role-tab");
 const usernameInput = document.getElementById("username");
-const usernameLabel = document.getElementById("username-label");
 const passwordInput = document.getElementById("password");
 const loginBtn      = document.getElementById("login-btn");
 const errorMsg      = document.getElementById("error-msg");
-const idHint        = document.getElementById("id-hint");
 const formatError   = document.getElementById("format-error");
-
-let activeRole = "student";
 
 // ── Finalize a successful student login (shared by the password+OTP path
 //    and the no-email path) ──
@@ -115,52 +36,7 @@ function finalizeStudentLogin(userRow, studentId) {
   window.location.href = "pages/student.html";
 }
 
-// ── Tab switching ──
-tabs.forEach(tab => {
-  tab.addEventListener("click", () => {
-    tabs.forEach(t => t.classList.remove("active"));
-    tab.classList.add("active");
-
-    activeRole = tab.dataset.role;
-
-    usernameInput.value  = "";
-    passwordInput.value  = "";
-    errorMsg.textContent = "";
-    formatError.classList.add("hidden");
-
-    if (activeRole === "student") {
-      usernameLabel.textContent = "Student ID";
-      usernameInput.placeholder = "e.g. 2023-1154-AB";
-      usernameInput.maxLength   = 13;
-      usernameInput.type        = "text";
-      idHint.classList.remove("hidden");
-    } else {
-      usernameLabel.textContent = "Email";
-      usernameInput.placeholder = "Enter your email";
-      usernameInput.maxLength   = 100;
-      usernameInput.type        = "email";
-      idHint.classList.add("hidden");
-    }
-
-    const forgotWrap = document.getElementById("forgot-wrap");
-    if (forgotWrap) forgotWrap.style.display = "block";
-    document.getElementById("forgot-success")?.style && (document.getElementById("forgot-success").style.display = "none");
-
-    usernameInput.focus();
-  });
-});
-
-const urlTab = new URLSearchParams(window.location.search).get("tab");
-if (urlTab && ["teacher","admin","supervisor"].includes(urlTab)) {
-  const tabBtn = document.querySelector(`.role-tab[data-role="${urlTab}"]`);
-  if (tabBtn) {
-    tabBtn.click();
-    history.replaceState(null, "", window.location.pathname);
-  }
-}
-
 usernameInput.addEventListener("input", () => {
-  if (activeRole !== "student") return;
   const cursor = usernameInput.selectionStart;
   usernameInput.value = usernameInput.value.toUpperCase();
   usernameInput.setSelectionRange(cursor, cursor);
@@ -349,11 +225,11 @@ async function login() {
   errorMsg.textContent = "";
 
   if (!username) {
-    errorMsg.textContent = activeRole === "student" ? "Please enter your Student ID." : "Please enter your email.";
+    errorMsg.textContent = "Please enter your Student ID.";
     return;
   }
   if (!password) { errorMsg.textContent = "Please enter your password."; return; }
-  if (activeRole === "student" && !STUDENT_ID_FORMAT.test(username)) {
+  if (!STUDENT_ID_FORMAT.test(username)) {
     errorMsg.textContent = "Student ID format: 2023-1154-AB";
     formatError.classList.remove("hidden");
     return;
@@ -363,115 +239,58 @@ async function login() {
   loginBtn.disabled    = true;
 
   try {
-    if (activeRole === "student") {
-      const { data, error } = await supabase.rpc("verify_student_login", {
-        p_student_id: username,
-        p_password:   password,
-      });
-      const userRow = Array.isArray(data) ? data[0] : data;
+    const { data, error } = await supabase.rpc("verify_student_login", {
+      p_student_id: username,
+      p_password:   password,
+    });
+    const userRow = Array.isArray(data) ? data[0] : data;
 
-      if (error || !userRow) {
-        errorMsg.textContent = "Incorrect Student ID or password.";
-        return;
-      }
-
-      pendingStudentRow = { ...userRow, student_id: username };
-
-      if (!userRow.email) {
-        // No email on file — OTP was never possible for this student anyway
-        finalizeStudentLogin(userRow, username);
-        return;
-      }
-
-      // Every login always challenges with a fresh OTP — no "remember this
-      // device" shortcut. Students only use this system for a short window
-      // each semester, so a trusted-device skip isn't worth the extra state
-      // (and it was calling a check_remember_token RPC that never actually
-      // existed in the database, so it always silently failed anyway).
-      //
-      // Cooldown check happens BEFORE we call Supabase at all — this is the
-      // path a bot would hit by repeatedly resubmitting a valid password,
-      // so it has to be throttled here too, not just on the resend button.
-      const otpResult = await requestOtpThrottled(userRow.email);
-
-      if (otpResult.throttled) {
-        // A code was already sent recently for this email — don't send
-        // another, just drop the student back into the "enter code" step
-        // (the earlier code, if still unexpired, still works) and show
-        // them the countdown instead of a raw error.
-        showOtpStep(userRow.email);
-        const otpError = document.getElementById("otp-error");
-        if (otpError) {
-          otpError.textContent = `A code was already sent to this address. You can request a new one in ${formatMMSS(otpResult.remainingMs)}.`;
-        }
-        startOtpCooldownCountdown(userRow.email, document.getElementById("otp-resend-btn"));
-        return;
-      }
-
-      if (otpResult.error) {
-        errorMsg.textContent = "Couldn't send verification code: " + otpResult.error.message;
-        return;
-      }
-
-      showOtpStep(userRow.email);
-      startOtpCooldownCountdown(userRow.email, document.getElementById("otp-resend-btn"));
-
-    } else {
-      // Emails are stored lowercase (Supabase Auth lowercases them, and the
-      // database policies compare lowercase) — so normalise what was typed.
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email: username.toLowerCase(), password: password,
-      });
-
-      if (authError) { errorMsg.textContent = "Incorrect email or password."; return; }
-
-      const { data: userRow, error: userError } = await supabase
-        .from("users").select("role, name, id, is_supervisor, is_executive").eq("email", username.toLowerCase()).single();
-
-      if (userError || !userRow) {
-        errorMsg.textContent = "Account not found in system. Contact admin.";
-        await supabase.auth.signOut();
-        return;
-      }
-
-      // Multi-role case: a real department chair/dean is a TEACHER account
-      // (students evaluate them like any faculty) who ALSO supervises other
-      // faculty's SEF and/or sits on the executive/management dashboard —
-      // same email/password, same users row, no second account. is_supervisor
-      // / is_executive on that teacher row are what let them in via the
-      // Supervisor / Management tabs with those same credentials.
-      const dualRoleLogin =
-        userRow.role === "teacher" &&
-        ((activeRole === "supervisor" && userRow.is_supervisor === true) ||
-         (activeRole === "executive" && userRow.is_executive === true));
-
-      if (userRow.role !== activeRole && !dualRoleLogin) {
-        errorMsg.textContent = `This account is not a ${activeRole}. Switch to the correct tab.`;
-        await supabase.auth.signOut();
-        return;
-      }
-
-      // "role" is which DASHBOARD they're entering (what the rest of the
-      // app's guards check), not necessarily their DB role — those only
-      // diverge for the multi-role case above. dbRole/isSupervisor/isExecutive
-      // are kept separately so teacher.html/supervisor.html/executive.html can
-      // show "Switch to ___ View" links without re-querying the DB.
-      sessionStorage.setItem("role",         activeRole);
-      sessionStorage.setItem("name",         userRow.name);
-      sessionStorage.setItem("userId",       userRow.id);
-      sessionStorage.setItem("dbRole",       userRow.role);
-      sessionStorage.setItem("isSupervisor", String(userRow.is_supervisor === true));
-      sessionStorage.setItem("isExecutive",  String(userRow.is_executive === true));
-
-      if (activeRole === "teacher")    window.location.href = "pages/teacher.html";
-      if (activeRole === "admin")      window.location.href = "pages/admin.html";
-      if (activeRole === "supervisor") window.location.href = "pages/supervisor.html";
-      if (activeRole === "executive")  window.location.href = "pages/executive.html";
-      // "depthead" intentionally left as dead code, not wired up — no login
-      // tab, no page, no way to create one from User Management. Pre-existing
-      // before this change; flagged to the team rather than silently removed.
-      if (activeRole === "depthead")   window.location.href = "pages/depthead.html";
+    if (error || !userRow) {
+      errorMsg.textContent = "Incorrect Student ID or password.";
+      return;
     }
+
+    pendingStudentRow = { ...userRow, student_id: username };
+
+    if (!userRow.email) {
+      // No email on file — OTP was never possible for this student anyway
+      finalizeStudentLogin(userRow, username);
+      return;
+    }
+
+    // Every login always challenges with a fresh OTP — no "remember this
+    // device" shortcut. Students only use this system for a short window
+    // each semester, so a trusted-device skip isn't worth the extra state
+    // (and it was calling a check_remember_token RPC that never actually
+    // existed in the database, so it always silently failed anyway).
+    //
+    // Cooldown check happens BEFORE we call Supabase at all — this is the
+    // path a bot would hit by repeatedly resubmitting a valid password,
+    // so it has to be throttled here too, not just on the resend button.
+    const otpResult = await requestOtpThrottled(userRow.email);
+
+    if (otpResult.throttled) {
+      // A code was already sent recently for this email — don't send
+      // another, just drop the student back into the "enter code" step
+      // (the earlier code, if still unexpired, still works) and show
+      // them the countdown instead of a raw error.
+      showOtpStep(userRow.email);
+      const otpError = document.getElementById("otp-error");
+      if (otpError) {
+        otpError.textContent = `A code was already sent to this address. You can request a new one in ${formatMMSS(otpResult.remainingMs)}.`;
+      }
+      startOtpCooldownCountdown(userRow.email, document.getElementById("otp-resend-btn"));
+      return;
+    }
+
+    if (otpResult.error) {
+      errorMsg.textContent = "Couldn't send verification code: " + otpResult.error.message;
+      return;
+    }
+
+    showOtpStep(userRow.email);
+    startOtpCooldownCountdown(userRow.email, document.getElementById("otp-resend-btn"));
+
   } catch (err) {
     errorMsg.textContent = "Something went wrong. Please try again.";
     console.error(err);
@@ -490,26 +309,6 @@ const forgotSuccess = document.getElementById("forgot-success");
 if (forgotLink) {
   forgotLink.addEventListener("click", async (e) => {
     e.preventDefault();
-
-    if (activeRole !== "student") {
-      const email = usernameInput.value.trim();
-      if (!email) {
-        errorMsg.textContent = "Enter your email address first, then click Forgot password.";
-        return;
-      }
-      forgotLink.textContent = "Sending...";
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/index.html?tab=${activeRole}`,
-      });
-      forgotLink.textContent = "Forgot password?";
-      if (error) {
-        errorMsg.textContent = "Reset failed: " + error.message;
-      } else {
-        errorMsg.textContent = "";
-        forgotSuccess.style.display = "block";
-      }
-      return;
-    }
 
     const studentId = usernameInput.value.trim();
     if (!STUDENT_ID_FORMAT.test(studentId)) {

@@ -13,7 +13,7 @@ import { supabase } from "./supabase.js";
 
 // ── Guard ──
 if (!sessionStorage.getItem("role") || sessionStorage.getItem("role") !== "executive") {
-  window.location.href = "../index.html";
+  window.location.href = "../staff.html";
 }
 
 const name = sessionStorage.getItem("name");
