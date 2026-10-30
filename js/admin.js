@@ -4,7 +4,7 @@
 // ============================================================
 
 import { supabase } from "./supabase.js";
-import { PROGRAM_TO_ORG_DEPARTMENT } from "./departments.js";
+import { PROGRAM_TO_ORG_DEPARTMENT, ORG_DEPARTMENT_NAMES } from "./departments.js";
 import { fpAlert, fpConfirm, fpLoading } from "./modal.js";
 
 // ── Lazy panels: a panel's data loads the first time its sidebar tab is
@@ -2738,9 +2738,19 @@ async function loadDepartmentsForAssignment() {
   if (!sel) return;
   const { data, error } = await supabase.from("sections").select("department");
   if (error) { console.error("Failed to load departments:", error); return; }
-  const depts = [...new Set((data || []).map(r => r.department).filter(Boolean))].sort();
+  const depts = [...new Set((data || []).map(r => r.department).filter(Boolean))];
+  // Show the real department name next to the program code. The option
+  // VALUE stays the program code — filtering/teacher-mapping depend on it.
+  const labelOf = (code) => {
+    const org = PROGRAM_TO_ORG_DEPARTMENT[code];
+    return org && ORG_DEPARTMENT_NAMES[org]
+      ? `${ORG_DEPARTMENT_NAMES[org]} (${code})`
+      : `General Education / PE (${code})`;
+  };
+  const opts = depts.map(d => ({ value: d, label: labelOf(d) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
   sel.innerHTML = `<option value="">All Departments</option>` +
-    depts.map(d => `<option value="${escHtml(d)}">${escHtml(d)}</option>`).join("");
+    opts.map(o => `<option value="${escHtml(o.value)}">${escHtml(o.label)}</option>`).join("");
 }
 
 async function loadTeachersForAssignment(department) {
