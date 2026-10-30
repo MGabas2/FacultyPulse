@@ -17,7 +17,7 @@ if (!sessionStorage.getItem("role") || sessionStorage.getItem("role") !== "admin
   window.location.href = "../staff.html";
 }
 
-document.getElementById("nav-user").textContent = "Logged in as: " + sessionStorage.getItem("name");
+document.getElementById("nav-user").textContent = "Logged in as: " + (sessionStorage.getItem("name") && sessionStorage.getItem("name") !== "null" ? sessionStorage.getItem("name") : "Administrator");
 
 const STUDENT_ID_FORMAT = /^\d{4}-\d{4}-[A-Z]{2}$/;
 

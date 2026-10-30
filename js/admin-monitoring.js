@@ -17,7 +17,7 @@ if (!sessionStorage.getItem("role") || sessionStorage.getItem("role") !== "admin
   window.location.href = "../staff.html";
 }
 
-document.getElementById("nav-user").textContent = "Logged in as: " + sessionStorage.getItem("name");
+document.getElementById("nav-user").textContent = "Logged in as: " + (sessionStorage.getItem("name") && sessionStorage.getItem("name") !== "null" ? sessionStorage.getItem("name") : "Administrator");
 
 // ── Fetch every row of a query, ignoring Supabase's default 1000-row
 //    cap. Pass a function that builds (but doesn't execute) the query —

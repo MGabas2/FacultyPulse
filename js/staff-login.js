@@ -177,7 +177,7 @@ async function login() {
     // are kept separately so teacher.html/supervisor.html/executive.html can
     // show "Switch to ___ View" links without re-querying the DB.
     sessionStorage.setItem("role",         activeRole);
-    sessionStorage.setItem("name",         userRow.name);
+    sessionStorage.setItem("name",         (userRow.name && userRow.name.trim()) || (activeRole === "admin" ? "Administrator" : username));
     sessionStorage.setItem("userId",       userRow.id);
     sessionStorage.setItem("dbRole",       userRow.role);
     sessionStorage.setItem("isSupervisor", String(userRow.is_supervisor === true));

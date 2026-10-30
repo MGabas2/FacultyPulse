@@ -29,7 +29,7 @@ if (!sessionStorage.getItem("role") || sessionStorage.getItem("role") !== "admin
   window.location.href = "../staff.html";
 }
 
-document.getElementById("nav-user").textContent = "Logged in as: " + sessionStorage.getItem("name");
+document.getElementById("nav-user").textContent = "Logged in as: " + (sessionStorage.getItem("name") && sessionStorage.getItem("name") !== "null" ? sessionStorage.getItem("name") : "Administrator");
 
 let barChart   = null;
 let donutChart = null;
@@ -1661,7 +1661,7 @@ async function forwardToSupervisor() {
       .insert({
         teacher_id:  teacherId,
         semester_id: semesterId,
-        released_by: sessionStorage.getItem("name") || "QA Admin",
+        released_by: (sessionStorage.getItem("name") && sessionStorage.getItem("name") !== "null" ? sessionStorage.getItem("name") : "Administrator"),
         stage:       "forwarded_to_supervisor",
       }));
   }
@@ -1777,7 +1777,7 @@ async function bulkForwardToSupervisor() {
           .insert({
             teacher_id:  t.id,
             semester_id: semesterId,
-            released_by: sessionStorage.getItem("name") || "QA Admin",
+            released_by: (sessionStorage.getItem("name") && sessionStorage.getItem("name") !== "null" ? sessionStorage.getItem("name") : "Administrator"),
             stage:       "forwarded_to_supervisor",
           }));
       }
