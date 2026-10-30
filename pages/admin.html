@@ -574,19 +574,19 @@
                root cause as the earlier missing Import Faculty button. -->
           <div class="section" style="padding:14px 16px; margin-bottom:12px;">
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-              <button id="faculty-import-btn" class="btn-secondary" style="white-space:nowrap;"
-                title="Match teachers to courses straight from the raw FACULTY_INFORMATION.xlsx registrar export">
-                📥 Import from Registrar Export
-              </button>
-              <input type="file" id="faculty-import-file-input" accept=".xlsx" style="display:none;" />
               <button id="faculty-template-import-btn" class="btn-secondary" style="white-space:nowrap;"
-                title="Match teachers to courses from the Faculty Profile Import Template (Course Code1, Year Level and Section1, Program Suffix1, ...)">
-                📥 Import from Manual Template
+                title="Upload the filled-in Teaching Load template (Name, Course Code1, Year Level and Section1, Program Suffix1, ...)">
+                📥 Import Teaching Load
               </button>
               <input type="file" id="faculty-template-import-file-input" accept=".xlsx" style="display:none;" />
+              <a id="faculty-template-download" class="btn-secondary" href="/templates/Teaching_Load_Template.xlsx" download="Teaching_Load_Template.xlsx"
+                style="white-space:nowrap; text-decoration:none; display:inline-block;"
+                title="Download the blank Excel template, fill it in, then use Import Teaching Load">
+                📄 Download Template
+              </a>
             </div>
             <p style="font-size:11.5px; color:var(--slate); margin:8px 0 0;">
-              Both match against <b>this semester's</b> courses by course code, year level, and program
+              Download the template, fill it in, then import it. It is matched against <b>this semester's</b> courses by course code, year level, and program
               — nothing is written until you review the preview below and click Apply. Rows that can't
               be matched automatically (unknown course code, no teacher account with that name, wrong
               year level/program) are listed for manual review instead of being skipped silently.

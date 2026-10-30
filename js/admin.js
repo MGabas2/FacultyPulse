@@ -3093,29 +3093,6 @@ function parseSectionName(name) {
   return { program: parts[0], yearLevel: yl };
 }
 
-async function parseFacultyWorkbook(file) {
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: "array" });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
-
-  const out = [];
-  let lastName = "", lastDept = "";
-  for (let i = 1; i < rows.length; i++) { // skip header row
-    const row = rows[i];
-    const [name, dept, , , , title, code, yearLevelSection] = row;
-    if (name) lastName = String(name).trim();
-    if (dept) lastDept = String(dept).trim();
-    if (!code) continue;
-    out.push({
-      faculty: lastName, dept: lastDept,
-      courseTitle: title || "", courseCode: String(code).trim(),
-      yearLevelRaw: String(yearLevelSection || "").trim().toUpperCase(),
-    });
-  }
-  return out;
-}
-
 // Reads the blank "Faculty Profile Import Template" (headers-only file
 // the admin fills in by hand): one row per faculty member, with Name /
 // Employment Status / Current Faculty Rank / Name of Immediate Supervisor
@@ -3251,7 +3228,7 @@ function buildSubjectsByCourse(subjects) {
 
 let facultyImportResults = []; // rows with resolved teacherId + match result, for the preview/apply step
 
-async function runFacultyImportMatch(file, parseFn = parseFacultyWorkbook) {
+async function runFacultyImportMatch(file, parseFn = parseManualTemplateWorkbook) {
   const statusEl = document.getElementById("faculty-import-status");
   const previewEl = document.getElementById("faculty-import-preview");
   statusEl.textContent = "Loading SheetJS…";
@@ -3372,16 +3349,6 @@ async function applyFacultyImportMatches() {
   facultyImportResults = [];
   await loadSubjectsForAssignment();
 }
-
-document.getElementById("faculty-import-btn")?.addEventListener("click", () => {
-  document.getElementById("faculty-import-file-input")?.click();
-});
-document.getElementById("faculty-import-file-input")?.addEventListener("change", async (e) => {
-  const file = e.target.files?.[0];
-  e.target.value = "";
-  if (!file) return;
-  await runFacultyImportMatch(file, parseFacultyWorkbook);
-});
 
 document.getElementById("faculty-template-import-btn")?.addEventListener("click", () => {
   document.getElementById("faculty-template-import-file-input")?.click();
