@@ -143,6 +143,8 @@ async function loadSemesterData(semesterId) {
   // loads, or vice versa.
   document.getElementById("not-released-view").style.display = "none";
   document.getElementById("dashboard-view").style.display    = "none";
+  const rpReset = document.getElementById("rp-card");
+  if (rpReset) rpReset.style.display = "none";
 
   if (!semesterId) {
     document.getElementById("semester-label").textContent = "No semester selected";
@@ -160,6 +162,11 @@ async function loadSemesterData(semesterId) {
   }
 
   document.getElementById("semester-label").textContent = semester.label;
+
+  // Response counts are useful BEFORE release (that is when students are
+  // still submitting), so this runs ahead of — and independent of — the
+  // release gate below. Counts only; no student identities.
+  loadResponseProgress(semester.id, myToken);
 
   // Gate: only show after final release — same check regardless of
   // whether this is the active semester or one picked from the past.
@@ -183,6 +190,58 @@ async function loadSemesterData(semesterId) {
   await loadSubjects(semester.id);
   if (myToken !== loadToken) return;
   await loadSupervisorRemarks(semester.id);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  STUDENT RESPONSE PROGRESS — aggregate counts only
+//  Backed by the teacher_response_progress() RPC, which returns, for the
+//  signed-in teacher's OWN subjects only, enrolled vs responded COUNTS.
+//  It never returns or exposes which students have or haven't submitted.
+// ══════════════════════════════════════════════════════════════
+function escHtmlTeacher(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+async function loadResponseProgress(semesterId, myToken) {
+  const card = document.getElementById("rp-card");
+  const body = document.getElementById("rp-body");
+  if (!card || !body) return;
+
+  const { data, error } = await supabase.rpc("teacher_response_progress", { p_semester_id: semesterId });
+  if (myToken !== loadToken) return;            // user switched semester mid-load
+  if (error || !Array.isArray(data) || data.length === 0) {
+    card.style.display = "none";                // nothing to show for this semester
+    return;
+  }
+
+  const barColor = pct => pct >= 75 ? "#2f6b4f" : pct >= 40 ? "#d97706" : "#a4342a";
+  const pctOf = (r, e) => e > 0 ? Math.min(100, Math.round((r / e) * 100)) : 0;
+
+  let totalEnrolled = 0, totalResponded = 0;
+  const rows = data.map(r => {
+    const enrolled  = Number(r.enrolled)  || 0;
+    const responded = Number(r.responded) || 0;
+    totalEnrolled  += enrolled;
+    totalResponded += responded;
+    const pct = pctOf(responded, enrolled);
+    return `
+      <div class="rp-row">
+        <div class="rp-name">${escHtmlTeacher(r.subject_name)}<small>${escHtmlTeacher(r.section_name || "—")}</small></div>
+        <div class="rp-bar"><span style="width:${pct}%; background:${barColor(pct)};"></span></div>
+        <div class="rp-count">${responded} / ${enrolled} <small>(${enrolled > 0 ? pct + "%" : "—"})</small></div>
+      </div>`;
+  }).join("");
+
+  const totalPct = pctOf(totalResponded, totalEnrolled);
+  body.innerHTML = rows + `
+    <div class="rp-row rp-total">
+      <div class="rp-name">All your classes</div>
+      <div class="rp-bar"><span style="width:${totalPct}%; background:${barColor(totalPct)};"></span></div>
+      <div class="rp-count">${totalResponded} / ${totalEnrolled} <small>(${totalEnrolled > 0 ? totalPct + "%" : "—"})</small></div>
+    </div>`;
+  card.style.display = "block";
 }
 
 // ══════════════════════════════════════════════════════════════
