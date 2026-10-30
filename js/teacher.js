@@ -135,7 +135,9 @@ async function populateSemesterOptions() {
 // ══════════════════════════════════════════════════════════════
 //  LOAD SELECTED SEMESTER
 // ══════════════════════════════════════════════════════════════
+let loadToken = 0;
 async function loadSemesterData(semesterId) {
+  const myToken = ++loadToken;
   // Reset both panels every switch — otherwise a released semester's
   // dashboard could stay visible underneath while a not-released one
   // loads, or vice versa.
@@ -177,7 +179,9 @@ async function loadSemesterData(semesterId) {
   document.getElementById("dashboard-view").style.display = "block";
 
   await loadScores(semester.id);
+  if (myToken !== loadToken) return;   // user switched semesters again mid-load
   await loadSubjects(semester.id);
+  if (myToken !== loadToken) return;
   await loadSupervisorRemarks(semester.id);
 }
 
@@ -192,7 +196,28 @@ function showNotReleased() {
 // ══════════════════════════════════════════════════════════════
 //  LOAD SCORES — Weighted SET computation (Annex C)
 // ══════════════════════════════════════════════════════════════
+// Blank every score widget. Called at the start of each load so switching to
+// an empty semester can never leave the PREVIOUS semester's numbers on screen.
+function resetScoreDisplay() {
+  ["score-overall", "eval-count", "score-catA", "score-catB", "score-catC"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = "—";
+  });
+  const lbl = document.getElementById("score-label");
+  if (lbl) lbl.textContent = "No data";
+  ["A", "B", "C"].forEach(c => {
+    const bar = document.getElementById(`bar-cat${c}`);
+    if (bar) bar.style.width = "0%";
+  });
+  if (donutChart) { donutChart.destroy(); donutChart = null; }
+  const recCard = document.getElementById("rec-card");
+  if (recCard) recCard.style.display = "none";
+  const tbody = document.getElementById("class-tbody");
+  if (tbody) tbody.innerHTML = "";
+}
+
 async function loadScores(semesterId) {
+  resetScoreDisplay();
   const { data: subjects } = await supabase
     .from("subjects")
     .select("id, name, enrolled_count, sections(name)")
