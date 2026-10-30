@@ -3113,6 +3113,10 @@ async function parseManualTemplateWorkbook(file) {
     throw new Error('Expected a "Name" column — is this the Faculty Profile Import Template?');
   }
 
+  // Optional "Email" column: when filled in, it identifies the teacher
+  // (far safer than a name, which can be misspelled or shared).
+  const emailIdx = header.findIndex(h => h.toLowerCase() === "email");
+
   // Collect Course CodeN / Year Level and SectionN / Program SuffixN sets
   // by their shared numeric suffix, not by position — so columns can be
   // reordered or extended (Course Code11, ...) without breaking this.
@@ -3138,7 +3142,8 @@ async function parseManualTemplateWorkbook(file) {
   for (let i = 1; i < rows.length; i++) { // skip header row
     const row = rows[i];
     const faculty = String(row[nameIdx] || "").trim();
-    if (!faculty) continue; // blank row — including the shipped example row once it's left in place with no name
+    const email = emailIdx === -1 ? "" : String(row[emailIdx] || "").trim().toLowerCase();
+    if (!faculty && !email) continue; // blank row — including the shipped example row once it's left in place with no name
     for (const { codeIdx, ylIdx, suffixIdx } of pairs) {
       let code = String(row[codeIdx] || "").trim();
       if (!code) continue; // unused set for this faculty member
@@ -3149,7 +3154,7 @@ async function parseManualTemplateWorkbook(file) {
       const hyphenSuffixGuess = code.match(/^(.*\S)\s*-\s*([A-Za-z]{1,6})$/);
       if (!suffix && hyphenSuffixGuess) {
         out.push({
-          faculty, dept: "", courseTitle: "", courseCode: code,
+          faculty, email, dept: "", courseTitle: "", courseCode: code,
           yearLevelRaw: String(row[ylIdx] || "").trim(),
           templateWarning: `"${code}" looks like it has a program suffix written into the course code ` +
             `(the "-${hyphenSuffixGuess[2]}" part). That's not recognized — put the course code alone here ` +
@@ -3160,6 +3165,7 @@ async function parseManualTemplateWorkbook(file) {
       if (suffix) code = `${code} (${suffix})`; // reuse parseSuffix's existing parenthetical parsing
       out.push({
         faculty,
+        email,
         dept: "",
         courseTitle: "",
         courseCode: code,
@@ -3260,8 +3266,15 @@ async function runFacultyImportMatch(file, parseFn = parseManualTemplateWorkbook
   await loadSubjectsForAssignment();
   const subjectsByCourse = buildSubjectsByCourse(allSubjectsForAssignment);
 
-  const { data: teachers } = await supabase.from("users").select("id, name").eq("role", "teacher");
-  const teacherByName = new Map((teachers || []).map(t => [t.name.trim().toLowerCase(), t.id]));
+  const { data: teachers } = await supabase.from("users").select("id, name, email").eq("role", "teacher");
+  const teacherByEmail = new Map();
+  const teacherByName = new Map();   // name -> id, or null when two teachers share the name
+  for (const t of teachers || []) {
+    if (t.email) teacherByEmail.set(t.email.trim().toLowerCase(), t.id);
+    const key = (t.name || "").trim().toLowerCase();
+    if (!key) continue;
+    teacherByName.set(key, teacherByName.has(key) ? null : t.id);
+  }
 
   facultyImportResults = rows.map(row => {
     // A hyphen-suffix typo caught during parsing — never guess a match
@@ -3269,9 +3282,23 @@ async function runFacultyImportMatch(file, parseFn = parseManualTemplateWorkbook
     if (row.templateWarning) {
       return { ...row, status: "unmatched", reason: row.templateWarning };
     }
-    const teacherId = teacherByName.get(row.faculty.trim().toLowerCase());
-    if (!teacherId) {
-      return { ...row, status: "unmatched", reason: `No teacher account found with the name "${row.faculty}" — add them first in User Management.` };
+    // Email (when given) is authoritative and never falls back to the
+    // name — a wrong email must not silently land on a same-named person.
+    let teacherId;
+    if (row.email) {
+      teacherId = teacherByEmail.get(row.email);
+      if (!teacherId) {
+        return { ...row, status: "unmatched", reason: `No teacher account found with the email "${row.email}" — check the spelling or add them first in User Management.` };
+      }
+    } else {
+      const key = (row.faculty || "").trim().toLowerCase();
+      if (teacherByName.get(key) === null) {
+        return { ...row, status: "unmatched", reason: `More than one teacher is named "${row.faculty}" — add their Email in the template to tell them apart.` };
+      }
+      teacherId = teacherByName.get(key);
+      if (!teacherId) {
+        return { ...row, status: "unmatched", reason: `No teacher account found with the name "${row.faculty}" — add them first in User Management, or fill in the Email column.` };
+      }
     }
     const match = matchFacultyRow(row, subjectsByCourse);
     return { ...row, teacherId, ...match };
@@ -3302,7 +3329,7 @@ function renderFacultyImportPreview() {
         <tbody>
           ${unmatched.map(r => `
             <tr>
-              <td style="font-size:12px;">${escHtml(r.faculty)}</td>
+              <td style="font-size:12px;">${escHtml(r.faculty || r.email || "")}</td>
               <td style="font-size:12px;">${escHtml(r.courseCode)}</td>
               <td style="font-size:12px;">${escHtml(r.yearLevelRaw)}</td>
               <td style="font-size:12px; color:#991b1b;">${escHtml(r.reason)}</td>
@@ -3335,7 +3362,7 @@ async function applyFacultyImportMatches() {
   const failures = [];
   for (const row of matched) {
     const { error } = await supabase.from("subjects").update({ teacher_id: row.teacherId }).in("id", row.subjectIds);
-    if (error) failures.push(`${row.faculty} / ${row.courseCode}: ${error.message}`);
+    if (error) failures.push(`${row.faculty || row.email} / ${row.courseCode}: ${error.message}`);
     else applied += row.subjectIds.length;
   }
 
