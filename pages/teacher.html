@@ -88,7 +88,7 @@
     }
     .hero::before {
       content: ""; position: absolute; inset: 0;
-      background-image: url('../img/campus-building.webp');
+      background-image: url('../img/campus-building.png');
       background-size: cover; background-position: center 30%;
       mix-blend-mode: multiply; opacity: 0.85; pointer-events: none;
     }
@@ -312,6 +312,28 @@
       .subject-item { flex-direction: column; align-items: flex-start; }
       .subject-item .subj-count { align-self: flex-end; }
     }
+
+    /* ── Student response progress (counts only, never names) ── */
+    .rp-card { display: none; background: #fff; border-left: 1px solid var(--hairline); border-right: 1px solid var(--hairline);
+      border-top: 4px solid var(--maroon); border-bottom: 4px solid var(--gold); border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08); padding: 20px 24px; margin-bottom: 22px; }
+    .rp-card h4 { font-family: 'Source Serif 4', serif; font-weight: 500; font-size: 18px; color: var(--ink); margin: 0 0 4px; }
+    .rp-card .rp-note { font-size: 12px; color: var(--mist); margin: 0 0 14px; line-height: 1.5; }
+    .rp-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px 96px; gap: 14px; align-items: center;
+      padding: 9px 0; border-top: 1px solid var(--panel); font-size: 13px; }
+    .rp-row:first-of-type { border-top: none; }
+    .rp-name { font-weight: 600; color: var(--ink); min-width: 0; }
+    .rp-name small { display: block; font-weight: 400; color: var(--slate); font-size: 12px; margin-top: 2px; }
+    .rp-bar { height: 8px; background: var(--panel); border: 1px solid var(--hairline); border-radius: 99px; overflow: hidden; }
+    .rp-bar > span { display: block; height: 100%; border-radius: 99px; }
+    .rp-count { text-align: right; font-weight: 600; color: var(--ink); white-space: nowrap; }
+    .rp-count small { font-weight: 400; color: var(--slate); }
+    .rp-total { border-top: 2px solid var(--hairline); margin-top: 4px; }
+    @media (max-width: 640px) {
+      .rp-card { padding: 16px; }
+      .rp-row { grid-template-columns: 1fr 84px; }
+      .rp-bar { grid-column: 1 / -1; order: 3; }
+    }
   </style>
 </head>
 <body>
@@ -326,7 +348,6 @@
     <div class="nav-actions">
       <span id="nav-user"></span>
       <button class="nav-btn" id="switch-to-supervisor-btn" style="display:none;">Switch to Supervisor View</button>
-      <button class="nav-btn" id="switch-to-executive-btn" style="display:none;">Switch to Management View</button>
       <button class="nav-btn" id="change-password-btn">Change Password</button>
       <a href="../index.html" id="logout-btn">Logout</a>
     </div>
@@ -365,6 +386,14 @@
   </header>
 
   <div class="dash-wrap">
+
+    <!-- STUDENT RESPONSE PROGRESS — aggregate counts only. Shown whether or not
+         the report has been released; filled in by teacher.js. -->
+    <section class="rp-card" id="rp-card">
+      <h4>Student Response Progress</h4>
+      <p class="rp-note">How many students in your classes have submitted their evaluation. This shows counts only — students are never identified, and responses stay anonymous.</p>
+      <div id="rp-body"></div>
+    </section>
 
     <!-- NOT RELEASED STATE -->
     <div id="not-released-view" class="not-released">
