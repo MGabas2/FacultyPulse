@@ -203,21 +203,24 @@ async function computeWeightedSET(teacherId, semesterId) {
 //  LOAD SUMMARY COUNTS
 // ══════════════════════════════════════════════════════════════
 async function loadSummary() {
-  const { count: facultyCount } = await supabase
-    .from("users").select("id", { count: "exact", head: true }).eq("role", "teacher");
-  const { count: studentCount } = await supabase
-    .from("users").select("id", { count: "exact", head: true }).eq("role", "student");
-  // Scoped to the ACTIVE semester. This used to count every semester's rows,
-  // so activating a new (empty) semester still showed the old total.
+  // Every card is scoped to the ACTIVE semester, so a freshly activated,
+  // not-yet-imported semester correctly reads 0 / 0 / 0 (and the numbers
+  // climb as you import — a quick sanity check on the import itself).
   const { data: activeSem } = await supabase
     .from("semesters").select("id").eq("is_active", true).maybeSingle();
-  let evalCount = 0;
+
+  let facultyCount = 0, studentCount = 0, evalCount = 0;
   if (activeSem) {
-    const { count } = await supabase
-      .from("evaluation_scores")
-      .select("*", { count: "exact", head: true })
-      .eq("semester_id", activeSem.id);
-    evalCount = count ?? 0;
+    const [counts, evals] = await Promise.all([
+      supabase.rpc("admin_semester_counts", { p_semester_id: activeSem.id }),
+      supabase.from("evaluation_scores")
+        .select("*", { count: "exact", head: true })
+        .eq("semester_id", activeSem.id),
+    ]);
+    const row = Array.isArray(counts.data) ? counts.data[0] : counts.data;
+    facultyCount = counts.error ? null : Number(row?.faculty ?? 0);
+    studentCount = counts.error ? null : Number(row?.students ?? 0);
+    evalCount    = evals.count ?? 0;
   }
 
   document.getElementById("count-faculty").textContent  = facultyCount  ?? "—";
