@@ -198,6 +198,10 @@
                 📥 Import Faculty
               </button>
               <input type="file" id="faculty-roster-import-file-input" accept=".xlsx" style="display:none;" />
+              <button id="cleanup-btn" class="btn-secondary" style="flex:none; white-space:nowrap;"
+                title="Archive students who are not enrolled in any course this semester (graduated or dropped) — with preview and undo">
+                📦 Semester Cleanup
+              </button>
               <button id="add-user-btn" style="flex:none; white-space:nowrap; background:var(--gold); color:var(--gold-dp);">+ Add User</button>
             </div>
             <div class="admin-scope-row">
@@ -914,6 +918,43 @@
       <div style="display:flex; gap:10px; margin-top:16px; flex-wrap:wrap;">
         <button id="save-edit-btn" style="background:var(--gold); color:var(--gold-dp);">Save Changes</button>
         <button class="btn-secondary" id="cancel-edit-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cleanup-modal" class="modal hidden">
+    <div class="modal-box" style="max-width:660px;">
+      <h3>📦 Semester Cleanup</h3>
+      <p style="color:var(--slate); font-size:13px; line-height:1.6; margin:0 0 12px;">
+        Archives students who are <b>not enrolled in any course</b> in the active semester
+        (<b id="cleanup-semester">—</b>) — for example graduated or dropped students. Nothing is deleted,
+        archived students can no longer log in, and the last cleanup can be undone.
+      </p>
+
+      <div id="cleanup-undo" class="cleanup-undo" hidden>
+        <span id="cleanup-undo-text"></span>
+        <button id="cleanup-undo-btn" class="btn-secondary" type="button">↺ Undo last cleanup</button>
+      </div>
+
+      <label class="cleanup-check">
+        <input type="checkbox" id="cleanup-allfiles" />
+        <span>I have imported <b>all</b> student files for this semester.</span>
+      </label>
+      <button id="cleanup-preview-btn" type="button" disabled>🔍 Preview list</button>
+
+      <div id="cleanup-result"></div>
+
+      <div id="cleanup-confirm-wrap" hidden>
+        <label style="font-size:12.5px; color:var(--slate);">
+          Type <b id="cleanup-phrase"></b> to confirm
+        </label>
+        <input type="text" id="cleanup-confirm-input" autocomplete="off" style="width:100%; margin-top:4px;" />
+        <button id="cleanup-archive-btn" type="button" style="margin-top:10px;" disabled>📦 Archive these students</button>
+      </div>
+
+      <p id="cleanup-error" class="error" style="margin-top:10px;"></p>
+      <div style="display:flex; gap:10px; margin-top:14px;">
+        <button class="btn-secondary" id="cleanup-close-btn" type="button">Close</button>
       </div>
     </div>
   </div>

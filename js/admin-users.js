@@ -11,6 +11,7 @@ function escHtml(str) {
 import { supabase } from "./supabase.js";
 import { fpAlert, fpConfirm } from "./modal.js";
 import { ORG_DEPARTMENTS, departmentLabel, orgDepartmentOf } from "./departments.js";
+import "./semester-cleanup.js";   // Semester Cleanup dialog (archive students not enrolled this semester)
 
 // ── Guard ──
 if (!sessionStorage.getItem("role") || sessionStorage.getItem("role") !== "admin") {
@@ -2536,4 +2537,6 @@ document.getElementById("close-faculty-import-btn")?.addEventListener("click", (
 
 loadDepartments();
 loadSections();
+// Semester Cleanup (and its undo) changes who is archived — refresh the table.
+window.addEventListener("fp:users-changed", () => loadUsers());
 loadUsers();
