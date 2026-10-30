@@ -125,24 +125,24 @@ nav a#logout-btn:hover { background: var(--gold-hv); transform: translateY(-1px)
 .section > h3 { margin: 0 0 12px; font-size: 17px; }
 
 /* ── DASHBOARD ── */
-.dash-wrap { min-height: 100%; display: flex; flex-direction: column; padding: 18px 22px 20px; gap: 14px; }
-.dash-title { display: flex; align-items: center; gap: 12px; font-family: 'Source Serif 4', Georgia, serif; font-size: 28px; font-weight: 600; letter-spacing: -0.01em; flex: none; }
+.dash-wrap { min-height: 100%; display: flex; flex-direction: column; padding: 14px 22px 18px; gap: 10px; }
+.dash-title { display: flex; align-items: center; gap: 12px; font-family: 'Source Serif 4', Georgia, serif; font-size: 24px; font-weight: 600; letter-spacing: -0.01em; flex: none; }
 .icon-stats-row { display: flex; gap: 14px; flex: none; }
 
-.icon-stat { --accent: var(--maroon); flex: 1; padding: 16px 20px; display: flex; align-items: center; gap: 16px; position: relative; overflow: hidden; transition: transform 0.18s, box-shadow 0.18s; }
+.icon-stat { --accent: var(--maroon); flex: 1; padding: 9px 16px; display: flex; align-items: center; gap: 12px; position: relative; overflow: hidden; transition: transform 0.18s, box-shadow 0.18s; }
 .icon-stat:nth-child(2) { --accent: var(--success); }
 .icon-stat:nth-child(3) { --accent: var(--navy); }
 .icon-stat:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
 .icon-stat .icon-circle {
-  width: 52px; height: 52px; border-radius: 16px; display: flex; align-items: center; justify-content: center;
-  font-size: 23px; flex-shrink: 0; color: #fff;
+  width: 38px; height: 38px; border-radius: 11px; display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0; color: #fff;
   background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 82%, #fff), var(--accent));
   box-shadow: 0 6px 14px -4px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 .icon-stat .icon-circle.green, .icon-stat .icon-circle.purple { color: #fff; }
 .icon-stat-text { display: flex; flex-direction: column; position: relative; z-index: 1; }
-.icon-stat .icon-value { font-family: 'Source Serif 4', Georgia, serif; font-size: 34px; font-weight: 600; color: var(--ink); line-height: 1; font-variant-numeric: tabular-nums; }
-.icon-stat .icon-label { font-size: 11px; color: var(--slate); font-weight: 600; margin-top: 6px; letter-spacing: 0.07em; text-transform: uppercase; }
+.icon-stat .icon-value { font-family: 'Source Serif 4', Georgia, serif; font-size: 26px; font-weight: 600; color: var(--ink); line-height: 1; font-variant-numeric: tabular-nums; }
+.icon-stat .icon-label { font-size: 10.5px; color: var(--slate); font-weight: 600; margin-top: 3px; letter-spacing: 0.07em; text-transform: uppercase; }
 .icon-stat-divider { display: none; }
 
 .dash-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1.4fr; gap: 14px; }
@@ -200,9 +200,16 @@ nav a#logout-btn:hover { background: var(--gold-hv); transform: translateY(-1px)
 @media (max-width: 600px) {
   .icon-stats-row { flex-direction: column; }
   .icon-stat { padding: 12px 16px; }
-  .icon-stat .icon-value { font-size: 28px; }
+  .icon-stat .icon-value { font-size: 24px; }
   .dash-filter-bar select { min-width: 100px; }
 }
+
+/* ── Icons (silhouettes from js/icons.js take the colour of their surroundings) ── */
+.sidebar-nav-item.active .nav-icon { color: var(--gold-dp); }
+.sidebar-nav-item .nav-icon .ic { margin: 0; width: 17px; height: 17px; }
+.icon-stat .icon-circle .ic { margin: 0; width: 22px; height: 22px; }
+.empty-state .icon { color: var(--mist); }
+.empty-state .icon .ic { width: 1em; height: 1em; margin: 0; }
 
 /* ── TABLES ── quiet header, horizontal rules only, calm hover ── */
 .main-content table, .modal-box table.plain { width: 100%; border-collapse: collapse; font-size: 13px; }
