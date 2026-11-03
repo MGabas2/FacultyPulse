@@ -164,11 +164,6 @@ async function loadSemesterData(semesterId) {
 
   document.getElementById("semester-label").textContent = semester.label;
 
-  // Response counts are useful BEFORE release (that is when students are
-  // still submitting), so this runs ahead of — and independent of — the
-  // release gate below. Counts only; no student identities.
-  loadResponseProgress(semester.id, myToken);
-
   // Gate: only show after final release — same check regardless of
   // whether this is the active semester or one picked from the past.
   const { data: release } = await supabase
