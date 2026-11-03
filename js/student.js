@@ -170,6 +170,20 @@ async function init() {
   // browser no longer reads student_subjects / users / evaluation_tracking
   // directly — those tables are locked down (RLS), and a single call is also
   // one network round trip instead of two.
+  // The server only accepts a student who has a verified email-code session
+  // (when an email is on file). If that session is missing — expired, cleared
+  // browser data — send them back to log in instead of an empty course list.
+  if (sessionStorage.getItem("email")) {
+    const { data: sess } = await supabase.auth.getSession();
+    const jwtEmail = (sess?.session?.user?.email || "").toLowerCase();
+    if (jwtEmail !== sessionStorage.getItem("email").toLowerCase()) {
+      sessionStorage.clear();
+      await fpAlert("Your session expired. Please log in again.", "error");
+      window.location.href = "../index.html";
+      return;
+    }
+  }
+
   const { data: dash, error } = await supabase.rpc("get_student_dashboard", {
     p_student_id:  studentId,                         // text Student ID (enrollments)
     p_user_id:     sessionStorage.getItem("userId"),  // uuid as text (submissions)
@@ -1120,7 +1134,10 @@ async function emSubmitCode() {
   const { data: res, error } = await supabase.rpc("set_student_email", {
     p_student_id: studentId, p_password: password, p_new_email: email,
   });
-  await supabase.auth.signOut();   // drop the temporary session the code created
+  // Keep the session on success: it was just verified for the NEW address, which
+  // is now the one on file, so the server accepts it for submissions. Only drop
+  // it when saving failed (the address on file did not change).
+  if (error || res !== "ok") await supabase.auth.signOut();
 
   if (error || res !== "ok") {
     emPending = null;
