@@ -1801,6 +1801,76 @@ window.addCommentRow            = addCommentRow;
 window.removeCommentRow         = removeCommentRow;
 window.removeSpecificCommentRow = removeSpecificCommentRow;
 
+// ══════════════════════════════════════════════════════════════
+//  MY ACCOUNT — change own password / login email
+//  Password: verified against the current one, then updated through Supabase Auth.
+//  Email: done by /api/admin-change-email, which changes the Auth email AND
+//  users.email together (changing only one would lock the admin out).
+// ══════════════════════════════════════════════════════════════
+(function initAccountModal() {
+  const $ = (id) => document.getElementById(id);
+  const modal = $("account-modal");
+  if (!modal) return;
+  const say = (el, text, bad) => { el.textContent = text; el.style.color = bad ? "#a4342a" : "#15803d"; };
+
+  $("account-btn")?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const { data } = await supabase.auth.getSession();
+    $("acct-current-email").textContent = data?.session?.user?.email || "—";
+    ["acct-pw-current","acct-pw-new","acct-pw-confirm","acct-em-new","acct-em-confirm","acct-em-pw"].forEach(i => $(i).value = "");
+    $("acct-pw-msg").textContent = ""; $("acct-em-msg").textContent = "";
+    modal.classList.remove("hidden");
+  });
+  $("acct-close")?.addEventListener("click", () => modal.classList.add("hidden"));
+
+  $("acct-pw-save")?.addEventListener("click", async () => {
+    const msg = $("acct-pw-msg"), btn = $("acct-pw-save");
+    const cur = $("acct-pw-current").value, nw = $("acct-pw-new").value, cf = $("acct-pw-confirm").value;
+    if (!cur) return say(msg, "Enter your current password.", true);
+    if (nw.length < 8) return say(msg, "New password must be at least 8 characters.", true);
+    if (nw !== cf) return say(msg, "The new passwords do not match.", true);
+    if (nw === cur) return say(msg, "Choose a password different from the current one.", true);
+    btn.disabled = true; btn.textContent = "Updating…";
+    try {
+      const { data: s } = await supabase.auth.getSession();
+      const email = s?.session?.user?.email;
+      if (!email) return say(msg, "Session expired — please log in again.", true);
+      // Re-check the current password on a throwaway basis (same client, same user).
+      const { error: reErr } = await supabase.auth.signInWithPassword({ email, password: cur });
+      if (reErr) return say(msg, "Current password is incorrect.", true);
+      const { error } = await supabase.auth.updateUser({ password: nw });
+      if (error) return say(msg, "Couldn't update: " + error.message, true);
+      say(msg, "Password updated.", false);
+      ["acct-pw-current","acct-pw-new","acct-pw-confirm"].forEach(i => $(i).value = "");
+    } finally { btn.disabled = false; btn.textContent = "Update Password"; }
+  });
+
+  $("acct-em-save")?.addEventListener("click", async () => {
+    const msg = $("acct-em-msg"), btn = $("acct-em-save");
+    const em = $("acct-em-new").value.trim().toLowerCase(), cf = $("acct-em-confirm").value.trim().toLowerCase();
+    const pw = $("acct-em-pw").value;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return say(msg, "Enter a valid email address.", true);
+    if (em !== cf) return say(msg, "The two email entries do not match.", true);
+    if (!pw) return say(msg, "Enter your current password.", true);
+    if (!(await fpConfirm(`Change your login email to ${em}?\n\nYou will be logged out and must sign in with this address. Make sure you can open its inbox.`, { confirmLabel: "Change email" }))) return;
+    btn.disabled = true; btn.textContent = "Changing…";
+    try {
+      const { data: s } = await supabase.auth.getSession();
+      const r = await fetch("/api/admin-change-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + (s?.session?.access_token || "") },
+        body: JSON.stringify({ newEmail: em, currentPassword: pw }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) return say(msg, j.error || "Couldn't change the email.", true);
+      await fpAlert("Email changed. Please log in again with " + em + ".", "success");
+      await supabase.auth.signOut();
+      sessionStorage.clear();
+      window.location.href = "../staff.html";
+    } finally { btn.disabled = false; btn.textContent = "Change Email"; }
+  });
+})();
+
 document.getElementById("logout-btn").addEventListener("click", (e) => {
   e.preventDefault();
   supabase.auth.signOut();
