@@ -275,141 +275,23 @@ async function loadRankings(opts = {}) {
     return;
   }
 
-  const { data: allTeachers } = await supabase
-    .from("users").select("id, name, academic_rank, employment_type").eq("role", "teacher");
+  // One database call returns the finished ranking rows (averages, response
+  // counts, "12/36 students" progress, release stage). The calculation used to
+  // run here by downloading every evaluation/enrollment row — slow, and
+  // silently wrong once a table passed the API's 1,000-row cap.
+  const { data: rankedData, error: rankErr } = await supabase
+    .rpc("admin_rankings", { p_semester_id: semester.id });
 
-  const teachers = (allTeachers || []).filter(t => t.employment_type !== "COS");
+  if (myLoad !== rankingsLoadToken) return;   // a newer load started
 
-  if (!teachers || teachers.length === 0) {
-    clearRankingsData("No faculty found.");
-    return;
+  if (rankErr) {
+    console.warn("admin_rankings failed:", rankErr.message);
+    if (!preserve) clearRankingsData("Couldn't load rankings. Check your connection and press Refresh.");
+    return;   // on a background refresh, keep what is already on screen
   }
 
-  const { data: allSubjects } = await supabase
-    .from("subjects")
-    .select("id, name, teacher_id, enrolled_count, sections(name, department)")
-    .eq("semester_id", semester.id);
+  const ranked = Array.isArray(rankedData) ? rankedData : [];
 
-  const { data: allEvals } = await supabase
-    .from("evaluation_scores")
-    .select("subject_id, scores")
-    .eq("semester_id", semester.id);
-
-  const { data: allReleases } = await supabase
-    .from("report_releases")
-    .select("teacher_id, stage")
-    .eq("semester_id", semester.id);
-
-  // ── Students-taught progress (the "12/20" column) ──────────────────────
-  // expected  = distinct students enrolled in any of the teacher's subjects
-  //             (live from student_subjects — not the cached enrolled_count)
-  // submitted = of those, students who evaluated EVERY one of that teacher's
-  //             subjects they are enrolled in.
-  // Tracking rows hold the student's uuid; student_subjects holds the text
-  // Student ID, so map text id → uuid via users.
-  const pagedAll = async (build) => {
-    const PAGE = 1000; let all = [], from = 0;
-    while (true) {
-      const { data, error } = await build().range(from, from + PAGE - 1);
-      if (error) { console.warn("progress query failed:", error.message); return null; }
-      all = all.concat(data || []);
-      if (!data || data.length < PAGE) break;
-      from += PAGE;
-    }
-    return all;
-  };
-  const [enrollRows, trackRows, studentRows] = await Promise.all([
-    pagedAll(() => supabase.from("student_subjects").select("student_id, subject_id").eq("semester_id", semester.id).order("student_id").order("subject_id")),
-    pagedAll(() => supabase.from("evaluation_tracking").select("student_id, subject_id").eq("semester_id", semester.id).order("student_id").order("subject_id")),
-    pagedAll(() => supabase.from("users").select("id, student_id").eq("role", "student").order("id")),
-  ]);
-  const progressAvailable = !!(enrollRows && trackRows && studentRows);
-  const uuidByStudentCode = new Map((studentRows || []).map(u => [u.student_id, u.id]));
-  const trackedPairs = new Set((trackRows || []).map(r => `${r.student_id}|${r.subject_id}`));
-  // teacherId -> Map(studentCode -> [subjectIds])
-  const teacherOfSubject = new Map((allSubjects || []).map(s => [s.id, s.teacher_id]));
-  const taughtByTeacher = {};
-  (enrollRows || []).forEach(r => {
-    const tid = teacherOfSubject.get(r.subject_id);
-    if (!tid) return;
-    ((taughtByTeacher[tid] ||= new Map()).get(r.student_id)
-      || (taughtByTeacher[tid].set(r.student_id, []), taughtByTeacher[tid].get(r.student_id))
-    ).push(r.subject_id);
-  });
-  const progressFor = (teacherId) => {
-    const m = taughtByTeacher[teacherId];
-    if (!progressAvailable || !m) return null;
-    let done = 0;
-    m.forEach((subIds, code) => {
-      const uuid = uuidByStudentCode.get(code);
-      const all = subIds.every(sid => trackedPairs.has(`${uuid}|${sid}`) || trackedPairs.has(`${code}|${sid}`));
-      if (all) done++;
-    });
-    return { done, expected: m.size };
-  };
-
-  const releaseStageByTeacher = {};
-  (allReleases || []).forEach(r => {
-    releaseStageByTeacher[r.teacher_id] = r.stage;
-  });
-
-  const evalsBySubject = {};
-  (allEvals || []).forEach(e => {
-    if (!evalsBySubject[e.subject_id]) evalsBySubject[e.subject_id] = [];
-    evalsBySubject[e.subject_id].push(e);
-  });
-
-  const subjectsByTeacher = {};
-  (allSubjects || []).forEach(s => {
-    if (!subjectsByTeacher[s.teacher_id]) subjectsByTeacher[s.teacher_id] = [];
-    subjectsByTeacher[s.teacher_id].push(s);
-  });
-
-  const ranked = [];
-
-  for (const teacher of teachers) {
-    const subjects = subjectsByTeacher[teacher.id] || [];
-    if (subjects.length === 0) continue;
-
-    let totalWeighted = 0, totalEnrolled = 0, totalRespondents = 0;
-
-    for (const subject of subjects) {
-      const evals = evalsBySubject[subject.id] || [];
-      if (evals.length === 0) continue;
-
-      let sumRatings = 0;
-      evals.forEach(e => {
-        const total = Object.values(e.scores).reduce((s, v) => s + v, 0);
-        sumRatings += (total / 75) * 100;
-      });
-
-      const avgSETRating  = parseFloat((sumRatings / evals.length).toFixed(2));
-      // Divisor/weight = respondents (evals.length), not enrolled_count —
-      // same fix as computeWeightedSET() above, same reasoning.
-      totalWeighted    += avgSETRating * evals.length;
-      totalEnrolled    += evals.length;
-      totalRespondents += evals.length;
-    }
-
-    if (totalRespondents === 0) continue;
-
-    const overallSET = parseFloat((totalWeighted / totalEnrolled).toFixed(2));
-    const program    = subjects[0]?.sections?.department || "—";
-
-    ranked.push({
-      id:             teacher.id,
-      name:           teacher.name,
-      rank:           teacher.academic_rank || "—",
-      overallSET,
-      respondents:    totalRespondents,
-      progress:       progressFor(teacher.id),
-      program,
-      employmentType: teacher.employment_type || "—",
-      stage:          releaseStageByTeacher[teacher.id] || "pending",
-    });
-  }
-
-  ranked.sort((a, b) => b.overallSET - a.overallSET);
 
   // Drop this result if the active semester changed (or another refresh
   // started) while we were fetching — otherwise a slow auto-refresh for the
@@ -2195,7 +2077,7 @@ async function syncEnrolledCounts() {
 //  and the browser tab itself is visible (document.hidden) — no point
 //  hitting Supabase every 30s for a tab the admin isn't looking at.
 // ══════════════════════════════════════════════════════════════
-const AUTO_REFRESH_MS       = 30 * 1000;       // dashboard numbers — change to 60_000 for 1 min
+const AUTO_REFRESH_MS       = 2 * 60 * 1000;   // dashboard numbers (was 30 s — each refresh is heavy; the Refresh button is instant)
 const AUTO_SYNC_ENROLLED_MS = 5  * 60 * 1000;  // enrolled-count sync (write RPC — see note above)
 
 let autoRefreshTimer = null;
