@@ -7,6 +7,7 @@
 import { supabase } from "./supabase.js";
 
 // ── PASSWORD RECOVERY — staff (unchanged) ──
+let recoveryBound = false;   // PASSWORD_RECOVERY can fire more than once; bind Save only once
 supabase.auth.onAuthStateChange((event, session) => {
   if (event !== "PASSWORD_RECOVERY") return;
 
@@ -22,7 +23,8 @@ supabase.auth.onAuthStateChange((event, session) => {
   const errEl     = document.getElementById("reset-error");
   const successEl = document.getElementById("reset-success");
 
-  if (!saveBtn) return;
+  if (!saveBtn || recoveryBound) return;
+  recoveryBound = true;
 
   saveBtn.addEventListener("click", async () => {
     const newPw  = document.getElementById("reset-new-pw").value;
@@ -229,5 +231,10 @@ if (forgotLink) {
 loginBtn.addEventListener("click", login);
 document.addEventListener("keydown", e => {
   if (e.key !== "Enter") return;
+  // Enter inside the password-reset overlay must not trigger the login form behind it.
+  if (e.target.closest && e.target.closest("#reset-overlay")) {
+    if (e.target.id === "reset-confirm-pw") document.getElementById("reset-save-btn")?.click();
+    return;
+  }
   login();
 });
