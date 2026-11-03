@@ -5,6 +5,7 @@
 // ============================================================
 
 import { supabase } from "./supabase.js";
+import "./password-toggle.js";
 
 // ── PASSWORD RECOVERY — staff (unchanged) ──
 let recoveryBound = false;   // PASSWORD_RECOVERY can fire more than once; bind Save only once

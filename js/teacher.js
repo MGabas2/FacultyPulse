@@ -4,6 +4,7 @@
 // ============================================================
 
 import { supabase } from "./supabase.js";
+import "./password-toggle.js";
 
 // ── Guard ──
 if (!sessionStorage.getItem("role") || sessionStorage.getItem("role") !== "teacher") {

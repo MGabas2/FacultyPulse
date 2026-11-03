@@ -10,6 +10,7 @@
 // ============================================================
 
 import { supabase } from "./supabase.js";
+import "./password-toggle.js";
 import { fpAlert } from "./modal.js";
 
 // ── Guard ──

@@ -7,6 +7,7 @@
 // ============================================================
 
 import { supabase } from "./supabase.js";
+import "./password-toggle.js";
 
 const STUDENT_ID_FORMAT = /^\d{4}-\d{4}-[A-Z]{2}$/;
 

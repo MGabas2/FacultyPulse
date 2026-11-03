@@ -4,6 +4,7 @@
 // ============================================================
 
 import { supabase } from "./supabase.js";
+import "./password-toggle.js";
 import { PROGRAM_TO_ORG_DEPARTMENT, ORG_DEPARTMENT_NAMES } from "./departments.js";
 import { fpAlert, fpConfirm, fpLoading } from "./modal.js";
 

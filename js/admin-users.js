@@ -9,6 +9,7 @@ function escHtml(str) {
     .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 import { supabase } from "./supabase.js";
+import "./password-toggle.js";
 import { fpAlert, fpConfirm } from "./modal.js";
 import { ORG_DEPARTMENTS, departmentLabel, orgDepartmentOf } from "./departments.js";
 import "./semester-cleanup.js";   // Semester Cleanup dialog (archive students not enrolled this semester)
