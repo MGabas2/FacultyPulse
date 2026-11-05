@@ -16,7 +16,9 @@
 const { createClient } = require("@supabase/supabase-js");
 
 const SUPABASE_URL      = "https://qscvccklksptcvtyzabe.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_cyj-6CYVmr2MHsj1CDhowQ_O30bZsIg"; // public key, same as js/supabase.js
+// Public (publishable) key. Override with the SUPABASE_ANON_KEY env var in Vercel to rotate it
+// without editing code; the fallback keeps the API working if the var is not set.
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_cyj-6CYVmr2MHsj1CDhowQ_O30bZsIg";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const esc = (v) => v.replace(/[\\%_]/g, "\\$&");   // ilike wildcards -> literal
 
