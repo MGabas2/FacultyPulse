@@ -55,7 +55,7 @@ function getRatingLabel(score) {
 
 function getReportStageBadge(stage) {
   const map = {
-    pending:                 { label: "Pending Review",      bg: "#fef3c7", color: "#92400e" },
+    pending:                 { label: "Awaiting Supervisor", bg: "#fef3c7", color: "#92400e" },
     forwarded_to_supervisor: { label: "Awaiting Supervisor", bg: "#dbeafe", color: "#1e40af" },
     supervisor_done:         { label: "Supervisor Done",     bg: "#d1fae5", color: "#065f46" },
     released:                { label: "Released",            bg: "#ede9fe", color: "#5b21b6" },
@@ -790,12 +790,8 @@ async function viewReport(teacherId, teacherName) {
           return `<div class="no-print" style="background:#eff6ff; border:1px solid #93c5fd; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#1e40af;">
             📋 <b>SUPERVISOR REVIEWED</b> — Supervisor has submitted remarks. Ready for your final release.
           </div>`;
-        if (s === 'forwarded_to_supervisor')
-          return `<div class="no-print" style="background:#faf5ff; border:1px solid #c4b5fd; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#6d28d9;">
-            ⏳ <b>AWAITING SUPERVISOR REVIEW</b> — Forwarded to supervisor. Waiting for their remarks.
-          </div>`;
-        return `<div class="no-print" style="background:#fef3c7; border:1px solid #fcd34d; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#92400e;">
-          📝 <b>PREVIEW (QA ONLY)</b> — Not yet forwarded. Faculty cannot see this report yet.
+        return `<div class="no-print" style="background:#faf5ff; border:1px solid #c4b5fd; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#6d28d9;">
+          ⏳ <b>AWAITING SUPERVISOR SEF</b> — Waiting for the supervisor's evaluation. Faculty cannot see this report yet.
         </div>`;
       })()}
 
@@ -1403,13 +1399,6 @@ function updateReleaseButton() {
     return;
   }
 
-  if (stage === "forwarded_to_supervisor") {
-    btn.textContent      = "⏳ Awaiting Supervisor Review";
-    btn.disabled         = true;
-    btn.style.background = "#7c3aed";
-    return;
-  }
-
   if (stage === "supervisor_done") {
     btn.textContent      = "✅ Final Release to Faculty";
     btn.style.background = "#16a34a";
@@ -1417,146 +1406,17 @@ function updateReleaseButton() {
     return;
   }
 
-  btn.textContent      = "📤 Forward to Supervisor";
-  btn.style.background = "#475569";
-  btn.onclick          = forwardToSupervisor;
+  // "pending" (or legacy "forwarded_to_supervisor"): the supervisor can already
+  // submit their SEF — there is no forward step any more. Release unlocks the
+  // moment the SEF is submitted (database trigger → "supervisor_done").
+  btn.textContent      = "⏳ Awaiting Supervisor SEF";
+  btn.disabled         = true;
+  btn.style.background = "#7c3aed";
 }
 
-function goToMonitoringFiltered(teacherId, teacherName) {
-  document.querySelectorAll(".modal").forEach(m => m.classList.add("hidden"));
-
-  // switchPanel is defined in admin.html's module script and exposed on window.
-  if (typeof window.switchPanel === "function") {
-    window.switchPanel("panel-monitoring");
-  }
-
-  let attempts = 0;
-  const apply = setInterval(() => {
-    const input = document.getElementById("filter-faculty");
-    if (input) {
-      input.value = teacherName;
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      clearInterval(apply);
-      sessionStorage.removeItem("mon_filter_faculty");
-    }
-    if (++attempts > 20) clearInterval(apply);
-  }, 100);
-}
-
-async function forwardToSupervisor() {
-  const teacherId   = window._reportTeacherId;
-  const teacherName = window._reportTeacherName;
-  const semesterId  = window._reportSemesterId;
-  if (!teacherId || !semesterId) return;
-
-  // Who can actually SEE this report is decided ONLY by supervisor_assignments
-  // (supervisor.js filters report_releases by it) — not by department. The old
-  // department-match lookup here could name a supervisor who can't see the
-  // report at all, and said nothing when NO supervisor was linked, so a
-  // forward "succeeded" while the report appeared for nobody.
-  const { data: asnRows } = await supabase
-    .from("supervisor_assignments")
-    .select("supervisor_id")
-    .eq("teacher_id", teacherId);
-
-  let supervisorName;
-  if (!asnRows || asnRows.length === 0) {
-    supervisorName =
-      "⚠️ NONE LINKED — no supervisor is assigned to this faculty, so nobody will see " +
-      "this report until you run the Supervisor Assignments import (or fix the link)";
-  } else {
-    const { data: supUsers } = await supabase
-      .from("users")
-      .select("name, is_active")
-      .in("id", asnRows.map(r => r.supervisor_id));
-    const names = (supUsers || []).map(u => u.name + (u.is_active === false ? " (archived)" : ""));
-    supervisorName = names.length ? names.join(", ") : "⚠️ Linked supervisor account not found";
-  }
-
-  const { data: subjectsForCount } = await supabase
-    .from("subjects")
-    .select("id, name, enrolled_count, sections(name)")
-    .eq("teacher_id", teacherId)
-    .eq("semester_id", semesterId);
-
-  let submissionLines = "";
-  let totalRespondents = 0;
-  let totalEnrolled = 0;
-
-  if (subjectsForCount && subjectsForCount.length > 0) {
-    for (const sub of subjectsForCount) {
-      const { count } = await supabase
-        .from("evaluation_tracking")
-        .select("*", { count: "exact", head: true })
-        .eq("subject_id", sub.id)
-        .eq("semester_id", semesterId);
-
-      const respondents = count || 0;
-      const enrolled    = sub.enrolled_count || 0;
-      totalRespondents += respondents;
-      totalEnrolled    += enrolled;
-      submissionLines  += `\n  • ${sub.name} (${sub.sections?.name || "—"}): ${respondents}/${enrolled} submitted`;
-    }
-  }
-
-  const submissionSummary = totalEnrolled > 0
-    ? `\nSubmission Status: ${totalRespondents}/${totalEnrolled} students submitted${submissionLines}`
-    : "";
-
-  const confirmed = await fpConfirm(
-    `Forward this report to the Supervisor for review?\n\n` +
-    `Faculty: ${teacherName}\n` +
-    `Supervisor: ${supervisorName}` +
-    submissionSummary +
-    `\n\n• Evaluation results will be sent for supervisor remarks\n` +
-    `• You can do the Final Release after the supervisor submits`,
-    {
-      confirmLabel: "Forward",
-      confirmStyle: "fp-btn-primary",
-      extraButton: {
-        label: "View in Monitoring →",
-        action: () => goToMonitoringFiltered(teacherId, teacherName),
-      },
-    }
-  );
-  if (!confirmed) return;
-
-  const btn = document.getElementById("release-btn");
-  if (btn) { btn.textContent = "Forwarding..."; btn.disabled = true; }
-
-  const { data: existing } = await supabase
-    .from("report_releases")
-    .select("id")
-    .eq("teacher_id", teacherId)
-    .eq("semester_id", semesterId)
-    .maybeSingle();
-
-  let error;
-  if (existing) {
-    ({ error } = await supabase
-      .from("report_releases")
-      .update({ stage: "forwarded_to_supervisor" })
-      .eq("teacher_id", teacherId)
-      .eq("semester_id", semesterId));
-  } else {
-    ({ error } = await supabase
-      .from("report_releases")
-      .insert({
-        teacher_id:  teacherId,
-        semester_id: semesterId,
-        released_by: (sessionStorage.getItem("name") && sessionStorage.getItem("name") !== "null" ? sessionStorage.getItem("name") : "Administrator"),
-        stage:       "forwarded_to_supervisor",
-      }));
-  }
-
-  if (error) {
-    await fpAlert("Failed to forward: " + error.message, "error");
-    updateReleaseButton();
-    return;
-  }
-
-  await fpAlert(`Report forwarded to Supervisor.\nThe supervisor can now review and submit remarks for ${teacherName}.`, "success");
-  viewReport(teacherId, teacherName);
+function releasedByName() {
+  const n = sessionStorage.getItem("name");
+  return n && n !== "null" ? n : "Administrator";
 }
 
 async function finalRelease() {
@@ -1576,14 +1436,16 @@ async function finalRelease() {
   const btn = document.getElementById("release-btn");
   if (btn) { btn.textContent = "Releasing..."; btn.disabled = true; }
 
-  const { error } = await supabase
+  const { data: relRows, error } = await supabase
     .from("report_releases")
-    .update({ stage: "released" })
+    .update({ stage: "released", released_at: new Date().toISOString(), released_by: releasedByName() })
     .eq("teacher_id", teacherId)
-    .eq("semester_id", semesterId);
+    .eq("semester_id", semesterId)
+    .eq("stage", "supervisor_done")
+    .select("id");
 
-  if (error) {
-    await fpAlert("Failed to release: " + error.message, "error");
+  if (error || !relRows || relRows.length === 0) {
+    await fpAlert("Failed to release: " + (error ? error.message : "the report is not in the 'Supervisor Done' stage (refresh and try again)."), "error");
     updateReleaseButton();
     return;
   }
@@ -1593,99 +1455,15 @@ async function finalRelease() {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  BULK ACTIONS — Forward All / Release All
+//  BULK ACTIONS — Release All
 //
-//  Same per-teacher logic as forwardToSupervisor()/finalRelease() above,
-//  just looped over every teacher in `allRanked` that's currently
-//  eligible, instead of requiring the admin to open each report one at
-//  a time. Each teacher is written one at a time (not a single bulk
-//  query) so one failure doesn't silently affect the others, and the
-//  admin gets a real per-teacher success/fail count instead of an
-//  all-or-nothing result.
-//
-//  NOTE: forwardToSupervisor() computes a per-subject submission-count
-//  summary (extra queries) purely for the confirm dialog's text. That's
-//  skipped here — doing it for every eligible teacher before a single
-//  confirm would mean dozens of extra round trips just to build a
-//  message. The bulk confirm only states the count and what's eligible.
+//  Same per-teacher logic as finalRelease() above, looped over every
+//  teacher in `allRanked` that's currently eligible. Each teacher is
+//  written one at a time so one failure doesn't silently affect the
+//  others, and the admin gets a real per-teacher success/fail count.
+//  (The old "Forward All" step was removed 2026-11-05 — supervisors can
+//  submit their SEF at any time now.)
 // ══════════════════════════════════════════════════════════════
-async function bulkForwardToSupervisor() {
-  const { data: semester } = await supabase
-    .from("semesters").select("id").eq("is_active", true).maybeSingle();
-  if (!semester) { await fpAlert("No active semester.", "warning"); return; }
-  const semesterId = semester.id;
-
-  // Eligible = still "pending" (not yet forwarded/reviewed/released).
-  const targets = allRanked.filter(t => (t.stage || "pending") === "pending");
-
-  if (targets.length === 0) {
-    await fpAlert("No faculty reports are waiting to be forwarded — everything eligible has already been forwarded, reviewed, or released.", "info");
-    return;
-  }
-
-  const confirmed = await fpConfirm(
-    `Forward ${targets.length} report(s) to their supervisors?\n\n` +
-    `This forwards every faculty report still in "Pending Review" to the ` +
-    `supervisor assigned to that faculty's department. Reports already ` +
-    `forwarded, reviewed, or released are skipped.`,
-    { confirmLabel: `Forward ${targets.length}`, confirmStyle: "fp-btn-primary" }
-  );
-  if (!confirmed) return;
-
-  const btn = document.getElementById("bulk-forward-btn");
-  if (btn) { btn.textContent = "Forwarding..."; btn.disabled = true; }
-
-  let okCount = 0, failCount = 0;
-  const failedNames = [];
-
-  for (const t of targets) {
-    try {
-      const { data: existing } = await supabase
-        .from("report_releases")
-        .select("id")
-        .eq("teacher_id", t.id)
-        .eq("semester_id", semesterId)
-        .maybeSingle();
-
-      let error;
-      if (existing) {
-        ({ error } = await supabase
-          .from("report_releases")
-          .update({ stage: "forwarded_to_supervisor" })
-          .eq("teacher_id", t.id)
-          .eq("semester_id", semesterId));
-      } else {
-        ({ error } = await supabase
-          .from("report_releases")
-          .insert({
-            teacher_id:  t.id,
-            semester_id: semesterId,
-            released_by: (sessionStorage.getItem("name") && sessionStorage.getItem("name") !== "null" ? sessionStorage.getItem("name") : "Administrator"),
-            stage:       "forwarded_to_supervisor",
-          }));
-      }
-
-      if (error) throw error;
-      okCount++;
-    } catch (err) {
-      failCount++;
-      failedNames.push(t.name);
-      console.error("Bulk forward failed for", t.name, err);
-    }
-  }
-
-  if (btn) { btn.textContent = "📤 Forward All"; btn.disabled = false; }
-
-  await fpAlert(
-    failCount > 0
-      ? `Forwarded ${okCount} report(s).\n${failCount} failed: ${failedNames.join(", ")}`
-      : `Forwarded ${okCount} report(s) to their supervisors.`,
-    failCount > 0 ? "error" : "success"
-  );
-
-  await loadRankings({ preserve: true });
-}
-
 async function bulkFinalRelease() {
   const { data: semester } = await supabase
     .from("semesters").select("id").eq("is_active", true).maybeSingle();
@@ -1718,12 +1496,15 @@ async function bulkFinalRelease() {
 
   for (const t of targets) {
     try {
-      const { error } = await supabase
+      const { data: relRows, error } = await supabase
         .from("report_releases")
-        .update({ stage: "released" })
+        .update({ stage: "released", released_at: new Date().toISOString(), released_by: releasedByName() })
         .eq("teacher_id", t.id)
-        .eq("semester_id", semesterId);
+        .eq("semester_id", semesterId)
+        .eq("stage", "supervisor_done")
+        .select("id");
       if (error) throw error;
+      if (!relRows || relRows.length === 0) throw new Error("not in supervisor_done stage");
       okCount++;
     } catch (err) {
       failCount++;
@@ -1744,7 +1525,6 @@ async function bulkFinalRelease() {
   await loadRankings({ preserve: true });
 }
 
-document.getElementById("bulk-forward-btn")?.addEventListener("click", bulkForwardToSupervisor);
 document.getElementById("bulk-release-btn")?.addEventListener("click", bulkFinalRelease);
 
 window.viewReport = viewReport;

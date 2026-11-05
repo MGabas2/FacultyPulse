@@ -23,9 +23,40 @@
     </div>
     <div class="nav-actions">
       <span id="nav-user"></span>
+      <a href="#" id="account-btn">Account</a>
       <a href="../staff.html" id="logout-btn">Logout</a>
     </div>
   </nav>
+
+  <div id="account-modal" class="modal hidden">
+    <div class="modal-box" style="max-width:460px;">
+      <h3>My Account</h3>
+      <p style="font-size:12.5px; color:var(--slate); margin-bottom:12px;">Login email: <b id="acct-current-email">—</b></p>
+
+      <div style="border:1px solid var(--hairline); border-radius:8px; padding:12px; margin-bottom:12px;">
+        <b style="font-size:13px;">Change password</b>
+        <div class="form-group"><label>Current password</label><input type="password" id="acct-pw-current" autocomplete="current-password" style="width:100%;" /></div>
+        <div class="form-group"><label>New password (at least 8 characters)</label><input type="password" id="acct-pw-new" autocomplete="new-password" style="width:100%;" /></div>
+        <div class="form-group"><label>Confirm new password</label><input type="password" id="acct-pw-confirm" autocomplete="new-password" style="width:100%;" /></div>
+        <p id="acct-pw-msg" style="font-size:12.5px; min-height:16px; margin:4px 0 8px;"></p>
+        <button id="acct-pw-save">Update Password</button>
+      </div>
+
+      <div style="border:1px solid var(--hairline); border-radius:8px; padding:12px;">
+        <b style="font-size:13px;">Change login email</b>
+        <p style="font-size:12px; color:var(--slate); margin:4px 0 8px;">This becomes the email you log in with and where password-reset links are sent. Type it carefully — it is <b>not</b> verified by a code. You'll be logged out and must sign in with the new address.</p>
+        <div class="form-group"><label>New email</label><input type="email" id="acct-em-new" autocomplete="off" style="width:100%;" /></div>
+        <div class="form-group"><label>Confirm new email</label><input type="email" id="acct-em-confirm" autocomplete="off" style="width:100%;" /></div>
+        <div class="form-group"><label>Current password</label><input type="password" id="acct-em-pw" autocomplete="current-password" style="width:100%;" /></div>
+        <p id="acct-em-msg" style="font-size:12.5px; min-height:16px; margin:4px 0 8px;"></p>
+        <button id="acct-em-save">Change Email</button>
+      </div>
+
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button class="btn-secondary" id="acct-close">Close</button>
+      </div>
+    </div>
+  </div>
 
   <div class="admin-shell">
     <aside class="sidebar">
@@ -126,10 +157,7 @@
                     Group by employment type
                   </label>
                   <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                    <button id="bulk-forward-btn" style="font-size:10.5px; padding:4px 10px; background:#475569;" title="Forward every report still &quot;Pending Review&quot; to its department supervisor">
-                      📤 Forward All
-                    </button>
-                    <button id="bulk-release-btn" style="font-size:10.5px; padding:4px 10px; background:#16a34a;" title="Release every report whose supervisor has already submitted remarks">
+                    <button id="bulk-release-btn" style="font-size:10.5px; padding:4px 10px; background:#16a34a;" title="Release every report whose supervisor has already submitted their SEF">
                       ✅ Release All
                     </button>
                     <button id="sync-enrolled-btn" style="font-size:10.5px; padding:4px 10px; background:var(--navy);" title="Recompute enrolled counts from actual students in each section — run before generating IFERs">
@@ -316,7 +344,8 @@
             <b>How to use</b>
             <ol style="margin:6px 0 8px 18px; padding:0;">
               <li>Download the template and fill in the <b>Faculty Profile</b> sheet — one row per teacher (Name, Email, Department, Employment Status, Rank). Use the dropdowns.</li>
-              <li>Required: fill the <b>Supervisors</b> and <b>Assignments</b> sheets to link teachers to supervisors.</li>
+              <li><b>Department</b> must be Agri, HTM, ICT, IT or TEd — not a program code like BSIT.</li>
+              <li>Optional: fill the <b>Supervisors</b> and <b>Assignments</b> sheets to link teachers to supervisors. Leave them empty to skip.</li>
               <li>Choose the file. A new email creates an account; an existing email only updates rank, employment and department.</li>
             </ol>
             <b>Write down the passwords</b> shown in the summary before closing — they can't be shown again. The <b>How to fill in</b> sheet inside the template explains every column.
