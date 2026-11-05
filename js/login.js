@@ -319,6 +319,33 @@ async function login() {
 const forgotLink    = document.getElementById("forgot-link");
 const forgotSuccess = document.getElementById("forgot-success");
 
+// Forgot-password goes through our own server route (api/student-reset.js):
+// the student's email never reaches the browser, and the throttling is
+// enforced server-side instead of only in this page.
+async function studentResetApi(payload) {
+  try {
+    const res  = await fetch("/api/student-reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { status: res.status, data };
+  } catch (err) {
+    return { status: 0, data: { error: "network" } };
+  }
+}
+
+// Cooldown timer key for the forgot-password flow (by Student ID, not email).
+function resetCooldownKey(studentId) { return "reset:" + studentId; }
+
+// Make the local countdown match what the server says is left.
+function syncResetCooldown(studentId, retryAfterSec) {
+  const key  = resetCooldownKey(studentId);
+  const last = Date.now() - (OTP_COOLDOWN_MS - retryAfterSec * 1000);
+  localStorage.setItem(otpCooldownKey(key), String(last));
+}
+
 if (forgotLink) {
   forgotLink.addEventListener("click", async (e) => {
     e.preventDefault();
@@ -330,43 +357,37 @@ if (forgotLink) {
     }
 
     forgotLink.textContent = "Checking...";
-    // Database function: returns just this one student's email (or null), so
-    // the browser can't read the users table to look people up.
-    const { data: foundEmail } = await supabase
-      .rpc("get_student_reset_email", { p_student_id: studentId });
-    const emailRow = foundEmail ? { email: foundEmail } : null;
+    const { status, data } = await studentResetApi({ action: "request", student_id: studentId });
     forgotLink.textContent = "Forgot password?";
 
-    if (!emailRow?.email) {
+    const showResetStep = (hint) => {
+      pendingStudentRow = { student_id: studentId };
+      document.getElementById("normal-login-ui")?.classList.add("hidden");
+      document.getElementById("forgot-reset-step")?.classList.remove("hidden");
+      const target = document.getElementById("forgot-target-email");
+      if (target) target.textContent = hint || "your email";
+      startOtpCooldownCountdown(resetCooldownKey(studentId), document.getElementById("forgot-resend-btn"));
+    };
+    const forgotErrEl = () => document.getElementById("forgot-reset-error");
+
+    if (status === 429) {
+      // A code was already sent recently — let them enter it, show the countdown.
+      syncResetCooldown(studentId, data.retryAfterSec || 300);
+      showResetStep();
+      if (forgotErrEl()) forgotErrEl().textContent =
+        `A code was already sent to your email. You can request a new one in ${formatMMSS((data.retryAfterSec || 300) * 1000)}.`;
+      return;
+    }
+    if (status === 200 && data.ok === false && data.reason === "no_email") {
       errorMsg.textContent = "No email on file for this Student ID. Ask your admin to add one, or your password is still the middle 4 digits of your ID.";
       return;
     }
-
-    // Same per-email cooldown as the login-OTP path — the forgot-password
-    // flow is just as easy for a bot to hammer (it doesn't even need a
-    // valid password), so it needs the same throttle.
-    const otpResult = await requestOtpThrottled(emailRow.email);
-
-    pendingStudentRow = { student_id: studentId, email: emailRow.email };
-    document.getElementById("normal-login-ui")?.classList.add("hidden");
-    document.getElementById("forgot-reset-step")?.classList.remove("hidden");
-    const target = document.getElementById("forgot-target-email");
-    if (target) target.textContent = maskEmail(emailRow.email);
-
-    const forgotErrEl = document.getElementById("forgot-reset-error");
-
-    if (otpResult.throttled) {
-      if (forgotErrEl) {
-        forgotErrEl.textContent = `A code was already sent to this address. You can request a new one in ${formatMMSS(otpResult.remainingMs)}.`;
-      }
-    } else if (otpResult.error) {
-      if (forgotErrEl) forgotErrEl.textContent = "Couldn't send reset code: " + otpResult.error.message;
+    if (status === 200 && data.ok) {
+      syncResetCooldown(studentId, data.cooldownSec || 300);
+      showResetStep(data.hint);
+      return;
     }
-
-    // If your forgot-password markup has its own resend button, give it
-    // the same id pattern ("otp-resend-btn") or wire it here explicitly —
-    // startOtpCooldownCountdown works with any button element.
-    startOtpCooldownCountdown(emailRow.email, document.getElementById("forgot-resend-btn"));
+    errorMsg.textContent = "Couldn't send the reset code. Please try again in a moment.";
   });
 }
 
@@ -382,35 +403,29 @@ document.getElementById("forgot-reset-btn")?.addEventListener("click", async () 
   if (!code)                     { if (errEl) errEl.textContent = "Enter the code from your email."; return; }
   if (!newPw || newPw.length < 4){ if (errEl) errEl.textContent = "Choose a password (at least 4 characters)."; return; }
   if (newPw !== confPw)          { if (errEl) errEl.textContent = "Passwords do not match."; return; }
+  if (!pendingStudentRow?.student_id) { if (errEl) errEl.textContent = "Session expired — click Forgot password again."; return; }
 
   btn.textContent = "Verifying..."; btn.disabled = true;
 
-  const { error: verifyError } = await supabase.auth.verifyOtp({
-    email: pendingStudentRow.email, token: code, type: "email",
-  });
-
-  if (verifyError) {
-    btn.textContent = "Reset Password"; btn.disabled = false;
-    if (errEl) errEl.textContent = "Incorrect or expired code.";
-    return;
-  }
-
-  const { data: success, error: resetError } = await supabase.rpc("reset_student_password", {
-    p_student_id: pendingStudentRow.student_id,
-    p_new_password: newPw,
+  const { status, data } = await studentResetApi({
+    action: "confirm", student_id: pendingStudentRow.student_id, code, new_password: newPw,
   });
 
   btn.textContent = "Reset Password"; btn.disabled = false;
 
-  if (resetError || !success) {
-    if (errEl) errEl.textContent = "Reset failed: " + (resetError?.message || "please try again.");
+  if (!(status === 200 && data.ok)) {
+    if (!errEl) return;
+    if (status === 429)                       errEl.textContent = "Too many attempts. Please wait a few minutes and try again.";
+    else if (data.error === "default_password") errEl.textContent = "Choose a password different from the default one.";
+    else if (data.error === "bad_code" || data.error === "bad_code_format") errEl.textContent = "Incorrect or expired code.";
+    else                                      errEl.textContent = "Reset failed. Please try again.";
     return;
   }
 
-  await supabase.auth.signOut();
   document.getElementById("forgot-reset-step")?.classList.add("hidden");
   document.getElementById("normal-login-ui")?.classList.remove("hidden");
   errorMsg.textContent = "";
+  pendingStudentRow = null;
   if (forgotSuccess) {
     forgotSuccess.textContent = "Password reset! Log in with your new password.";
     forgotSuccess.style.display = "block";
