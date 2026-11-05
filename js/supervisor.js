@@ -7,6 +7,13 @@
 //  NOTE: the faculty's overall SET score IS shown on each faculty card
 //  (panel requirement). Trade-off: the supervisor sees it before rating,
 //  so the SEF is no longer fully independent of the students' result.
+//
+//  SIMULTANEOUS EVALUATION (2026-11-05): every faculty assigned to this
+//  supervisor is listed from day one — the SEF no longer waits for the QAO
+//  to "forward" the report or for students to finish. The SET shown is
+//  therefore "so far" and keeps growing while students submit. report_
+//  releases.stage is advanced to "supervisor_done" by a database trigger
+//  (fp_sync_stage_on_supervisor_remark), not by this page.
 // ============================================================
 
 import { supabase } from "./supabase.js";
@@ -212,25 +219,40 @@ async function loadForwardedReports() {
   // above. Without a real filter here, every supervisor account could see
   // and submit an SEF for every faculty member in the system — that was a
   // real bug under the old department-match version, not a hypothetical one.
-  const { data: releases, error } = await supabase
-    .from("report_releases")
-    .select("id, teacher_id, stage, users!inner(name, academic_rank, department)")
-    .eq("semester_id", semester.id)
-    .in("teacher_id", assignedTeacherIds)
-    .in("stage", ["forwarded_to_supervisor", "supervisor_done"]);
+  const { data: teachers, error } = await supabase
+    .from("users")
+    .select("id, name, academic_rank, department")
+    .in("id", assignedTeacherIds)
+    .or("is_active.is.null,is_active.eq.true")
+    .order("name", { ascending: true });
 
-  if (error || !releases || releases.length === 0) {
+  if (error || !teachers || teachers.length === 0) {
     container.innerHTML = `
       <div class="empty-state">
         <div class="icon">📭</div>
-        <h3>No Reports Forwarded Yet</h3>
-        <p>The QAO has not forwarded any faculty evaluation reports assigned to you for review.</p>
+        <h3>No Faculty to Evaluate</h3>
+        <p>${error ? escapeHtml(error.message) : "No active faculty are assigned to you for this semester."}</p>
       </div>`;
     document.getElementById("count-pending").textContent = "0";
     document.getElementById("count-done").textContent    = "0";
     document.getElementById("count-total").textContent   = "0";
     return;
   }
+
+  // Report stage (only used to close the form once a report is RELEASED).
+  // A missing row simply means "not started" — it no longer hides anyone.
+  const { data: stageRows } = await supabase
+    .from("report_releases")
+    .select("teacher_id, stage")
+    .eq("semester_id", semester.id)
+    .in("teacher_id", assignedTeacherIds);
+  const stageByTeacher = new Map((stageRows || []).map(r => [r.teacher_id, r.stage]));
+
+  const releases = teachers.map(t => ({
+    teacher_id: t.id,
+    stage: stageByTeacher.get(t.id) || "pending",
+    users: { name: t.name, academic_rank: t.academic_rank, department: t.department },
+  }));
 
   // ── Per-SUPERVISOR done status, not the shared report_releases.stage ──
   // A faculty member can now have 2+ assigned supervisors (supervisor_
@@ -250,7 +272,7 @@ async function loadForwardedReports() {
     .in("teacher_id", assignedTeacherIds);
   const myDoneIds = new Set((myRemarks || []).map(r => r.teacher_id));
 
-  const pending = releases.filter(r => !myDoneIds.has(r.teacher_id)).length;
+  const pending = releases.filter(r => !myDoneIds.has(r.teacher_id) && r.stage !== "released").length;
   const done    = releases.filter(r =>  myDoneIds.has(r.teacher_id)).length;
   document.getElementById("count-pending").textContent = pending;
   document.getElementById("count-done").textContent    = done;
@@ -263,13 +285,14 @@ async function loadForwardedReports() {
     const setInfo     = setByTeacher.get(release.teacher_id);
     const setPill     = setInfo
       ? `<span class="set-pill" style="--c:${getRatingColor(setInfo.score)};"
-          title="Overall SET (student ratings) — ${setInfo.respondents} respondent${setInfo.respondents !== 1 ? "s" : ""}">
-          SET ${setInfo.score.toFixed(2)} · ${getRatingLabel(setInfo.score)}</span>`
+          title="Overall SET so far (student ratings) — students may still be submitting">
+          SET ${setInfo.score.toFixed(2)} · ${getRatingLabel(setInfo.score)} · ${setInfo.respondents} resp.</span>`
       : `<span class="set-pill none">SET: no responses</span>`;
     const teacherName = release.users?.name || "Unknown Faculty";
     const teacherRank = release.users?.academic_rank || "";
     const teacherDept = release.users?.department || "";
     const isDone      = myDoneIds.has(release.teacher_id);
+    const isClosed    = !isDone && release.stage === "released"; // released to faculty without my SEF
     const safeId      = release.teacher_id;
     const safeName    = escapeHtml(teacherName).replace(/'/g,"\\'");
     const safeRank    = escapeHtml(teacherRank).replace(/'/g,"\\'");
@@ -288,12 +311,12 @@ async function loadForwardedReports() {
       </div>
       <div class="faculty-card-actions">
         ${isDone ? `<span class="stage-badge stage-done">✓ SEF Submitted</span>` : ""}
-        <button
+        ${isClosed ? `<span class="stage-badge">Released — SEF closed</span>` : `<button
           onclick="openReview('${safeId}', '${safeName}', ${isDone}, '${safeRank}', '${safeDept}')"
           ${isDone ? 'class="btn-secondary"' : ""}
           >
           ${isDone ? "View Submission" : "Complete SEF →"}
-        </button>
+        </button>`}
       </div>
     `;
     container.appendChild(card);
@@ -590,25 +613,22 @@ async function submitReview() {
       });
 
     if (insertError) {
+      if (insertError.code === "23505") {
+        // Already submitted (double-click / second tab). Nothing is lost — show it.
+        closeReviewModal();
+        await fpAlert("Your SEF for this faculty was already submitted.", "info");
+        await loadForwardedReports();
+        return;
+      }
       errorEl.textContent = "Failed to save: " + insertError.message;
       return;
     }
 
-    // 2. Update stage to supervisor_done
-    const { error: updateError } = await supabase
-      .from("report_releases")
-      .update({ stage: "supervisor_done" })
-      .eq("teacher_id",  currentTeacherId)
-      .eq("semester_id", activeSemester.id);
-
-    if (updateError) {
-      errorEl.textContent = "Saved but failed to update stage: " + updateError.message;
-      return;
-    }
+    // The report stage is advanced by a database trigger on the insert above.
 
     closeReviewModal();
     await fpAlert(
-      `SEF submitted successfully!\n\nSEF Rating: ${sefScore} — ${getRatingLabel(sefScore)}\n\nThe QAO can now do the Final Release. Your comments will automatically appear in the printed IFER.`,
+      `SEF submitted successfully!\n\nSEF Rating: ${sefScore} — ${getRatingLabel(sefScore)}\n\nThe QAO can do the Final Release once they are ready. Your comments will automatically appear in the printed IFER.`,
       "success"
     );
     await loadForwardedReports();
