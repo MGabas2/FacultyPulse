@@ -16,7 +16,9 @@
 const { createClient } = require("@supabase/supabase-js");
 
 const SUPABASE_URL = "https://qscvccklksptcvtyzabe.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_cyj-6CYVmr2MHsj1CDhowQ_O30bZsIg";
+// Public (publishable) key. Override with the SUPABASE_ANON_KEY env var in Vercel to rotate it
+// without editing code; the fallback keeps the API working if the var is not set.
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_cyj-6CYVmr2MHsj1CDhowQ_O30bZsIg";
 const BUCKET = "backups";
 
 // Insert order matters — each table here is restored only after every

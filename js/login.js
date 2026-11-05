@@ -30,12 +30,22 @@ function finalizeStudentLogin(userRow, studentId) {
   sessionStorage.setItem("mustChange", userRow.must_change_password ? "1" : "0");
 
   // Database function instead of a direct table update (users is locked down).
-  supabase
-    .rpc("record_student_login", { p_user_id: userRow.id })
-    .then(() => {});
-
-  window.location.href = "pages/student.html";
+  // Give it a short head start (max 1.5 s) before leaving the page — navigating
+  // immediately can cancel the request and last_login would never be saved.
+  // A failure or timeout here must never block the login itself.
+  loginNavigating = true;
+  const recordLogin = Promise.resolve(
+    supabase.rpc("record_student_login", { p_user_id: userRow.id })
+  ).catch(() => {});
+  const timeout = new Promise(resolve => setTimeout(resolve, 1500));
+  Promise.race([recordLogin, timeout]).then(() => {
+    window.location.href = "pages/student.html";
+  });
 }
+
+// True from the moment a login succeeds until the browser leaves the page, so
+// the buttons stay on "Signing in…" instead of snapping back and looking frozen.
+let loginNavigating = false;
 
 usernameInput.addEventListener("input", () => {
   const cursor = usernameInput.selectionStart;
@@ -169,6 +179,7 @@ document.getElementById("otp-verify-btn")?.addEventListener("click", async () =>
 
   btn.textContent = "Verifying..."; btn.disabled = true;
   const err = await verifyOtpAndLogin(code);
+  if (!err && loginNavigating) { btn.textContent = "Signing in…"; return; }
   btn.textContent = "Verify"; btn.disabled = false;
 
   if (err && otpError) otpError.textContent = err;
@@ -296,6 +307,7 @@ async function login() {
     errorMsg.textContent = "Something went wrong. Please try again.";
     console.error(err);
   } finally {
+    if (loginNavigating) { loginBtn.textContent = "Signing in…"; return; }
     loginBtn.textContent = "Login";
     loginBtn.disabled    = false;
   }

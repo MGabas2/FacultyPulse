@@ -791,7 +791,7 @@ async function viewReport(teacherId, teacherName) {
             📋 <b>SUPERVISOR REVIEWED</b> — Supervisor has submitted remarks. Ready for your final release.
           </div>`;
         return `<div class="no-print" style="background:#faf5ff; border:1px solid #c4b5fd; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#6d28d9;">
-          ⏳ <b>AWAITING SUPERVISOR SEF</b> — The supervisor can submit their evaluation at any time (no forwarding needed). Faculty cannot see this report yet.
+          ⏳ <b>AWAITING SUPERVISOR SEF</b> — Waiting for the supervisor's evaluation. Faculty cannot see this report yet.
         </div>`;
       })()}
 

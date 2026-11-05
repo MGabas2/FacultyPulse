@@ -81,6 +81,9 @@
       <button class="sidebar-nav-item" data-panel="panel-trends" id="nav-trends">
         <span class="nav-icon">📈</span> Faculty Trends
       </button>
+      <button class="sidebar-nav-item" data-panel="panel-backup" id="nav-backup">
+        <span class="nav-icon">💾</span> System Backup
+      </button>
       <hr class="sidebar-divider" />
     </aside>
 
@@ -729,6 +732,60 @@
         </div>
       </div><!-- /panel-trends -->
 
+      <div id="panel-backup" class="panel">
+        <div class="container">
+          <h2>System Backup</h2>
+          <p style="color:var(--slate); margin:0 0 16px; font-size:13px;">
+            Exports a full snapshot of the database — all users, sections, subjects,
+            semesters, enrollments, evaluation data, report releases, and FEDAF records —
+            plus a separate settings section (semesters, subjects, sections) for an
+            easier config-only restore. Comments stay anonymous in the export, same as
+            everywhere else in the system (no student is linkable to a comment).
+          </p>
+
+          <div class="section">
+            <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+              <button id="run-backup-btn">💾 Backup Now</button>
+              <span id="backup-status" style="font-size:13px; color:var(--slate);"></span>
+            </div>
+            <p style="font-size:12px; color:var(--mist); margin-bottom:16px;">
+              Runs server-side with full access, then downloads to your device and saves a
+              copy in Supabase Storage so it's recoverable even if this computer is lost.
+            </p>
+
+            <h3 style="font-size:14px; margin-bottom:8px;">Previous Backups</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Created</th>
+                  <th>Size</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="backup-list-tbody">
+                <tr><td colspan="4" style="text-align:center; color:var(--mist);">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="section">
+            <h3 style="font-size:14px; margin-bottom:8px; color:#dc2626;">⚠️ Restore (Disaster Recovery)</h3>
+            <p style="font-size:12px; color:var(--slate); margin:0 0 12px; line-height:1.6;">
+              Restores a backup into the database. <b>Only works if the database is currently
+              empty</b> — this is for recovering after data loss or setting up a fresh Supabase
+              project, never for merging a backup into a system that's already running with data.
+              If the database isn't empty, this will refuse and change nothing.
+            </p>
+            <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+              <button id="restore-upload-btn" class="btn-secondary">📤 Restore from a Downloaded Backup File</button>
+              <input type="file" id="restore-file-input" accept=".json" style="display:none;" />
+              <span id="restore-status" style="font-size:13px; color:var(--slate);"></span>
+            </div>
+          </div>
+        </div>
+      </div><!-- /panel-backup -->
+
     </div><!-- /main-content -->
   </div><!-- /admin-shell -->
 
@@ -1049,6 +1106,7 @@
     document.getElementById("nav-semesters").addEventListener("click", () => switchPanel("panel-semesters"));
     document.getElementById("nav-subjects").addEventListener("click", () => switchPanel("panel-subjects"));
     document.getElementById("nav-trends").addEventListener("click", () => switchPanel("panel-trends"));
+    document.getElementById("nav-backup").addEventListener("click", () => switchPanel("panel-backup"));
   </script>
 
   <script type="module" src="../js/icons.js"></script>

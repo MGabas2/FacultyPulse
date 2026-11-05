@@ -15,7 +15,9 @@ const SUPABASE_URL = "https://qscvccklksptcvtyzabe.supabase.co";
 // This is the same publishable/anon key already hardcoded in js/supabase.js
 // — it's meant to be public, that's fine. Only the service_role key below
 // (from process.env) is the secret half of this.
-const SUPABASE_ANON_KEY = "sb_publishable_cyj-6CYVmr2MHsj1CDhowQ_O30bZsIg";
+// Public (publishable) key. Override with the SUPABASE_ANON_KEY env var in Vercel to rotate it
+// without editing code; the fallback keeps the API working if the var is not set.
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_cyj-6CYVmr2MHsj1CDhowQ_O30bZsIg";
 
 module.exports = async (req, res) => {
   if (req.method !== "POST") {
