@@ -2785,6 +2785,11 @@ const SUFFIX_TOKEN_MAP = {
   TM: ["BSTM"], HM: ["BSHM"], HTM: ["BSHM", "BSTM"],
   AGRI: ["BSA"], AUTO: ["BSIT"], ELEC: ["BSIT"], ELECT: ["BSIT"],
   INFOTECH: ["BSIT", "BSInfoTech"], TED: ["BEED", "BSED"],
+  // Industrial Technology = the BSIT program (same program AUTO / ELEC already
+  // point to). Confirmed against the registrar file: "GE 1 (INDTECH)" has 50
+  // students and BSIT first year has 51. Without this line the row matched
+  // EVERY program (an unrecognised suffix used to mean "no filter").
+  INDTECH: ["BSIT"],
   CYBERSECURITY: ["BSInfoTech"], CYBERTRACK: ["BSInfoTech"],
   MULTIMEDIA: ["BSInfoTech"], TRACK: [], LEC: ["BSHM"], O: ["BSA"], N: ["BSA"],
   // Some rows in the real faculty file spell the suffix out as the literal
@@ -2943,6 +2948,16 @@ function matchFacultyRow(row, subjectsByCourse) {
       else if (!(t in SUFFIX_TOKEN_MAP)) unmappedTokens.push(t);
     });
     if (mapped.size > 0) suffixPrograms = mapped;
+    // A suffix was given but NONE of it is a program we know (e.g. "ARCHI",
+    // "CWTS"). Matching every program here is what made one teacher take the
+    // same course in every department — so refuse and send it to review.
+    if (mapped.size === 0 && unmappedTokens.length > 0) {
+      return {
+        status: "unmatched",
+        reason: `Program Suffix "(${unmappedTokens.join(" ")})" isn't a program in the system, so this row was NOT applied ` +
+                `(it would have matched every program). Fix the spelling, or assign this course by hand in Course Assignment.`,
+      };
+    }
   }
 
   let filtered = candidates.filter(c =>
@@ -2957,10 +2972,14 @@ function matchFacultyRow(row, subjectsByCourse) {
     return { status: "unmatched", reason: `"${row.courseCode}" exists, but not for ${row.yearLevelRaw || "an unspecified year level"} in a matching program.${note}` };
   }
 
-  const warn = unmappedTokens.length > 0
-    ? ` (note: "(${unmappedTokens.join(" ")})" wasn't recognized — only assigned to ${filtered.map(c => c.program).join(", ")})`
+  const distinctPrograms = [...new Set(filtered.map(c => c.program))];
+  let warn = unmappedTokens.length > 0
+    ? ` (note: "(${unmappedTokens.join(" ")})" wasn't recognized — only assigned to ${distinctPrograms.join(", ")})`
     : "";
-  return { status: "matched", subjectIds: filtered.map(c => c.id), programs: filtered.map(c => c.program), warn };
+  if (tokens.length === 0 && distinctPrograms.length > 1) {
+    warn += ` No Program Suffix, so this applies to ALL ${distinctPrograms.length} programs that have it: ${distinctPrograms.join(", ")}.`;
+  }
+  return { status: "matched", subjectIds: filtered.map(c => c.id), programs: distinctPrograms, warn };
 }
 
 function buildSubjectsByCourse(subjects) {
@@ -3047,6 +3066,34 @@ async function runFacultyImportMatch(file, parseFn = parseManualTemplateWorkbook
     return { ...row, teacherId, ...match };
   });
 
+  // Two different teachers claiming the SAME course section in one file used to
+  // be resolved silently (the last row simply overwrote the first). Treat that
+  // as a conflict instead: neither row is applied, both go to manual review.
+  {
+    const claims = new Map();   // subjectId -> Map(teacherId -> teacher label)
+    facultyImportResults.forEach(r => {
+      if (r.status !== "matched") return;
+      r.subjectIds.forEach(id => {
+        if (!claims.has(id)) claims.set(id, new Map());
+        claims.get(id).set(r.teacherId, r.faculty || r.email || "?");
+      });
+    });
+    facultyImportResults = facultyImportResults.map(r => {
+      if (r.status !== "matched") return r;
+      const rivals = new Set();
+      r.subjectIds.forEach(id => {
+        const c = claims.get(id);
+        if (c && c.size > 1) c.forEach((label, tid) => { if (tid !== r.teacherId) rivals.add(label); });
+      });
+      if (rivals.size === 0) return r;
+      return {
+        ...r, status: "unmatched",
+        reason: `Conflict: ${[...rivals].join(", ")} also claim${rivals.size === 1 ? "s" : ""} the same course section(s) in this file, so nothing was applied for this row. ` +
+                `Check the Program Suffix on both rows, or assign by hand in Course Assignment.`,
+      };
+    });
+  }
+
   statusEl.textContent = "";
   renderFacultyImportPreview();
 }
@@ -3063,6 +3110,25 @@ function renderFacultyImportPreview() {
       Nothing is written to the database until you click "Apply Matched Assignments."
     </div>
     ${matched.length > 0 ? `
+      <details style="margin-bottom:14px;" ${matched.some(r => r.warn) ? "open" : ""}>
+        <summary style="cursor:pointer; font-size:13px; font-weight:600; margin-bottom:8px;">
+          Check what will be assigned (${matched.length} row${matched.length === 1 ? "" : "s"})${matched.some(r => r.warn) ? " — some rows need a look" : ""}
+        </summary>
+        <table>
+          <thead><tr><th>Faculty</th><th>Course</th><th>Year</th><th>Applies to</th><th>Note</th></tr></thead>
+          <tbody>
+            ${matched.map(r => `
+              <tr>
+                <td style="font-size:12px;">${escHtml(r.faculty || r.email || "")}</td>
+                <td style="font-size:12px;">${escHtml(r.courseCode)}</td>
+                <td style="font-size:12px;">${escHtml(r.yearLevelRaw)}</td>
+                <td style="font-size:12px;">${escHtml((r.programs || []).join(", "))} · ${r.subjectIds.length} section${r.subjectIds.length === 1 ? "" : "s"}</td>
+                <td style="font-size:12px; color:#92400e;">${escHtml((r.warn || "").trim())}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </details>
       <button id="faculty-import-apply-btn" style="margin-bottom:14px;">✅ Apply ${matched.length} Matched Assignment(s)</button>
     ` : ""}
     ${unmatched.length > 0 ? `
