@@ -2419,6 +2419,30 @@ let selectedSubjectIds       = new Set();
 let teachersForAssignment    = [];
 let subjectAssignDepartment  = "";
 let subjectAssignYearLevel   = "";
+let currentFilteredSubjectIds = [];   // every row matching the filters, across all pages
+
+// Filters are remembered between visits (this browser only, filters only).
+const CA_FILTER_KEY = "fp_course_assign_filters_v1";
+let pendingCAYearLevel = "";      // restored once the year-level options exist
+let pendingCASemester  = null;    // null = nothing saved; "" = "All Semesters"
+function readCAFilters() {
+  try {
+    const v = JSON.parse(localStorage.getItem(CA_FILTER_KEY) || "null");
+    return v && typeof v === "object" ? v : {};
+  } catch { return {}; }
+}
+function saveCAFilters() {
+  try {
+    localStorage.setItem(CA_FILTER_KEY, JSON.stringify({
+      dept:       subjectAssignDepartment,
+      year:       subjectAssignYearLevel,
+      sem:        document.getElementById("subject-assign-semester-filter")?.value ?? "",
+      search:     document.getElementById("subject-assign-search")?.value || "",
+      faculty:    document.getElementById("subject-assign-faculty-search")?.value || "",
+      unassigned: !!document.getElementById("subject-assign-unassigned-only")?.checked,
+    }));
+  } catch { /* storage blocked — filters just won't be remembered */ }
+}
 
 // Section names follow {Department}-{RomanYearLevel}-{AcademicYear}
 // (e.g. "BSInfoTech-III-2026-2027") — pull the Roman numeral segment
@@ -2450,6 +2474,11 @@ function populateYearLevelOptions() {
     levels.map(l => `<option value="${l}">${l}</option>`).join("");
   if (levels.includes(current)) sel.value = current;
   else subjectAssignYearLevel = "";
+  if (pendingCAYearLevel && levels.includes(pendingCAYearLevel)) {
+    sel.value = pendingCAYearLevel;
+    subjectAssignYearLevel = pendingCAYearLevel;
+  }
+  pendingCAYearLevel = "";
 }
 
 // sections.department holds a DEGREE PROGRAM code (BEED, BSA, BSED, BSHM,
@@ -2510,10 +2539,34 @@ async function loadTeachersForAssignment(department) {
   const { data } = await query;
   teachersForAssignment = data || [];
   sel.disabled = false;
-  sel.innerHTML = teachersForAssignment.length
-    ? `<option value="">— select teacher —</option>` +
-      teachersForAssignment.map(t => `<option value="${t.id}">${escHtml(t.name)}</option>`).join("")
-    : `<option value="">No teachers found${department ? " in this department" : ""}</option>`;
+  renderTeacherOptions(false, department);
+}
+
+// Rebuilds the teacher dropdown, narrowed by the "Find teacher" box (every
+// word typed must appear in the name, any order, ignoring case/accents).
+// The currently picked teacher always stays in the list. When the typing
+// narrows it to exactly one teacher, that teacher is picked for you.
+function renderTeacherOptions(autoPick = false, department = subjectAssignDepartment) {
+  const sel = document.getElementById("subject-assign-teacher");
+  if (!sel) return;
+  const norm = (v) => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const words = norm(document.getElementById("subject-assign-teacher-filter")?.value)
+    .split(/[\s,]+/).filter(Boolean);
+  const keep = sel.value;
+  const shown = teachersForAssignment.filter(t =>
+    t.id === keep || words.every(w => norm(t.name).includes(w)));
+  if (!teachersForAssignment.length) {
+    sel.innerHTML = `<option value="">No teachers found${department ? " in this department" : ""}</option>`;
+    return;
+  }
+  if (!shown.length) {
+    sel.innerHTML = `<option value="">No teacher matches</option>`;
+    return;
+  }
+  sel.innerHTML = `<option value="">— select teacher —</option>` +
+    shown.map(t => `<option value="${t.id}">${escHtml(t.name)}</option>`).join("");
+  if (keep && shown.some(t => t.id === keep)) sel.value = keep;
+  else if (autoPick && words.length && shown.length === 1) sel.value = shown[0].id;
 }
 
 async function loadSubjectsForAssignment() {
@@ -2526,6 +2579,11 @@ async function loadSubjectsForAssignment() {
     });
     const activeSem = (sems || []).find(s => s.is_active);
     if (activeSem) semSel.value = activeSem.id;
+    // A remembered semester choice (including "All Semesters") wins over the default.
+    if (pendingCASemester !== null && [...semSel.options].some(o => o.value === pendingCASemester)) {
+      semSel.value = pendingCASemester;
+    }
+    pendingCASemester = null;
   }
 
   let query = supabase
@@ -2558,6 +2616,13 @@ function renderSubjectAssignPage() {
 
   const search             = (document.getElementById("subject-assign-search")?.value || "").toLowerCase();
   const showUnassignedOnly = document.getElementById("subject-assign-unassigned-only")?.checked;
+  // Faculty search: every word typed must appear in the teacher's name, in any
+  // order ("telmo lucille" and "Telmo, Lucille V." both find the same person),
+  // ignoring case and accents. Only compared, never inserted into the page.
+  const normFaculty = (v) => String(v || "").toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const facultyWords = normFaculty(document.getElementById("subject-assign-faculty-search")?.value)
+    .split(/[\s,]+/).filter(Boolean);
 
   let filtered = allSubjectsForAssignment.filter(s => {
     const matchDept        = !subjectAssignDepartment || s.sections?.department === subjectAssignDepartment;
@@ -2567,12 +2632,21 @@ function renderSubjectAssignPage() {
       || s.name.toLowerCase().includes(search)
       || (s.sections?.name || "").toLowerCase().includes(search);
     const matchUnassigned  = !showUnassignedOnly || !s.teacher_id;
-    return matchDept && matchYearLevel && matchSearch && matchUnassigned;
+    const matchFaculty     = facultyWords.length === 0 || (s.teacher?.name
+      && facultyWords.every(w => normFaculty(s.teacher.name).includes(w)));
+    return matchDept && matchYearLevel && matchSearch && matchUnassigned && matchFaculty;
   });
 
   filtered.sort((a, b) =>
     a.name.localeCompare(b.name) || (a.sections?.name || "").localeCompare(b.sections?.name || "")
   );
+
+  currentFilteredSubjectIds = filtered.map(s => s.id);
+  const matchBtn = document.getElementById("subject-assign-select-matching");
+  if (matchBtn) {
+    matchBtn.textContent = `Select all matching (${filtered.length})`;
+    matchBtn.disabled = filtered.length === 0;
+  }
 
   const deptSubjects    = subjectAssignDepartment
     ? allSubjectsForAssignment.filter(s => s.sections?.department === subjectAssignDepartment)
@@ -2665,6 +2739,7 @@ function updateSubjectAssignSelectAllCheckbox(pageItems) {
 document.getElementById("subject-assign-department")?.addEventListener("change", async (e) => {
   subjectAssignDepartment = e.target.value;
   subjectAssignYearLevel  = "";
+  saveCAFilters();
   populateYearLevelOptions();
   selectedSubjectIds.clear();
   updateSubjectAssignSelectionBar();
@@ -2676,6 +2751,7 @@ document.getElementById("subject-assign-department")?.addEventListener("change",
 
 document.getElementById("subject-assign-yearlevel")?.addEventListener("change", (e) => {
   subjectAssignYearLevel = e.target.value;
+  saveCAFilters();
   subjectAssignPage = 1;
   renderSubjectAssignPage();
 });
@@ -2691,14 +2767,88 @@ document.getElementById("subject-assign-select-all")?.addEventListener("change",
 });
 
 document.getElementById("subject-assign-search")?.addEventListener("input", () => {
+  saveCAFilters();
+  subjectAssignPage = 1;
+  renderSubjectAssignPage();
+});
+document.getElementById("subject-assign-faculty-search")?.addEventListener("input", () => {
+  saveCAFilters();
   subjectAssignPage = 1;
   renderSubjectAssignPage();
 });
 document.getElementById("subject-assign-unassigned-only")?.addEventListener("change", () => {
+  saveCAFilters();
   subjectAssignPage = 1;
   renderSubjectAssignPage();
 });
-document.getElementById("subject-assign-semester-filter")?.addEventListener("change", loadSubjectsForAssignment);
+document.getElementById("subject-assign-semester-filter")?.addEventListener("change", () => {
+  saveCAFilters();
+  loadSubjectsForAssignment();
+});
+
+// ── Quality-of-life actions ──
+document.getElementById("subject-assign-teacher-filter")?.addEventListener("input", () => renderTeacherOptions(true));
+
+document.getElementById("subject-assign-select-matching")?.addEventListener("click", () => {
+  currentFilteredSubjectIds.forEach(id => selectedSubjectIds.add(id));
+  updateSubjectAssignSelectionBar();
+  renderSubjectAssignPage();
+});
+
+document.getElementById("subject-assign-deselect")?.addEventListener("click", () => {
+  selectedSubjectIds.clear();
+  updateSubjectAssignSelectionBar();
+  renderSubjectAssignPage();
+});
+
+// For every ticked course, also tick the same course name in the other year
+// levels of the SAME program and semester (e.g. ELEC 1 under BSED-I and
+// BSED-III). Deliberately NOT across programs: a course like "GE 01" exists
+// in every program and ticking all of them is how one teacher ended up on
+// everyone's GE 1.
+document.getElementById("subject-assign-select-samecourse")?.addEventListener("click", async () => {
+  if (selectedSubjectIds.size === 0) {
+    await fpAlert("Tick at least one course first.", "info");
+    return;
+  }
+  const key = (s) => `${String(s.name || "").trim().toLowerCase()}|${s.sections?.department || ""}|${s.semester_id || ""}`;
+  const wanted = new Set(
+    allSubjectsForAssignment.filter(s => selectedSubjectIds.has(s.id)).map(key)
+  );
+  let added = 0;
+  allSubjectsForAssignment.forEach(s => {
+    if (wanted.has(key(s)) && !selectedSubjectIds.has(s.id)) { selectedSubjectIds.add(s.id); added++; }
+  });
+  updateSubjectAssignSelectionBar();
+  renderSubjectAssignPage();
+  await fpAlert(
+    added
+      ? `Ticked ${added} more row(s): the same course in other year levels of the same program. ` +
+        `They may be on other pages or hidden by a filter.`
+      : "No other year levels have the same course in the same program.",
+    added ? "success" : "info"
+  );
+});
+
+document.getElementById("subject-assign-reset-filters")?.addEventListener("click", async () => {
+  subjectAssignDepartment = "";
+  subjectAssignYearLevel  = "";
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set("subject-assign-department", "");
+  set("subject-assign-search", "");
+  set("subject-assign-faculty-search", "");
+  set("subject-assign-teacher-filter", "");
+  const un = document.getElementById("subject-assign-unassigned-only");
+  if (un) un.checked = false;
+  const semSel = document.getElementById("subject-assign-semester-filter");
+  const activeOpt = semSel && [...semSel.options].find(o => o.textContent.includes("(active)"));
+  if (semSel) semSel.value = activeOpt ? activeOpt.value : "";
+  try { localStorage.removeItem(CA_FILTER_KEY); } catch {}
+  selectedSubjectIds.clear();
+  updateSubjectAssignSelectionBar();
+  await loadTeachersForAssignment("");
+  await loadSubjectsForAssignment();
+});
 document.getElementById("refresh-btn-subjects")?.addEventListener("click", async () => {
   await loadSubjectsForAssignment();
   await loadTeachersForAssignment(subjectAssignDepartment);
@@ -3196,10 +3346,26 @@ document.getElementById("faculty-template-import-file-input")?.addEventListener(
   await runFacultyImportMatch(file, parseManualTemplateWorkbook);
 });
 
-lazyPanel("panel-subjects", () => {
-  loadDepartmentsForAssignment();
-  loadTeachersForAssignment(""); // "" = All Departments
-  loadSubjectsForAssignment();
+lazyPanel("panel-subjects", async () => {
+  // Sequential on purpose: the remembered department has to be applied before
+  // the teacher list and the course list are loaded.
+  const saved = readCAFilters();
+  await loadDepartmentsForAssignment();
+  const deptSel = document.getElementById("subject-assign-department");
+  if (typeof saved.dept === "string" && saved.dept && deptSel
+      && [...deptSel.options].some(o => o.value === saved.dept)) {
+    deptSel.value = saved.dept;
+    subjectAssignDepartment = saved.dept;
+  }
+  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.value = String(v || "").slice(0, 100); };
+  setText("subject-assign-search", saved.search);
+  setText("subject-assign-faculty-search", saved.faculty);
+  const un = document.getElementById("subject-assign-unassigned-only");
+  if (un) un.checked = saved.unassigned === true;
+  pendingCAYearLevel = typeof saved.year === "string" ? saved.year : "";
+  pendingCASemester  = typeof saved.sem === "string" ? saved.sem : null;
+  await loadTeachersForAssignment(subjectAssignDepartment); // "" = All Departments
+  await loadSubjectsForAssignment();
 });
 
 // ══════════════════════════════════════════════════════════════
