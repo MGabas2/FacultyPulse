@@ -2596,7 +2596,7 @@ async function loadSubjectsForAssignment() {
   const { data, error } = await query;
   if (error) {
     const tbody = document.getElementById("subjects-assign-tbody");
-    if (tbody) tbody.innerHTML = `<tr><td colspan="5">Error loading courses: ${escHtml(error.message)}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6">Error loading courses: ${escHtml(error.message)}</td></tr>`;
     return;
   }
 
@@ -2658,7 +2658,7 @@ function renderSubjectAssignPage() {
     : deptLabel;
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5">No courses match in ${escHtml(scopeLabel)}.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6">No courses match in ${escHtml(scopeLabel)}.</td></tr>`;
     document.getElementById("subject-assign-count").textContent =
       `No courses found in ${scopeLabel}. (${totalUnassigned} unassigned in ${deptLabel})`;
     renderPager("subject-assign-page-buttons", 0, 1, () => {});
@@ -2681,8 +2681,16 @@ function renderSubjectAssignPage() {
       <td>${escHtml(s.sections?.name || "—")}</td>
       <td style="text-align:center;">${s.enrolled_count ?? 0}</td>
       <td>${s.teacher?.name ? escHtml(s.teacher.name) : `<span style="color:#d97706; font-weight:600;">Unassigned</span>`}</td>
+      <td style="text-align:center;"><button type="button" class="btn-secondary subject-students-btn" data-id="${s.id}" title="Show the students in this class" style="font-size:12px; padding:3px 8px;">👥</button></td>
     </tr>
   `).join("");
+
+  tbody.querySelectorAll(".subject-students-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();   // don't also tick the row
+      openSubjectStudentsDrawer(btn.dataset.id);
+    });
+  });
 
   tbody.querySelectorAll(".subject-assign-checkbox").forEach(cb => {
     cb.addEventListener("change", () => {
@@ -2698,7 +2706,7 @@ function renderSubjectAssignPage() {
   // toggle it twice (once from the native click, once from this handler).
   tbody.querySelectorAll(".subject-assign-row").forEach(row => {
     row.addEventListener("click", (e) => {
-      if (e.target.matches(".subject-assign-checkbox")) return;
+      if (e.target.matches(".subject-assign-checkbox") || e.target.closest(".subject-students-btn")) return;
       const cb = row.querySelector(".subject-assign-checkbox");
       if (cb) cb.click();
     });
@@ -2711,6 +2719,68 @@ function renderSubjectAssignPage() {
 
   updateSubjectAssignSelectAllCheckbox(pageItems);
 }
+
+// ── Side drawer: students enrolled in a class ──
+let subjectStudentsToken = 0;
+let subjectStudentsRows  = [];
+function renderSubjectStudentsList() {
+  const box = document.getElementById("subject-students-list");
+  if (!box) return;
+  const q = String(document.getElementById("subject-students-filter")?.value || "").toLowerCase().trim();
+  const rows = subjectStudentsRows.filter(r =>
+    !q || String(r.name || "").toLowerCase().includes(q) || String(r.student_id || "").toLowerCase().includes(q));
+  box.innerHTML = rows.length
+    ? `<ol style="margin:0; padding-left:22px;">` + rows.map(r =>
+        `<li style="padding:5px 0; border-bottom:1px solid #f1f5f9;"><b>${escHtml(r.name || "(no name)")}</b>` +
+        `<div style="font-size:11px; color:#6b7280;">${escHtml(r.student_id || "")} · ${escHtml(r.section || "no section")}</div></li>`).join("") + `</ol>`
+    : `<div style="color:#6b7280; padding:12px 0;">${subjectStudentsRows.length ? "No student matches." : "No students enrolled."}</div>`;
+}
+function closeSubjectStudentsDrawer() {
+  const d = document.getElementById("subject-students-drawer");
+  if (!d) return;
+  d.style.transform = "translateX(105%)";
+  d.setAttribute("aria-hidden", "true");
+}
+async function openSubjectStudentsDrawer(subjectId) {
+  const d = document.getElementById("subject-students-drawer");
+  if (!d) return;
+  const subj = allSubjectsForAssignment.find(x => x.id === subjectId);
+  const token = ++subjectStudentsToken;
+  document.getElementById("subject-students-title").textContent = subj ? `${subj.name} — ${subj.sections?.name || ""}` : "Students";
+  document.getElementById("subject-students-sub").textContent =
+    subj ? `Teacher: ${subj.teacher?.name || "Unassigned"}` : "";
+  const filterEl = document.getElementById("subject-students-filter");
+  if (filterEl) filterEl.value = "";
+  subjectStudentsRows = [];
+  document.getElementById("subject-students-list").innerHTML = `<div style="color:#6b7280; padding:12px 0;">Loading…</div>`;
+  d.style.transform = "translateX(0)";
+  d.setAttribute("aria-hidden", "false");
+
+  const { data: links, error } = await supabase
+    .from("student_subjects").select("student_id").eq("subject_id", subjectId).limit(1000);
+  if (token !== subjectStudentsToken) return;   // a newer click replaced this one
+  if (error) {
+    document.getElementById("subject-students-list").innerHTML = `<div style="color:#b91c1c; padding:12px 0;">Couldn't load students.</div>`;
+    return;
+  }
+  const ids = [...new Set((links || []).map(l => l.student_id).filter(Boolean))];
+  let users = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data } = await supabase.from("users")
+      .select("student_id, name, sections(name)").eq("role", "student").in("student_id", ids.slice(i, i + 100));
+    users = users.concat(data || []);
+  }
+  if (token !== subjectStudentsToken) return;
+  subjectStudentsRows = users.map(u => ({ student_id: u.student_id, name: u.name, section: u.sections?.name || "" }))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  document.getElementById("subject-students-sub").textContent =
+    `Teacher: ${subj?.teacher?.name || "Unassigned"} · ${subjectStudentsRows.length} student(s)`;
+  renderSubjectStudentsList();
+}
+document.getElementById("subject-students-close")?.addEventListener("click", closeSubjectStudentsDrawer);
+document.getElementById("subject-students-filter")?.addEventListener("input", renderSubjectStudentsList);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSubjectStudentsDrawer(); });
+window.addEventListener("fp:panel", closeSubjectStudentsDrawer);
 
 // Always visible — an admin has no way to know "select teacher" even
 // exists if the whole bar only appears after checking a subject first.

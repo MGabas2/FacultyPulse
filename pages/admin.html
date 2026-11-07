@@ -672,11 +672,12 @@
                   <th>Section</th>
                   <th>Enrolled</th>
                   <th>Teacher</th>
+                  <th style="width:74px;">Students</th>
                 </tr>
               </thead>
               <tbody id="subjects-assign-tbody">
                 <tr>
-                  <td colspan="5" style="text-align:center; padding:32px 12px; color:var(--mist);">Loading...</td>
+                  <td colspan="6" style="text-align:center; padding:32px 12px; color:var(--mist);">Loading...</td>
                 </tr>
               </tbody>
             </table>
@@ -686,6 +687,22 @@
           </div>
         </div>
       </div><!-- /panel-subjects -->
+
+      <!-- Side drawer: who is enrolled in the class picked in Course Assignment -->
+      <aside id="subject-students-drawer" aria-hidden="true"
+        style="position:fixed; top:0; right:0; height:100vh; width:min(380px,100vw); background:var(--white,#fff); box-shadow:-4px 0 24px rgba(0,0,0,.18); transform:translateX(105%); transition:transform .2s ease; z-index:900; display:flex; flex-direction:column;">
+        <div style="padding:14px 16px; border-bottom:1px solid #e5e7eb; display:flex; align-items:flex-start; gap:8px;">
+          <div style="flex:1; min-width:0;">
+            <div id="subject-students-title" style="font-weight:700; font-size:15px;">Students</div>
+            <div id="subject-students-sub" style="font-size:12px; color:#6b7280; margin-top:2px;"></div>
+          </div>
+          <button id="subject-students-close" type="button" class="btn-secondary" style="font-size:13px; padding:4px 10px;" aria-label="Close">✕</button>
+        </div>
+        <div style="padding:10px 16px;">
+          <input type="text" id="subject-students-filter" placeholder="Find student…" autocomplete="off" style="width:100%; box-sizing:border-box;" />
+        </div>
+        <div id="subject-students-list" style="flex:1; overflow:auto; padding:0 16px 16px; font-size:13px;"></div>
+      </aside>
 
       <div id="panel-trends" class="panel">
         <div class="container">
