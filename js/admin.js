@@ -2588,7 +2588,7 @@ async function loadSubjectsForAssignment() {
 
   let query = supabase
     .from("subjects")
-    .select("id, name, enrolled_count, teacher_id, section_id, semester_id, sections(name, department), teacher:users(name)");
+    .select("id, name, title, enrolled_count, teacher_id, section_id, semester_id, sections(name, department), teacher:users(name)");
 
   const semFilter = semSel?.value || "";
   if (semFilter) query = query.eq("semester_id", semFilter);
@@ -2630,6 +2630,7 @@ function renderSubjectAssignPage() {
       || extractYearLevelFromSection(s.sections?.name) === subjectAssignYearLevel;
     const matchSearch      = !search
       || s.name.toLowerCase().includes(search)
+      || (s.title || "").toLowerCase().includes(search)
       || (s.sections?.name || "").toLowerCase().includes(search);
     const matchUnassigned  = !showUnassignedOnly || !s.teacher_id;
     const matchFaculty     = facultyWords.length === 0 || (s.teacher?.name
@@ -2677,7 +2678,7 @@ function renderSubjectAssignPage() {
   tbody.innerHTML = pageItems.map(s => `
     <tr class="subject-assign-row" data-id="${s.id}" style="cursor:pointer;">
       <td><input type="checkbox" class="subject-assign-checkbox" data-id="${s.id}" ${selectedSubjectIds.has(s.id) ? "checked" : ""} /></td>
-      <td><b>${escHtml(s.name)}</b></td>
+      <td><b>${escHtml(s.name)}</b>${s.title ? `<div style="font-size:11.5px; color:#6b7280; margin-top:2px;">${escHtml(s.title)}</div>` : ""}</td>
       <td>${escHtml(s.sections?.name || "—")}</td>
       <td style="text-align:center;">${s.enrolled_count ?? 0}</td>
       <td>${s.teacher?.name
