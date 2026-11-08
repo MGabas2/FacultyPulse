@@ -489,7 +489,7 @@ function renderTable() {
             ${isActive ? "Active" : "Archived"}
           </span>
         </td>
-        <td style="display:flex; gap:5px; flex-wrap:wrap; align-items:center;">
+        <td style="display:flex; gap:5px; flex-wrap:nowrap; white-space:nowrap; align-items:center;">
           <button style="font-size:11px; padding:4px 9px; background:#1a56db; color:white; border:none; border-radius:4px; cursor:pointer;"
             onclick="openEditModal('${u.id}')">
             ✏️ Edit
