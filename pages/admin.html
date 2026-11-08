@@ -990,6 +990,13 @@
           <option value="">-- Select Section --</option>
         </select>
       </div>
+      <div class="form-group" id="edit-courses-row" style="display:none;">
+        <label>Courses this semester <span id="edit-courses-sem" style="font-weight:400; color:#6b7280;"></span></label>
+        <div style="font-size:11px; color:#92400e; margin-bottom:6px;">Changes here save immediately — you don't need to press Save Changes.</div>
+        <div id="edit-courses-list" style="font-size:13px; max-height:180px; overflow:auto; border:1px solid #e5e7eb; border-radius:8px; padding:6px 10px;"></div>
+        <input type="text" id="edit-courses-search" placeholder="➕ Add a class — type the course, e.g. ITD 305" autocomplete="off" style="width:100%; box-sizing:border-box; margin-top:8px;" />
+        <div id="edit-courses-results" style="font-size:13px; margin-top:4px;"></div>
+      </div>
       <div class="form-group" id="edit-is-supervisor-group" style="display:none;">
         <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
           <input type="checkbox" id="edit-is-supervisor" style="width:auto;" />
