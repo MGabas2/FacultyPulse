@@ -2608,6 +2608,30 @@ async function loadSubjectsForAssignment() {
   renderSubjectAssignPage();
 }
 
+// ── Edit a class's course title (display-only text; the code in `name` is what matching uses) ──
+async function saveSubjectTitle(subj, raw) {
+  const title = String(raw || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 200) || null;
+  if ((title || null) === (subj.title || null)) { renderSubjectAssignPage(); return; }
+  const { error } = await supabase.from("subjects").update({ title }).eq("id", subj.id);
+  if (error) { fpAlert("Could not save the title: " + error.message, "error"); return; }
+  subj.title = title;
+
+  // Same code in other classes of the same semester with a different title?
+  const others = allSubjectsForAssignment.filter(x => x.id !== subj.id && x.name === subj.name
+    && x.semester_id === subj.semester_id && (x.title || null) !== title);
+  if (others.length) {
+    const yes = await fpConfirm(
+      `Saved. ${others.length} other class${others.length === 1 ? "" : "es"} coded "${subj.name}" ha${others.length === 1 ? "s" : "ve"} a different title. Use this title for ${others.length === 1 ? "it" : "them"} too?`,
+      { confirmLabel: `Yes, update ${others.length}`, cancelLabel: "No, only this class" });
+    if (yes) {
+      const { error: e2 } = await supabase.from("subjects").update({ title }).in("id", others.map(x => x.id));
+      if (e2) fpAlert("Could not update the other classes: " + e2.message, "error");
+      else others.forEach(x => { x.title = title; });
+    }
+  }
+  renderSubjectAssignPage();
+}
+
 function renderSubjectAssignPage() {
   const tbody = document.getElementById("subjects-assign-tbody");
   if (!tbody) return;
@@ -2678,7 +2702,7 @@ function renderSubjectAssignPage() {
   tbody.innerHTML = pageItems.map(s => `
     <tr class="subject-assign-row" data-id="${s.id}" style="cursor:pointer;">
       <td><input type="checkbox" class="subject-assign-checkbox" data-id="${s.id}" ${selectedSubjectIds.has(s.id) ? "checked" : ""} /></td>
-      <td><b>${escHtml(s.name)}</b>${s.title ? `<div style="font-size:11.5px; color:#6b7280; margin-top:2px;">${escHtml(s.title)}</div>` : ""}</td>
+      <td><b>${escHtml(s.name)}</b><div class="subject-title-cell" style="font-size:11.5px; color:#6b7280; margin-top:2px;">${s.title ? escHtml(s.title) : `<i style="color:#9ca3af;">no title</i>`} <button type="button" class="subject-title-edit-btn" data-id="${s.id}" title="Edit this course's title" aria-label="Edit title" style="border:0; background:none; color:#2563eb; cursor:pointer; font-size:12px; padding:0 3px;">✎</button></div></td>
       <td>${escHtml(s.sections?.name || "—")}</td>
       <td style="text-align:center;">${s.enrolled_count ?? 0}</td>
       <td>${s.teacher?.name
@@ -2694,6 +2718,30 @@ function renderSubjectAssignPage() {
       const subj = allSubjectsForAssignment.find(x => x.id === btn.dataset.id);
       if (!subj) return;
       await clearTeacherFrom([subj.id], `${subj.name} (${subj.sections?.name || ""}) — currently ${subj.teacher?.name || "unassigned"}`);
+    });
+  });
+
+  tbody.querySelectorAll(".subject-title-edit-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();   // don't also tick the row
+      const subj = allSubjectsForAssignment.find(x => x.id === btn.dataset.id);
+      if (!subj) return;
+      const cell = btn.closest(".subject-title-cell");
+      cell.innerHTML = `<span class="subject-title-editor" style="display:flex; gap:4px; align-items:center;">
+        <input type="text" maxlength="200" style="flex:1; min-width:140px; font-size:12px; padding:3px 6px;" aria-label="Course title" />
+        <button type="button" class="subject-title-save" style="font-size:11px; padding:3px 8px;">Save</button>
+        <button type="button" class="btn-secondary subject-title-cancel" style="font-size:11px; padding:3px 8px;">Cancel</button>
+      </span>`;
+      const input = cell.querySelector("input");
+      input.value = subj.title || "";
+      input.focus();
+      cell.querySelector(".subject-title-cancel").addEventListener("click", (ev) => { ev.stopPropagation(); renderSubjectAssignPage(); });
+      const save = async (ev) => { ev?.stopPropagation(); await saveSubjectTitle(subj, input.value); };
+      cell.querySelector(".subject-title-save").addEventListener("click", save);
+      input.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") save(ev);
+        if (ev.key === "Escape") renderSubjectAssignPage();
+      });
     });
   });
 
@@ -2718,7 +2766,7 @@ function renderSubjectAssignPage() {
   // toggle it twice (once from the native click, once from this handler).
   tbody.querySelectorAll(".subject-assign-row").forEach(row => {
     row.addEventListener("click", (e) => {
-      if (e.target.matches(".subject-assign-checkbox") || e.target.closest(".subject-students-btn") || e.target.closest(".subject-unassign-row-btn")) return;
+      if (e.target.matches(".subject-assign-checkbox") || e.target.closest(".subject-students-btn") || e.target.closest(".subject-unassign-row-btn") || e.target.closest(".subject-title-edit-btn") || e.target.closest(".subject-title-editor")) return;
       const cb = row.querySelector(".subject-assign-checkbox");
       if (cb) cb.click();
     });
