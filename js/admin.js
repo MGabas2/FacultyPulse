@@ -4138,6 +4138,7 @@ function renderCourses() {
           <span style="min-width:90px;">${c.enrolled_count ?? 0} enrolled</span>
           <span style="min-width:180px; color:${c.teacher?.name ? "inherit" : "#d97706"};">${escHtml(c.teacher?.name || "Unassigned")}</span>
           <span style="color:#6b7280; flex:1; min-width:120px;">${c.title ? escHtml(c.title) : "<i>no title</i>"}</span>
+          <button type="button" class="btn-secondary course-empty-btn" data-id="${c.id}" style="font-size:11px; padding:2px 8px; color:#b45309;" ${coursesCanEdit() && (c.enrolled_count || 0) > 0 ? "" : "disabled"} title="Remove every student from this class">Empty class</button>
           <button type="button" class="btn-secondary course-delete-btn" data-id="${c.id}" style="font-size:11px; padding:2px 8px; color:#b91c1c;" ${coursesCanEdit() ? "" : "disabled"}>Delete empty class</button>
         </div>`).join("") + `</td></tr>`;
     }
@@ -4172,6 +4173,9 @@ function renderCourses() {
       input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") save(ev); if (ev.key === "Escape") renderCourses(); });
     });
   });
+  tbody.querySelectorAll(".course-empty-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => { e.stopPropagation(); emptyClass(btn.dataset.id); });
+  });
   tbody.querySelectorAll(".course-delete-btn").forEach(btn => {
     btn.addEventListener("click", (e) => { e.stopPropagation(); deleteEmptyClass(btn.dataset.id); });
   });
@@ -4186,6 +4190,40 @@ async function saveCourseTitle(group, raw) {
   if (error) { fpAlert("Could not save the title: " + error.message, "error"); return; }
   coursesRows.forEach(s => { if (ids.includes(s.id)) s.title = title; });
   renderCourses();
+}
+
+async function emptyClass(id) {
+  const s = coursesRows.find(x => x.id === id);
+  if (!s) return;
+  if (!coursesCanEdit()) { fpAlert("Only the active, unlocked semester can be edited.", "error"); return; }
+  // Re-check live: refuse if anyone has already evaluated this class (it would orphan their results).
+  const checks = await Promise.all(["evaluation_tracking", "evaluation_scores", "evaluation_comments"].map(t =>
+    supabase.from(t).select("id", { count: "exact", head: true }).eq("subject_id", id)));
+  if (checks.some(c => c.error)) { fpAlert("Could not verify this class has no evaluations, so nothing was changed.", "error"); return; }
+  const evals = checks.reduce((n, c) => n + (c.count || 0), 0);
+  if (evals) { fpAlert(`Not emptied: ${evals} evaluation record(s) already exist for "${s.name}" in ${s.sections?.name || "this section"}. Removing students now would break those results.`, "error"); return; }
+  const { data: rows, error } = await supabase.from("student_subjects")
+    .select("student_id").eq("subject_id", id).eq("semester_id", coursesSemester.id);
+  if (error) { fpAlert("Could not read the class list: " + error.message, "error"); return; }
+  if (!rows.length) { fpAlert("This class is already empty.", "info"); return; }
+  const ok = await fpConfirm(
+    `Remove all ${rows.length} student(s) from "${s.name}" in ${s.sections?.name || "this section"}? Their other courses are not touched. A list of the removed students will download so you can re-add them if needed.`,
+    { confirmLabel: `Remove ${rows.length} student(s)`, confirmStyle: "fp-btn-danger" });
+  if (!ok) return;
+  // Save the list first so a mistake can be undone.
+  try {
+    const csv = "student_id,class,section\n" + rows.map(r => [r.student_id, s.name, s.sections?.name || ""].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = `emptied-${s.name.replace(/[^A-Za-z0-9]+/g, "_")}-${(s.sections?.name || "").replace(/[^A-Za-z0-9]+/g, "_")}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch (_) { /* download is a convenience; the delete below still proceeds only after the confirm */ }
+  const { error: dErr } = await supabase.from("student_subjects").delete().eq("subject_id", id).eq("semester_id", coursesSemester.id);
+  if (dErr) { fpAlert("Could not empty the class: " + dErr.message, "error"); return; }
+  await supabase.from("subjects").update({ enrolled_count: 0 }).eq("id", id);
+  s.enrolled_count = 0;
+  renderCourses();
+  fpAlert(`Removed ${rows.length} student(s) from "${s.name}".`, "success");
 }
 
 async function deleteEmptyClass(id) {
