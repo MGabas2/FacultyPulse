@@ -915,7 +915,10 @@ function escapeHtml(str) {
 
 // "CODE (Title)" when the admin has set a course title, otherwise just the code.
 function courseLabel(sub) {
-  return sub.title ? `${sub.name} (${sub.title})` : sub.name;
+  // The track in a class name (e.g. "ITD 305 (Multimedia Track)") is for admins only;
+  // students see just the course code and title.
+  const code = String(sub.name || "").replace(/\s*\([^)]*\btrack\b[^)]*\)\s*$/i, "").trim() || sub.name;
+  return sub.title ? `${code} (${sub.title})` : code;
 }
 
 // ── Expose to HTML ──
