@@ -2886,7 +2886,7 @@ async function searchStudentsToAdd() {
   const subjectId = subjectStudentsSubjectId;
   const { data, error } = await supabase.from("users")
     .select("student_id, name, sections(name)").eq("role", "student")
-    .or(`name.ilike.%${q}%,student_id.ilike.%${q}%`).order("name").limit(8);
+    .or(`name.ilike.%${q}%,student_id.ilike.%${q}%`).order("name").limit(30);
   if (subjectId !== subjectStudentsSubjectId) return;
   if (error) { box.innerHTML = `<div style="color:#b91c1c;">Search failed.</div>`; return; }
   const already = new Set(subjectStudentsRows.map(r => r.student_id));
