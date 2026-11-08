@@ -494,6 +494,8 @@ function renderTable() {
             onclick="openEditModal('${u.id}')">
             ✏️ Edit
           </button>
+          ${u.role === "student" && u.student_id && isActive ? `<button class="btn-secondary" style="font-size:11px; padding:4px 9px;" title="Set this student's password back to the default"
+            onclick="resetStudentPassword('${u.id}')">🔑 Reset password</button>` : ""}
           <button class="btn-secondary" style="font-size:11px; padding:4px 9px; ${!isActive ? "display:none;" : ""}"
             onclick="confirmArchive('${u.id}', '${escHtml(displayName).replace(/'/g, "\\'")}')">
             📦 Archive
@@ -888,6 +890,27 @@ function closeAddModal() {
 // ══════════════════════════════════════════════════════════════
 //  EDIT USER MODAL
 // ══════════════════════════════════════════════════════════════
+
+// ── Reset a student's password to the default (QA does this in person) ──
+async function resetStudentPassword(userId) {
+  const u = allUsers.find(x => x.id === userId);
+  if (!u || u.role !== "student" || !u.student_id) return;
+  const def = String(u.student_id).split("-")[1] || "";
+  const ok = await fpConfirm(
+    `Reset the password for ${u.name || u.student_id} (${u.student_id}) to the default?\n\n` +
+    `Default password: ${def}\n` +
+    `The student must choose a new password the next time they log in. Only do this after confirming who they are in person.`,
+    { confirmLabel: "Reset password", confirmStyle: "fp-btn-danger" });
+  if (!ok) return;
+  const { data, error } = await supabase.rpc("admin_reset_student_password", { p_student_id: u.student_id });
+  if (error || data !== true) {
+    await fpAlert("Could not reset the password" + (error ? ": " + error.message : " (student not found or archived)."), "error");
+    return;
+  }
+  await fpAlert(`Done. ${u.name || u.student_id} can now log in with the default password ${def}, and will be asked to choose a new one.`, "success");
+}
+window.resetStudentPassword = resetStudentPassword;
+
 function openEditModal(userId) {
   const u = allUsers.find(x => x.id === userId);
   if (!u) return;
