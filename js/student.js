@@ -194,6 +194,7 @@ async function init() {
   const subs = ((dash && dash.subjects) || []).map(s => ({
     id: s.id,
     name: s.name,
+    title: s.title || null,
     users: { name: s.teacher_name },
     sections: { name: s.section_name, department: s.department },
   }));
@@ -306,7 +307,7 @@ function renderProgress() {
     div.innerHTML = `
       <div class="step-num">${isSubmitted ? "✓" : idx + 1}</div>
       <div class="step-info">
-        <div class="step-name">${escapeHtml(sub.name)}</div>
+        <div class="step-name">${escapeHtml(courseLabel(sub))}</div>
         <div class="step-teacher">${escapeHtml(sub.users?.name || "—")}</div>
       </div>
       <span class="step-badge ${badgeClass}">${badgeText}</span>
@@ -330,7 +331,7 @@ function openEval(idx) {
   const sub  = subjects[idx];
 
   document.getElementById("modal-teacher").textContent  = sub.users?.name || "—";
-  document.getElementById("modal-subject").textContent  = "Course: " + sub.name;
+  document.getElementById("modal-subject").textContent  = "Course: " + courseLabel(sub);
   document.getElementById("modal-step-badge").textContent =
     `${idx + 1} of ${subjects.length}`;
 
@@ -354,7 +355,7 @@ function openEval(idx) {
         </tr>
         <tr>
           <td style="padding:2px 0; color:#334155;">Course Code/Title</td>
-          <td style="padding:2px 0; color:#1e293b;">: ${escapeHtml(sub.name)}</td>
+          <td style="padding:2px 0; color:#1e293b;">: ${escapeHtml(courseLabel(sub))}</td>
         </tr>
         <tr>
           <td style="padding:2px 0; color:#334155;">Program Level</td>
@@ -709,7 +710,7 @@ function openReview(idx) {
   const draft = drafts[sub.id] || {};
 
   document.getElementById("review-teacher").textContent = sub.users?.name || "—";
-  document.getElementById("review-subject").textContent = "Course: " + sub.name;
+  document.getElementById("review-subject").textContent = "Course: " + courseLabel(sub);
 
   const content = document.getElementById("review-content");
   let html = "";
@@ -910,6 +911,11 @@ function escapeHtml(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// "CODE (Title)" when the admin has set a course title, otherwise just the code.
+function courseLabel(sub) {
+  return sub.title ? `${sub.name} (${sub.title})` : sub.name;
 }
 
 // ── Expose to HTML ──
