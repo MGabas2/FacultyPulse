@@ -78,6 +78,9 @@
       <button class="sidebar-nav-item" data-panel="panel-subjects" id="nav-subjects">
         <span class="nav-icon">🎓</span> Course Assignment
       </button>
+      <button class="sidebar-nav-item" data-panel="panel-courses" id="nav-courses">
+        <span class="nav-icon">📚</span> Courses
+      </button>
       <button class="sidebar-nav-item" data-panel="panel-trends" id="nav-trends">
         <span class="nav-icon">📈</span> Faculty Trends
       </button>
@@ -688,6 +691,77 @@
         </div>
       </div><!-- /panel-subjects -->
 
+      <div id="panel-courses" class="panel">
+        <div class="container">
+          <h2 style="display:flex; align-items:center; gap:10px;">
+            Courses
+            <button id="refresh-btn-courses" style="font-size:12px; padding:5px 10px;">🔄 Refresh</button>
+          </h2>
+          <p style="color:var(--slate); margin:0 0 12px; font-size:13px; line-height:1.6;">
+            One row per course code. Edit a course title once and it updates every class with that code in the
+            semester. Teachers are assigned in <b>Course Assignment</b>. Titles are for display only —
+            the course code is what imports and enrollment use.
+          </p>
+
+          <div class="section">
+            <div class="toolbar" style="align-items:center;">
+              <select id="courses-semester" style="min-width:200px;" aria-label="Semester"></select>
+              <input type="text" id="courses-search" placeholder="🔍 Search code or title…" autocomplete="off" style="flex:1; min-width:180px;" />
+              <select id="courses-filter" aria-label="Filter">
+                <option value="">All courses</option>
+                <option value="notitle">No title</option>
+                <option value="difftitle">Different titles</option>
+              </select>
+            </div>
+            <p id="courses-count" style="font-size:12px; color:var(--slate); margin:0 0 10px;"></p>
+
+            <details id="courses-add" style="margin-bottom:12px; border:1px solid var(--hairline); border-radius:8px; padding:8px 12px;">
+              <summary style="cursor:pointer; font-weight:600; font-size:13px;">➕ Add a class</summary>
+              <p style="font-size:12px; color:var(--slate); margin:8px 0;">
+                Creates one new class (no teacher, no students) in the chosen section. Example: code
+                <code>ITD 305 (Multimedia Track)</code> in section <code>BSInfoTech-III-2026-2027</code>.
+                Assign its teacher in Course Assignment afterwards.
+              </p>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
+                <div class="form-group" style="margin:0; flex:1; min-width:200px;">
+                  <label>Section</label>
+                  <select id="courses-add-section" style="width:100%;"></select>
+                </div>
+                <div class="form-group" style="margin:0; flex:1; min-width:200px;">
+                  <label>Course code</label>
+                  <input type="text" id="courses-add-code" maxlength="60" autocomplete="off" style="width:100%;" />
+                </div>
+                <div class="form-group" style="margin:0; flex:2; min-width:240px;">
+                  <label>Course title <span style="font-weight:400; color:#94a3b8;">(optional)</span></label>
+                  <input type="text" id="courses-add-title" maxlength="200" autocomplete="off" style="width:100%;" />
+                </div>
+                <button id="courses-add-btn" style="white-space:nowrap;">Add class</button>
+              </div>
+              <p id="courses-add-msg" style="font-size:12.5px; min-height:16px; margin:8px 0 0;"></p>
+            </details>
+
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:28px;"></th>
+                  <th>Code</th>
+                  <th>Title</th>
+                  <th>Programs</th>
+                  <th>Classes</th>
+                  <th>Enrolled</th>
+                </tr>
+              </thead>
+              <tbody id="courses-tbody">
+                <tr><td colspan="6" style="text-align:center; padding:24px; color:var(--mist);">Loading...</td></tr>
+              </tbody>
+            </table>
+            <div style="display:flex; justify-content:flex-end; margin-top:12px;">
+              <div id="courses-page-buttons" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /panel-courses -->
+
       <!-- Side drawer: who is enrolled in the class picked in Course Assignment -->
       <aside id="subject-students-drawer" aria-hidden="true"
         style="position:fixed; top:0; right:0; height:100vh; width:min(380px,100vw); background:var(--white,#fff); box-shadow:-4px 0 24px rgba(0,0,0,.18); transform:translateX(105%); transition:transform .2s ease; z-index:900; display:flex; flex-direction:column;">
@@ -1146,6 +1220,7 @@
     document.getElementById("nav-history").addEventListener("click", () => switchPanel("panel-history"));
     document.getElementById("nav-semesters").addEventListener("click", () => switchPanel("panel-semesters"));
     document.getElementById("nav-subjects").addEventListener("click", () => switchPanel("panel-subjects"));
+    document.getElementById("nav-courses").addEventListener("click", () => switchPanel("panel-courses"));
     document.getElementById("nav-trends").addEventListener("click", () => switchPanel("panel-trends"));
     document.getElementById("nav-backup").addEventListener("click", () => switchPanel("panel-backup"));
   </script>

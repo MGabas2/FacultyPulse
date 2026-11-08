@@ -4032,3 +4032,213 @@ lazyPanel("panel-backup", loadBackupList);
   const initialLoad = fpLoading("Loading dashboard...");
   Promise.all([loadSummary(), loadRankings()]).finally(() => initialLoad.close());
 }
+// ═══════════════════════════════════════════════════════════════
+// Courses tab — one row per course code: edit titles, add a class,
+// delete an empty class. Titles are display-only; the code in
+// subjects.name is what imports and enrollment match on.
+// ═══════════════════════════════════════════════════════════════
+const COURSES_PAGE_SIZE = 25;
+let coursesSemesters = [];
+let coursesSemester  = null;      // { id, label, is_active, is_locked }
+let coursesRows      = [];        // subjects of the chosen semester
+let coursesPage      = 1;
+const coursesOpen    = new Set(); // codes currently expanded
+
+function cleanCourseText(raw, max) {
+  return String(raw || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+}
+function coursesCanEdit() { return !!(coursesSemester && coursesSemester.is_active && !coursesSemester.is_locked); }
+
+async function loadCoursesTab() {
+  const { data: sems, error } = await supabase.from("semesters").select("id, label, is_active, is_locked");
+  if (error) { document.getElementById("courses-tbody").innerHTML = `<tr><td colspan="6">Error: ${escHtml(error.message)}</td></tr>`; return; }
+  coursesSemesters = (sems || []).sort((a, b) => (b.is_active - a.is_active) || String(b.label).localeCompare(String(a.label)));
+  const sel = document.getElementById("courses-semester");
+  sel.innerHTML = coursesSemesters.map(s => `<option value="${s.id}">${escHtml(s.label)}${s.is_active ? " (active)" : ""}</option>`).join("");
+  coursesSemester = coursesSemesters[0] || null;
+  if (coursesSemester) sel.value = coursesSemester.id;
+  await loadCoursesRows();
+  await loadCoursesSections();
+}
+
+async function loadCoursesSections() {
+  const { data } = await supabase.from("sections").select("id, name").order("name");
+  document.getElementById("courses-add-section").innerHTML =
+    `<option value="">— select section —</option>` +
+    (data || []).map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join("");
+}
+
+async function loadCoursesRows() {
+  const tbody = document.getElementById("courses-tbody");
+  if (!coursesSemester) { tbody.innerHTML = `<tr><td colspan="6">No semester found.</td></tr>`; return; }
+  const { data, error } = await supabase.from("subjects")
+    .select("id, name, title, enrolled_count, teacher_id, section_id, sections(name), teacher:users(name)")
+    .eq("semester_id", coursesSemester.id);
+  if (error) { tbody.innerHTML = `<tr><td colspan="6">Error loading courses: ${escHtml(error.message)}</td></tr>`; return; }
+  coursesRows = data || [];
+  coursesPage = 1;
+  renderCourses();
+}
+
+function groupCourses() {
+  const map = new Map();
+  for (const s of coursesRows) {
+    if (!map.has(s.name)) map.set(s.name, []);
+    map.get(s.name).push(s);
+  }
+  return [...map.entries()].map(([code, classes]) => {
+    const titles = [...new Set(classes.map(c => c.title).filter(Boolean))];
+    const programs = [...new Set(classes.map(c => (c.sections?.name || "").split("-")[0]).filter(Boolean))].sort();
+    return { code, classes, titles, programs,
+      missing: classes.some(c => !c.title),
+      enrolled: classes.reduce((n, c) => n + (c.enrolled_count || 0), 0) };
+  }).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+}
+
+function renderCourses() {
+  const tbody = document.getElementById("courses-tbody");
+  if (!tbody) return;
+  const q = (document.getElementById("courses-search")?.value || "").toLowerCase().trim();
+  const f = document.getElementById("courses-filter")?.value || "";
+  let groups = groupCourses().filter(g => {
+    if (q && !(g.code.toLowerCase().includes(q) || g.titles.some(t => t.toLowerCase().includes(q)))) return false;
+    if (f === "notitle"   && !g.missing) return false;
+    if (f === "difftitle" && g.titles.length < 2) return false;
+    return true;
+  });
+  const totalPages = Math.max(1, Math.ceil(groups.length / COURSES_PAGE_SIZE));
+  if (coursesPage > totalPages) coursesPage = totalPages;
+  const start = (coursesPage - 1) * COURSES_PAGE_SIZE;
+  const page  = groups.slice(start, start + COURSES_PAGE_SIZE);
+  document.getElementById("courses-count").textContent =
+    `${groups.length} course code${groups.length === 1 ? "" : "s"} · ${coursesRows.length} classes in ${coursesSemester?.label || "—"}` +
+    (coursesCanEdit() ? "" : " · this semester is not active/unlocked, so classes can't be added or deleted (titles can still be edited)");
+
+  if (!page.length) { tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:24px; color:var(--mist);">No courses match.</td></tr>`; renderPager("courses-page-buttons", 1, 1, () => {}); return; }
+
+  tbody.innerHTML = page.map(g => {
+    const open = coursesOpen.has(g.code);
+    const titleHtml = g.titles.length === 0 ? `<i style="color:#9ca3af;">no title</i>`
+      : g.titles.length === 1 ? escHtml(g.titles[0]) + (g.missing ? ` <span style="color:#d97706; font-size:11px;">(some classes blank)</span>` : "")
+      : `<span style="color:#b45309; font-size:12px;">${g.titles.length} different titles</span>`;
+    let html = `<tr class="course-row" data-code="${escHtml(g.code)}" style="cursor:pointer;">
+      <td>${open ? "▾" : "▸"}</td>
+      <td><b>${escHtml(g.code)}</b></td>
+      <td><span class="course-title-text">${titleHtml}</span>
+        <button type="button" class="course-title-edit" data-code="${escHtml(g.code)}" title="Set the title for every class with this code" aria-label="Edit title" style="border:0; background:none; color:#2563eb; cursor:pointer; font-size:12px; padding:0 3px;">✎</button></td>
+      <td>${escHtml(g.programs.join(", ") || "—")}</td>
+      <td style="text-align:center;">${g.classes.length}</td>
+      <td style="text-align:center;">${g.enrolled}</td>
+    </tr>`;
+    if (open) {
+      html += `<tr class="course-detail"><td></td><td colspan="5" style="background:#f8fafc; padding:6px 10px;">` +
+        g.classes.sort((a, b) => (a.sections?.name || "").localeCompare(b.sections?.name || "")).map(c => `
+        <div style="display:flex; gap:10px; align-items:center; padding:3px 0; font-size:12.5px; flex-wrap:wrap;">
+          <span style="min-width:200px;">${escHtml(c.sections?.name || "—")}</span>
+          <span style="min-width:90px;">${c.enrolled_count ?? 0} enrolled</span>
+          <span style="min-width:180px; color:${c.teacher?.name ? "inherit" : "#d97706"};">${escHtml(c.teacher?.name || "Unassigned")}</span>
+          <span style="color:#6b7280; flex:1; min-width:120px;">${c.title ? escHtml(c.title) : "<i>no title</i>"}</span>
+          <button type="button" class="btn-secondary course-delete-btn" data-id="${c.id}" style="font-size:11px; padding:2px 8px; color:#b91c1c;" ${coursesCanEdit() ? "" : "disabled"}>Delete empty class</button>
+        </div>`).join("") + `</td></tr>`;
+    }
+    return html;
+  }).join("");
+
+  tbody.querySelectorAll(".course-row").forEach(row => {
+    row.addEventListener("click", (e) => {
+      if (e.target.closest(".course-title-edit") || e.target.closest(".course-title-editor")) return;
+      const code = row.dataset.code;
+      if (coursesOpen.has(code)) coursesOpen.delete(code); else coursesOpen.add(code);
+      renderCourses();
+    });
+  });
+  tbody.querySelectorAll(".course-title-edit").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const g = groupCourses().find(x => x.code === btn.dataset.code);
+      if (!g) return;
+      const cell = btn.closest("td");
+      cell.innerHTML = `<span class="course-title-editor" style="display:flex; gap:4px; align-items:center;">
+        <input type="text" maxlength="200" style="flex:1; min-width:160px; font-size:12px; padding:3px 6px;" aria-label="Course title" />
+        <button type="button" class="course-title-save" style="font-size:11px; padding:3px 8px;">Save</button>
+        <button type="button" class="btn-secondary course-title-cancel" style="font-size:11px; padding:3px 8px;">Cancel</button></span>`;
+      const input = cell.querySelector("input");
+      input.value = g.titles.length === 1 ? g.titles[0] : "";
+      input.placeholder = g.titles.length > 1 ? "Type the one title to use for all" : "";
+      input.focus();
+      const save = async (ev) => { ev?.stopPropagation(); await saveCourseTitle(g, input.value); };
+      cell.querySelector(".course-title-save").addEventListener("click", save);
+      cell.querySelector(".course-title-cancel").addEventListener("click", (ev) => { ev.stopPropagation(); renderCourses(); });
+      input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") save(ev); if (ev.key === "Escape") renderCourses(); });
+    });
+  });
+  tbody.querySelectorAll(".course-delete-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => { e.stopPropagation(); deleteEmptyClass(btn.dataset.id); });
+  });
+  renderPager("courses-page-buttons", totalPages, coursesPage, (p) => { coursesPage = p; renderCourses(); });
+}
+
+async function saveCourseTitle(group, raw) {
+  const title = cleanCourseText(raw, 200) || null;
+  if (group.titles.length > 1 && !title) { fpAlert("Type the title to use for all of these classes first.", "error"); return; }
+  const ids = group.classes.map(c => c.id);
+  const { error } = await supabase.from("subjects").update({ title }).in("id", ids);
+  if (error) { fpAlert("Could not save the title: " + error.message, "error"); return; }
+  coursesRows.forEach(s => { if (ids.includes(s.id)) s.title = title; });
+  renderCourses();
+}
+
+async function deleteEmptyClass(id) {
+  const s = coursesRows.find(x => x.id === id);
+  if (!s) return;
+  if (!coursesCanEdit()) { fpAlert("Only the active, unlocked semester can be edited.", "error"); return; }
+  if (s.teacher_id) { fpAlert(`"${s.name}" still has a teacher (${s.teacher?.name || "assigned"}). Clear the teacher in Course Assignment first.`, "error"); return; }
+  // Re-check against the live database right before deleting — every child table cascades.
+  const counts = await Promise.all(["student_subjects", "evaluation_tracking", "evaluation_scores", "evaluation_comments"].map(t =>
+    supabase.from(t).select("id", { count: "exact", head: true }).eq("subject_id", id)));
+  if (counts.some(c => c.error)) { fpAlert("Could not verify the class is empty, so nothing was deleted.", "error"); return; }
+  const [stu, trk, sco, com] = counts.map(c => c.count || 0);
+  if (stu || trk || sco || com) {
+    fpAlert(`Not deleted: this class still has ${stu} enrolled student(s) and ${trk + sco + com} evaluation record(s). Only completely empty classes can be deleted.`, "error");
+    return;
+  }
+  const ok = await fpConfirm(`Delete the empty class "${s.name}" in ${s.sections?.name || "this section"}? This can't be undone.`,
+    { confirmLabel: "Delete class", confirmStyle: "fp-btn-danger" });
+  if (!ok) return;
+  const { error } = await supabase.from("subjects").delete().eq("id", id);
+  if (error) { fpAlert("Could not delete: " + error.message, "error"); return; }
+  coursesRows = coursesRows.filter(x => x.id !== id);
+  renderCourses();
+}
+
+document.getElementById("courses-add-btn")?.addEventListener("click", async () => {
+  const msg = document.getElementById("courses-add-msg");
+  const say = (t, bad) => { msg.textContent = t; msg.style.color = bad ? "#b91c1c" : "#15803d"; };
+  if (!coursesCanEdit()) { say("Only the active, unlocked semester can get new classes.", true); return; }
+  const sectionId = document.getElementById("courses-add-section").value;
+  const code  = cleanCourseText(document.getElementById("courses-add-code").value, 60);
+  const title = cleanCourseText(document.getElementById("courses-add-title").value, 200) || null;
+  if (!sectionId) { say("Pick a section.", true); return; }
+  if (!code || !/^[A-Za-z0-9][A-Za-z0-9 ()&.,\/\-]*$/.test(code)) { say("Enter a course code (letters, numbers, spaces and ( ) & . , / - only).", true); return; }
+  const btn = document.getElementById("courses-add-btn");
+  btn.disabled = true;
+  const { error } = await supabase.from("subjects").insert({
+    name: code, title, section_id: sectionId, semester_id: coursesSemester.id, enrolled_count: 0,
+  });
+  btn.disabled = false;
+  if (error) { say(error.code === "23505" ? `"${code}" already exists in that section this semester.` : "Could not add: " + error.message, true); return; }
+  say(`Added "${code}". Assign its teacher in Course Assignment.`, false);
+  document.getElementById("courses-add-code").value = "";
+  document.getElementById("courses-add-title").value = "";
+  await loadCoursesRows();
+});
+
+document.getElementById("courses-semester")?.addEventListener("change", async (e) => {
+  coursesSemester = coursesSemesters.find(s => s.id === e.target.value) || null;
+  coursesOpen.clear();
+  await loadCoursesRows();
+});
+document.getElementById("courses-search")?.addEventListener("input", () => { coursesPage = 1; renderCourses(); });
+document.getElementById("courses-filter")?.addEventListener("change", () => { coursesPage = 1; renderCourses(); });
+document.getElementById("refresh-btn-courses")?.addEventListener("click", loadCoursesTab);
+lazyPanel("panel-courses", loadCoursesTab);
