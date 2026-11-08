@@ -2680,10 +2680,21 @@ function renderSubjectAssignPage() {
       <td><b>${escHtml(s.name)}</b></td>
       <td>${escHtml(s.sections?.name || "—")}</td>
       <td style="text-align:center;">${s.enrolled_count ?? 0}</td>
-      <td>${s.teacher?.name ? escHtml(s.teacher.name) : `<span style="color:#d97706; font-weight:600;">Unassigned</span>`}</td>
+      <td>${s.teacher?.name
+        ? `${escHtml(s.teacher.name)} <button type="button" class="subject-unassign-row-btn" data-id="${s.id}" title="Remove this teacher from this class only" aria-label="Remove teacher" style="border:0; background:none; color:#b91c1c; cursor:pointer; font-size:13px; padding:0 4px;">✕</button>`
+        : `<span style="color:#d97706; font-weight:600;">Unassigned</span>`}</td>
       <td style="text-align:center;"><button type="button" class="btn-secondary subject-students-btn" data-id="${s.id}" title="Show the students in this class" style="font-size:12px; padding:3px 8px;">👥</button></td>
     </tr>
   `).join("");
+
+  tbody.querySelectorAll(".subject-unassign-row-btn").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();   // don't also tick the row
+      const subj = allSubjectsForAssignment.find(x => x.id === btn.dataset.id);
+      if (!subj) return;
+      await clearTeacherFrom([subj.id], `${subj.name} (${subj.sections?.name || ""}) — currently ${subj.teacher?.name || "unassigned"}`);
+    });
+  });
 
   tbody.querySelectorAll(".subject-students-btn").forEach(btn => {
     btn.addEventListener("click", (e) => {
@@ -2706,7 +2717,7 @@ function renderSubjectAssignPage() {
   // toggle it twice (once from the native click, once from this handler).
   tbody.querySelectorAll(".subject-assign-row").forEach(row => {
     row.addEventListener("click", (e) => {
-      if (e.target.matches(".subject-assign-checkbox") || e.target.closest(".subject-students-btn")) return;
+      if (e.target.matches(".subject-assign-checkbox") || e.target.closest(".subject-students-btn") || e.target.closest(".subject-unassign-row-btn")) return;
       const cb = row.querySelector(".subject-assign-checkbox");
       if (cb) cb.click();
     });
@@ -2723,6 +2734,9 @@ function renderSubjectAssignPage() {
 // ── Side drawer: students enrolled in a class ──
 let subjectStudentsToken = 0;
 let subjectStudentsRows  = [];
+let subjectStudentsSubjectId = null;
+let subjectStudentsCanEdit   = false;
+let subjectStudentsAddTimer  = null;
 function renderSubjectStudentsList() {
   const box = document.getElementById("subject-students-list");
   if (!box) return;
@@ -2731,7 +2745,9 @@ function renderSubjectStudentsList() {
     !q || String(r.name || "").toLowerCase().includes(q) || String(r.student_id || "").toLowerCase().includes(q));
   box.innerHTML = rows.length
     ? `<ol style="margin:0; padding-left:22px;">` + rows.map(r =>
-        `<li style="padding:5px 0; border-bottom:1px solid #f1f5f9;"><b>${escHtml(r.name || "(no name)")}</b>` +
+        `<li style="padding:5px 0; border-bottom:1px solid #f1f5f9;">` +
+        (subjectStudentsCanEdit ? `<button type="button" class="subject-students-remove" data-student="${escHtml(r.student_id || "")}" title="Remove from this class" aria-label="Remove student" style="float:right; border:0; background:none; color:#b91c1c; cursor:pointer; font-size:14px;">✕</button>` : "") +
+        `<b>${escHtml(r.name || "(no name)")}</b>` +
         `<div style="font-size:11px; color:#6b7280;">${escHtml(r.student_id || "")} · ${escHtml(r.section || "no section")}</div></li>`).join("") + `</ol>`
     : `<div style="color:#6b7280; padding:12px 0;">${subjectStudentsRows.length ? "No student matches." : "No students enrolled."}</div>`;
 }
@@ -2746,6 +2762,14 @@ async function openSubjectStudentsDrawer(subjectId) {
   if (!d) return;
   const subj = allSubjectsForAssignment.find(x => x.id === subjectId);
   const token = ++subjectStudentsToken;
+  subjectStudentsSubjectId = subjectId;
+  subjectStudentsCanEdit   = false;
+  const addBox = document.getElementById("subject-students-add");
+  if (addBox) addBox.style.display = "none";
+  const addIn = document.getElementById("subject-students-add-input");
+  if (addIn) addIn.value = "";
+  const addRes = document.getElementById("subject-students-add-results");
+  if (addRes) addRes.innerHTML = "";
   document.getElementById("subject-students-title").textContent = subj ? `${subj.name} — ${subj.sections?.name || ""}` : "Students";
   document.getElementById("subject-students-sub").textContent =
     subj ? `Teacher: ${subj.teacher?.name || "Unassigned"}` : "";
@@ -2773,10 +2797,105 @@ async function openSubjectStudentsDrawer(subjectId) {
   if (token !== subjectStudentsToken) return;
   subjectStudentsRows = users.map(u => ({ student_id: u.student_id, name: u.name, section: u.sections?.name || "" }))
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  // Editing is only allowed for the ACTIVE, unlocked semester — never history.
+  let editNote = "";
+  if (subj?.semester_id) {
+    const { data: sem } = await supabase.from("semesters")
+      .select("is_active, is_locked").eq("id", subj.semester_id).maybeSingle();
+    if (token !== subjectStudentsToken) return;
+    subjectStudentsCanEdit = !!(sem && sem.is_active && !sem.is_locked);
+    if (!subjectStudentsCanEdit) editNote = " · view only (not the active semester)";
+  }
+  if (addBox) addBox.style.display = subjectStudentsCanEdit ? "block" : "none";
   document.getElementById("subject-students-sub").textContent =
-    `Teacher: ${subj?.teacher?.name || "Unassigned"} · ${subjectStudentsRows.length} student(s)`;
+    `Teacher: ${subj?.teacher?.name || "Unassigned"} · ${subjectStudentsRows.length} student(s)${editNote}`;
   renderSubjectStudentsList();
 }
+
+// Re-read the real enrollment list, write the true count back to
+// subjects.enrolled_count (nothing in the database keeps it in sync), and
+// refresh both the panel and the table behind it.
+async function refreshSubjectStudents(subjectId) {
+  const { count } = await supabase.from("student_subjects")
+    .select("id", { count: "exact", head: true }).eq("subject_id", subjectId);
+  if (typeof count === "number") {
+    await supabase.from("subjects").update({ enrolled_count: count }).eq("id", subjectId);
+    const subj = allSubjectsForAssignment.find(x => x.id === subjectId);
+    if (subj) subj.enrolled_count = count;
+    renderSubjectAssignPage();
+  }
+  if (subjectStudentsSubjectId === subjectId) await openSubjectStudentsDrawer(subjectId);
+}
+
+async function searchStudentsToAdd() {
+  const box = document.getElementById("subject-students-add-results");
+  const raw = String(document.getElementById("subject-students-add-input")?.value || "");
+  // strip characters that have meaning inside a PostgREST filter
+  const q = raw.replace(/[,()%*\\]/g, " ").trim().slice(0, 60);
+  if (!box) return;
+  if (q.length < 2) { box.innerHTML = ""; return; }
+  const subjectId = subjectStudentsSubjectId;
+  const { data, error } = await supabase.from("users")
+    .select("student_id, name, sections(name)").eq("role", "student")
+    .or(`name.ilike.%${q}%,student_id.ilike.%${q}%`).order("name").limit(8);
+  if (subjectId !== subjectStudentsSubjectId) return;
+  if (error) { box.innerHTML = `<div style="color:#b91c1c;">Search failed.</div>`; return; }
+  const already = new Set(subjectStudentsRows.map(r => r.student_id));
+  const rows = (data || []).filter(u => u.student_id);
+  box.innerHTML = rows.length ? rows.map(u => `
+    <div style="display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid #f1f5f9;">
+      <div style="flex:1; min-width:0;"><b>${escHtml(u.name)}</b>
+        <div style="font-size:11px; color:#6b7280;">${escHtml(u.student_id)} · ${escHtml(u.sections?.name || "no section")}</div></div>
+      ${already.has(u.student_id)
+        ? `<span style="font-size:11px; color:#6b7280;">already in class</span>`
+        : `<button type="button" class="btn-secondary subject-students-add-btn" data-student="${escHtml(u.student_id)}" data-name="${escHtml(u.name)}" style="font-size:12px; padding:3px 10px;">Add</button>`}
+    </div>`).join("") : `<div style="color:#6b7280;">No student found.</div>`;
+}
+
+document.getElementById("subject-students-add-input")?.addEventListener("input", () => {
+  clearTimeout(subjectStudentsAddTimer);
+  subjectStudentsAddTimer = setTimeout(searchStudentsToAdd, 300);
+});
+
+document.getElementById("subject-students-add-results")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".subject-students-add-btn");
+  if (!btn || !subjectStudentsCanEdit) return;
+  const subj = allSubjectsForAssignment.find(x => x.id === subjectStudentsSubjectId);
+  if (!subj) return;
+  const studentId = btn.dataset.student, name = btn.dataset.name || studentId;
+  const ok = await fpConfirm(`Add ${name} to ${subj.name} (${subj.sections?.name || ""})?`,
+    { confirmLabel: "Add", confirmStyle: "fp-btn-primary" });
+  if (!ok) return;
+  btn.disabled = true;
+  const { error } = await supabase.from("student_subjects")
+    .insert({ student_id: studentId, subject_id: subj.id, semester_id: subj.semester_id });
+  if (error && error.code !== "23505") { await fpAlert("Failed to add: " + error.message, "error"); btn.disabled = false; return; }
+  document.getElementById("subject-students-add-input").value = "";
+  document.getElementById("subject-students-add-results").innerHTML = "";
+  await refreshSubjectStudents(subj.id);
+});
+
+document.getElementById("subject-students-list")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".subject-students-remove");
+  if (!btn || !subjectStudentsCanEdit) return;
+  const subj = allSubjectsForAssignment.find(x => x.id === subjectStudentsSubjectId);
+  const studentId = btn.dataset.student;
+  const row = subjectStudentsRows.find(r => r.student_id === studentId);
+  if (!subj || !row) return;
+  let warn = "";
+  try {
+    const { count } = await supabase.from("evaluation_tracking")
+      .select("id", { count: "exact", head: true }).eq("subject_id", subj.id).eq("student_id", studentId);
+    if (count > 0) warn = " WARNING: this student already submitted an evaluation for this class. The evaluation stays, but they will no longer see the class.";
+  } catch { /* count is only a courtesy warning */ }
+  const ok = await fpConfirm(`Remove ${row.name} from ${subj.name} (${subj.sections?.name || ""})?` + warn,
+    { confirmLabel: "Remove", confirmStyle: "fp-btn-danger" });
+  if (!ok) return;
+  const { error } = await supabase.from("student_subjects").delete()
+    .eq("subject_id", subj.id).eq("student_id", studentId);
+  if (error) { await fpAlert("Failed to remove: " + error.message, "error"); return; }
+  await refreshSubjectStudents(subj.id);
+});
 document.getElementById("subject-students-close")?.addEventListener("click", closeSubjectStudentsDrawer);
 document.getElementById("subject-students-filter")?.addEventListener("input", renderSubjectStudentsList);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSubjectStudentsDrawer(); });
@@ -2924,6 +3043,38 @@ document.getElementById("refresh-btn-subjects")?.addEventListener("click", async
   await loadTeachersForAssignment(subjectAssignDepartment);
 });
 
+// Evaluations hang off the CLASS (subject), and the teacher is read from the
+// class — so changing or clearing a class's teacher after students have
+// already evaluated it moves those evaluations to the new teacher (or to
+// nobody). Count them so the admin can see that before confirming.
+async function submittedEvaluationsFor(ids) {
+  try {
+    const { count, error } = await supabase
+      .from("evaluation_tracking").select("id", { count: "exact", head: true }).in("subject_id", ids);
+    return error ? 0 : (count || 0);
+  } catch { return 0; }
+}
+function evalWarning(n) {
+  return n > 0
+    ? ` WARNING: ${n} student evaluation(s) were already submitted for ${n === 1 ? "this class" : "these classes"}; ` +
+      `they follow the class, so they will no longer belong to the current teacher.`
+    : "";
+}
+
+async function clearTeacherFrom(ids, label) {
+  const n = await submittedEvaluationsFor(ids);
+  const confirmed = await fpConfirm(
+    `Clear the teacher from ${label}?` + evalWarning(n),
+    { confirmLabel: "Clear", confirmStyle: "fp-btn-danger" }
+  );
+  if (!confirmed) return false;
+  const { error } = await supabase.from("subjects").update({ teacher_id: null }).in("id", ids);
+  if (error) { await fpAlert("Failed: " + error.message, "error"); return false; }
+  await fpAlert(`Cleared ${ids.length} course(s).`, "success");
+  await loadSubjectsForAssignment();
+  return true;
+}
+
 document.getElementById("subject-assign-btn")?.addEventListener("click", async () => {
   const teacherId = document.getElementById("subject-assign-teacher")?.value;
   if (!teacherId) { await fpAlert("Pick a teacher first.", "warning"); return; }
@@ -2932,8 +3083,12 @@ document.getElementById("subject-assign-btn")?.addEventListener("click", async (
   const teacherName = teachersForAssignment.find(t => t.id === teacherId)?.name || "this teacher";
   const ids = [...selectedSubjectIds];
 
+  // Only classes that already have a DIFFERENT teacher are being taken over.
+  const takenOver = allSubjectsForAssignment
+    .filter(x => ids.includes(x.id) && x.teacher_id && x.teacher_id !== teacherId).map(x => x.id);
+  const nEval = takenOver.length ? await submittedEvaluationsFor(takenOver) : 0;
   const confirmed = await fpConfirm(
-    `Assign ${ids.length} course(s) to ${teacherName}?`,
+    `Assign ${ids.length} course(s) to ${teacherName}?` + evalWarning(nEval),
     { confirmLabel: "Assign", confirmStyle: "fp-btn-primary" }
   );
   if (!confirmed) return;
@@ -2955,17 +3110,7 @@ document.getElementById("subject-unassign-btn")?.addEventListener("click", async
   if (selectedSubjectIds.size === 0) return;
   const ids = [...selectedSubjectIds];
 
-  const confirmed = await fpConfirm(
-    `Clear the teacher assignment from ${ids.length} course(s)?`,
-    { confirmLabel: "Clear", confirmStyle: "fp-btn-danger" }
-  );
-  if (!confirmed) return;
-
-  const { error } = await supabase.from("subjects").update({ teacher_id: null }).in("id", ids);
-  if (error) { await fpAlert("Failed: " + error.message, "error"); return; }
-
-  await fpAlert(`Cleared ${ids.length} course(s).`, "success");
-  await loadSubjectsForAssignment();
+  await clearTeacherFrom(ids, `${ids.length} course(s)`);
 });
 
 // ══════════════════════════════════════════════════════════════

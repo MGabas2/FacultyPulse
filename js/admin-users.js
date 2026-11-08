@@ -935,9 +935,110 @@ function openEditModal(userId) {
     document.getElementById("edit-is-executive").checked = u.is_executive === true;
 
   document.getElementById("edit-modal").classList.remove("hidden");
-
-
+  loadStudentCourses(isStudent ? u : null);
 }
+
+// ── Student courses (this semester) inside the Edit modal ──
+// Used to put a student in the right class, e.g. "ITD 305 (Multimedia Track)".
+// These changes are written immediately. Enrollment counts are not
+// maintained by the database, so every change re-counts the class.
+let editCoursesStudent  = null;
+let editCoursesSemester = null;
+let editCoursesTimer    = null;
+
+async function syncEnrolledCount(subjectId) {
+  const { count } = await supabase.from("student_subjects")
+    .select("id", { count: "exact", head: true }).eq("subject_id", subjectId);
+  if (typeof count === "number") await supabase.from("subjects").update({ enrolled_count: count }).eq("id", subjectId);
+}
+
+async function loadStudentCourses(student) {
+  const row = document.getElementById("edit-courses-row");
+  const list = document.getElementById("edit-courses-list");
+  editCoursesStudent = null;
+  if (!row || !list) return;
+  document.getElementById("edit-courses-search").value = "";
+  document.getElementById("edit-courses-results").innerHTML = "";
+  if (!student || !student.student_id) { row.style.display = "none"; return; }
+  row.style.display = "block";
+  list.innerHTML = `<span style="color:#6b7280;">Loading…</span>`;
+  const { data: sem } = await supabase.from("semesters").select("id, label, is_locked").eq("is_active", true).maybeSingle();
+  if (!sem) { list.innerHTML = `<span style="color:#6b7280;">No active semester.</span>`; return; }
+  editCoursesSemester = sem;
+  editCoursesStudent  = student;
+  document.getElementById("edit-courses-sem").textContent = `(${sem.label})`;
+  const { data, error } = await supabase.from("student_subjects")
+    .select("subject_id, subjects(id, name, sections(name), teacher:users(name))")
+    .eq("student_id", student.student_id).eq("semester_id", sem.id);
+  if (editCoursesStudent !== student) return;   // modal moved on to another user
+  if (error) { list.innerHTML = `<span style="color:#b91c1c;">Couldn't load courses.</span>`; return; }
+  const rows = (data || []).filter(r => r.subjects).sort((a, b) => a.subjects.name.localeCompare(b.subjects.name));
+  list.innerHTML = rows.length ? rows.map(r => `
+    <div style="display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px solid #f1f5f9;">
+      <div style="flex:1; min-width:0;"><b>${escHtml(r.subjects.name)}</b>
+        <span style="color:#6b7280; font-size:11px;"> · ${escHtml(r.subjects.sections?.name || "")} · ${escHtml(r.subjects.teacher?.name || "no teacher")}</span></div>
+      <button type="button" class="edit-course-remove" data-subject="${escHtml(r.subject_id)}" title="Remove this class" aria-label="Remove class" style="border:0; background:none; color:#b91c1c; cursor:pointer; font-size:14px;">✕</button>
+    </div>`).join("") : `<span style="color:#6b7280;">No classes this semester.</span>`;
+}
+
+document.getElementById("edit-courses-list")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".edit-course-remove");
+  const st = editCoursesStudent;
+  if (!btn || !st || !editCoursesSemester || editCoursesSemester.is_locked) return;
+  const subjectId = btn.dataset.subject;
+  let warn = "";
+  try {
+    const { count } = await supabase.from("evaluation_tracking")
+      .select("id", { count: "exact", head: true }).eq("subject_id", subjectId).eq("student_id", st.student_id);
+    if (count > 0) warn = " WARNING: this student already submitted an evaluation for this class. The evaluation stays, but they will no longer see the class.";
+  } catch { /* courtesy warning only */ }
+  const ok = await fpConfirm(`Remove this class from ${st.name || st.student_id}?` + warn,
+    { confirmLabel: "Remove", confirmStyle: "fp-btn-danger" });
+  if (!ok) return;
+  const { error } = await supabase.from("student_subjects").delete()
+    .eq("student_id", st.student_id).eq("subject_id", subjectId);
+  if (error) { await fpAlert("Failed to remove: " + error.message, "error"); return; }
+  await syncEnrolledCount(subjectId);
+  await loadStudentCourses(st);
+});
+
+async function searchClassesToAdd() {
+  const box = document.getElementById("edit-courses-results");
+  const st = editCoursesStudent, sem = editCoursesSemester;
+  const q = String(document.getElementById("edit-courses-search")?.value || "").replace(/[,()%*\\]/g, " ").trim().slice(0, 60);
+  if (!box || !st || !sem) return;
+  if (q.length < 2) { box.innerHTML = ""; return; }
+  const { data, error } = await supabase.from("subjects")
+    .select("id, name, enrolled_count, sections(name), teacher:users(name)")
+    .eq("semester_id", sem.id).ilike("name", `%${q}%`).order("name").limit(15);
+  if (editCoursesStudent !== st) return;
+  if (error) { box.innerHTML = `<span style="color:#b91c1c;">Search failed.</span>`; return; }
+  box.innerHTML = (data || []).length ? data.map(c => `
+    <div style="display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px solid #f1f5f9;">
+      <div style="flex:1; min-width:0;"><b>${escHtml(c.name)}</b>
+        <span style="color:#6b7280; font-size:11px;"> · ${escHtml(c.sections?.name || "")} · ${escHtml(c.teacher?.name || "no teacher")} · ${c.enrolled_count ?? 0} enrolled</span></div>
+      <button type="button" class="btn-secondary edit-course-add" data-subject="${escHtml(c.id)}" data-label="${escHtml(c.name + " (" + (c.sections?.name || "") + ")")}" style="font-size:12px; padding:3px 10px;">Add</button>
+    </div>`).join("") : `<span style="color:#6b7280;">No class matches.</span>`;
+}
+
+document.getElementById("edit-courses-search")?.addEventListener("input", () => {
+  clearTimeout(editCoursesTimer);
+  editCoursesTimer = setTimeout(searchClassesToAdd, 300);
+});
+
+document.getElementById("edit-courses-results")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".edit-course-add");
+  const st = editCoursesStudent, sem = editCoursesSemester;
+  if (!btn || !st || !sem || sem.is_locked) return;
+  const ok = await fpConfirm(`Add ${st.name || st.student_id} to ${btn.dataset.label}?`,
+    { confirmLabel: "Add", confirmStyle: "fp-btn-primary" });
+  if (!ok) return;
+  const { error } = await supabase.from("student_subjects")
+    .insert({ student_id: st.student_id, subject_id: btn.dataset.subject, semester_id: sem.id });
+  if (error && error.code !== "23505") { await fpAlert("Failed to add: " + error.message, "error"); return; }
+  await syncEnrolledCount(btn.dataset.subject);
+  await loadStudentCourses(st);
+});
 
 async function saveEdit() {
   if (!editTargetId) return;
@@ -1041,6 +1142,7 @@ async function saveEdit() {
 function closeEditModal() {
   document.getElementById("edit-modal").classList.add("hidden");
   editTargetId = null;
+  editCoursesStudent = null;
 }
 
 // ══════════════════════════════════════════════════════════════

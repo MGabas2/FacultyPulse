@@ -698,8 +698,12 @@
           </div>
           <button id="subject-students-close" type="button" class="btn-secondary" style="font-size:13px; padding:4px 10px;" aria-label="Close">✕</button>
         </div>
-        <div style="padding:10px 16px;">
-          <input type="text" id="subject-students-filter" placeholder="Find student…" autocomplete="off" style="width:100%; box-sizing:border-box;" />
+        <div style="padding:10px 16px 0;">
+          <input type="text" id="subject-students-filter" placeholder="Find in this class…" autocomplete="off" style="width:100%; box-sizing:border-box;" />
+        </div>
+        <div id="subject-students-add" style="padding:10px 16px; border-bottom:1px solid #e5e7eb;">
+          <input type="text" id="subject-students-add-input" placeholder="➕ Add a student (name or ID)…" autocomplete="off" style="width:100%; box-sizing:border-box;" />
+          <div id="subject-students-add-results" style="margin-top:6px; font-size:13px;"></div>
         </div>
         <div id="subject-students-list" style="flex:1; overflow:auto; padding:0 16px 16px; font-size:13px;"></div>
       </aside>
