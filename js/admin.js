@@ -4138,6 +4138,8 @@ function renderCourses() {
           <span style="min-width:90px;">${c.enrolled_count ?? 0} enrolled</span>
           <span style="min-width:180px; color:${c.teacher?.name ? "inherit" : "#d97706"};">${escHtml(c.teacher?.name || "Unassigned")}</span>
           <span style="color:#6b7280; flex:1; min-width:120px;">${c.title ? escHtml(c.title) : "<i>no title</i>"}</span>
+          <button type="button" class="btn-secondary course-export-btn" data-id="${c.id}" style="font-size:11px; padding:2px 8px;" title="Download this class's student list">Export students</button>
+          <button type="button" class="btn-secondary course-import-btn" data-id="${c.id}" style="font-size:11px; padding:2px 8px;" ${coursesCanEdit() ? "" : "disabled"} title="Add students from a file (nobody is removed)">Import students</button>
           <button type="button" class="btn-secondary course-empty-btn" data-id="${c.id}" style="font-size:11px; padding:2px 8px; color:#b45309;" ${coursesCanEdit() && (c.enrolled_count || 0) > 0 ? "" : "disabled"} title="Remove every student from this class">Empty class</button>
           <button type="button" class="btn-secondary course-delete-btn" data-id="${c.id}" style="font-size:11px; padding:2px 8px; color:#b91c1c;" ${coursesCanEdit() ? "" : "disabled"}>Delete empty class</button>
         </div>`).join("") + `</td></tr>`;
@@ -4173,6 +4175,12 @@ function renderCourses() {
       input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") save(ev); if (ev.key === "Escape") renderCourses(); });
     });
   });
+  tbody.querySelectorAll(".course-export-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => { e.stopPropagation(); exportClassStudents(btn.dataset.id); });
+  });
+  tbody.querySelectorAll(".course-import-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => { e.stopPropagation(); pickImportFile(btn.dataset.id); });
+  });
   tbody.querySelectorAll(".course-empty-btn").forEach(btn => {
     btn.addEventListener("click", (e) => { e.stopPropagation(); emptyClass(btn.dataset.id); });
   });
@@ -4190,6 +4198,97 @@ async function saveCourseTitle(group, raw) {
   if (error) { fpAlert("Could not save the title: " + error.message, "error"); return; }
   coursesRows.forEach(s => { if (ids.includes(s.id)) s.title = title; });
   renderCourses();
+}
+
+const STUDENT_ID_RE = /^\d{4}-\d{4}-[A-Z]{2}$/;
+
+function csvCell(v) { return '"' + String(v ?? "").replace(/"/g, '""') + '"'; }
+
+async function exportClassStudents(id) {
+  const s = coursesRows.find(x => x.id === id);
+  if (!s) return;
+  const { data, error } = await supabase.from("student_subjects")
+    .select("student_id").eq("subject_id", id).eq("semester_id", coursesSemester.id);
+  if (error) { fpAlert("Could not read the class list: " + error.message, "error"); return; }
+  const ids = (data || []).map(r => r.student_id);
+  if (!ids.length) { fpAlert("This class has no students to export.", "info"); return; }
+  const names = new Map();
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data: us } = await supabase.from("users").select("student_id, name").in("student_id", ids.slice(i, i + 100));
+    (us || []).forEach(u => names.set(u.student_id, u.name));
+  }
+  // Header names match what Import students reads, so an export can be re-imported into another class.
+  const csv = "Student ID,Name,Class,Section\n" + ids.sort().map(i =>
+    [i, names.get(i) || "", s.name, s.sections?.name || ""].map(csvCell).join(",")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = `students-${s.name.replace(/[^A-Za-z0-9]+/g, "_")}-${(s.sections?.name || "").replace(/[^A-Za-z0-9]+/g, "_")}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+function pickImportFile(id) {
+  if (!coursesCanEdit()) { fpAlert("Only the active, unlocked semester can be edited.", "error"); return; }
+  const input = document.createElement("input");
+  input.type = "file"; input.accept = ".csv,.xlsx";
+  input.addEventListener("change", async () => {
+    const file = input.files && input.files[0];
+    if (file) await importClassStudents(id, file);
+  });
+  input.click();
+}
+
+async function importClassStudents(id, file) {
+  const s = coursesRows.find(x => x.id === id);
+  if (!s) return;
+  if (file.size > 2 * 1024 * 1024) { fpAlert("That file is too large (limit 2 MB).", "error"); return; }
+  let ids;
+  try {
+    await window.fpLoadScript("../js/vendor/xlsx.full.min.js");
+    const wb = window.XLSX.read(await file.arrayBuffer(), { type: "array" });
+    const rows = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "" });
+    // Read the "Student ID" column if there is one, otherwise any cell that looks like a student ID.
+    const head = (rows[0] || []).map(h => String(h).trim().toLowerCase());
+    const col = head.findIndex(h => h === "student id" || h === "id no." || h === "id no" || h === "student_id");
+    const cells = col >= 0 ? rows.slice(1).map(r => r[col]) : rows.flat();
+    ids = [...new Set(cells.map(c => String(c ?? "").trim().toUpperCase()).filter(c => STUDENT_ID_RE.test(c)))];
+  } catch (err) { fpAlert("Could not read that file: " + err.message, "error"); return; }
+  if (!ids.length) { fpAlert("No student IDs (like 2026-3021-AB) were found in that file.", "error"); return; }
+  if (ids.length > 500) { fpAlert("That file has more than 500 students. Split it and try again.", "error"); return; }
+
+  const found = new Map();
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await supabase.from("users").select("student_id, name, role, is_active").in("student_id", ids.slice(i, i + 100));
+    if (error) { fpAlert("Could not check the students: " + error.message, "error"); return; }
+    (data || []).forEach(u => { if (u.role === "student") found.set(u.student_id, u); });
+  }
+  const { data: cur, error: cErr } = await supabase.from("student_subjects").select("student_id").eq("subject_id", id).eq("semester_id", coursesSemester.id);
+  if (cErr) { fpAlert("Could not read the class list: " + cErr.message, "error"); return; }
+  const already = new Set((cur || []).map(r => r.student_id));
+  const missing = ids.filter(i => !found.has(i));
+  const toAdd = ids.filter(i => found.has(i) && !already.has(i));
+  const inactive = toAdd.filter(i => found.get(i).is_active === false);
+  if (!toAdd.length) {
+    fpAlert(`Nothing to add. ${ids.length} ID(s) in the file: ${already.size ? ids.filter(i => already.has(i)).length : 0} already in the class, ${missing.length} not found.`, "info");
+    return;
+  }
+  const ok = await fpConfirm(
+    `Add ${toAdd.length} student(s) to "${s.name}" in ${s.sections?.name || "this section"}?\n` +
+    `${ids.length - toAdd.length - missing.length} already in the class, ${missing.length} not found${missing.length ? " (" + missing.slice(0, 5).join(", ") + (missing.length > 5 ? ", …" : "") + ")" : ""}` +
+    (inactive.length ? `, ${inactive.length} archived (they can't log in)` : "") +
+    `.\nNobody is removed, and nobody's other courses change.`,
+    { confirmLabel: `Add ${toAdd.length}` });
+  if (!ok) return;
+  let added = 0;
+  for (let i = 0; i < toAdd.length; i += 100) {
+    const batch = toAdd.slice(i, i + 100).map(sid => ({ student_id: sid, subject_id: id, semester_id: coursesSemester.id }));
+    const { error } = await supabase.from("student_subjects").upsert(batch, { onConflict: "student_id,subject_id,semester_id", ignoreDuplicates: true });
+    if (error) { fpAlert(`Stopped after ${added} student(s): ${error.message}`, "error"); break; }
+    added += batch.length;
+  }
+  const { count } = await supabase.from("student_subjects").select("id", { count: "exact", head: true }).eq("subject_id", id);
+  if (typeof count === "number") { await supabase.from("subjects").update({ enrolled_count: count }).eq("id", id); s.enrolled_count = count; }
+  renderCourses();
+  fpAlert(`Added ${added} student(s) to "${s.name}".`, "success");
 }
 
 async function emptyClass(id) {
@@ -4264,7 +4363,7 @@ document.getElementById("courses-add-btn")?.addEventListener("click", async () =
     name: code, title, section_id: sectionId, semester_id: coursesSemester.id, enrolled_count: 0,
   });
   btn.disabled = false;
-  if (error) { say(error.code === "23505" ? `"${code}" already exists in that section this semester.` : "Could not add: " + error.message, true); return; }
+  if (error) { say(error.code === "23505" ? `"${code}" already exists in that section this semester. To add a second class for the same course, make the name different — for example "${code} (Multimedia Track)".` : "Could not add: " + error.message, true); return; }
   say(`Added "${code}". Assign its teacher in Course Assignment.`, false);
   document.getElementById("courses-add-code").value = "";
   document.getElementById("courses-add-title").value = "";
