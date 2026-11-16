@@ -615,10 +615,13 @@ const MON_STYLES = `
 .mon-drawer-when { font-size: 11px; color: #64748b; margin-top: 3px; }
 .mon-table-wrap { overflow-x: auto; }
 .mon-table-wrap table { min-width: 720px; }
-.mon-viewswitch { display: inline-flex; gap: 4px; padding: 4px; background: #f1f5f9; border-radius: 8px; margin-bottom: 12px; }
+.mon-viewswitch { display: inline-flex; gap: 4px; padding: 4px; background: #f1f5f9; border-radius: 8px; }
+.mon-tablebar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+#mon-download-all, #mon-drawer-download { font-size: 12.5px; padding: 6px 12px; white-space: nowrap; }
+#mon-drawer-download { flex: 1 1 100%; }
 #mon-viewswitch button.mon-view-btn, #mon-viewswitch button.mon-view-btn:hover { border: none; background: transparent; color: #64748b; font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 6px; cursor: pointer; box-shadow: none; transform: none; filter: none; letter-spacing: normal; text-transform: none; }
 #mon-viewswitch button.mon-view-btn.active, #mon-viewswitch button.mon-view-btn.active:hover { background: #fff; color: #671408; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
-#mon-drawer-controls { display: flex; gap: 8px; padding: 10px 16px; border-bottom: 1px solid #e5e7eb; }
+#mon-drawer-controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-bottom: 1px solid #e5e7eb; }
 #mon-drawer-controls:empty { display: none; }
 #mon-drawer-controls select { flex: 1; min-width: 0; width: auto; max-width: none; font-size: 12.5px; }
 .mon-drawer-divider { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #64748b; padding: 14px 0 4px; }
@@ -673,7 +676,18 @@ function ensureMonitoringMarkup() {
       <button type="button" class="mon-view-btn active" data-view="faculty">By Faculty</button>
       <button type="button" class="mon-view-btn" data-view="student">By Student</button>`;
     const wrapEl = table.parentElement;
-    wrapEl.parentElement.insertBefore(sw, wrapEl);
+    const bar = document.createElement("div");
+    bar.className = "mon-tablebar";
+    bar.appendChild(sw);
+    const dl = document.createElement("button");
+    dl.type = "button";
+    dl.className = "btn-secondary";
+    dl.id = "mon-download-all";
+    dl.textContent = "⬇ Download not-submitted list";
+    dl.title = "Everyone who has not submitted, for the filters currently applied";
+    dl.addEventListener("click", () => downloadNotSubmitted(applyStructuralFilters(rows), "all-filtered"));
+    bar.appendChild(dl);
+    wrapEl.parentElement.insertBefore(bar, wrapEl);
     sw.addEventListener("click", (e) => {
       const btn = e.target.closest(".mon-view-btn");
       if (!btn || btn.dataset.view === monView) return;
@@ -765,9 +779,17 @@ function renderFacultyDrawer() {
         <option value="submitted">Submitted</option>
         <option value="pending">Not yet submitted</option>
         <option value="never">Never logged in</option>
-      </select>`;
+      </select>
+      <button type="button" class="btn-secondary" id="mon-drawer-download"
+        title="Download the students who have not submitted (for the course picked above)">⬇ Download not-submitted list</button>`;
     controls.dataset.key = drawerKey;
     controls.querySelectorAll("select").forEach(el => el.addEventListener("change", renderFacultyDrawer));
+    controls.querySelector("#mon-drawer-download").addEventListener("click", () => {
+      const course = document.getElementById("mon-drawer-course").value;
+      const all    = rows.filter(r => facultyKeyOf(r) === drawerKey && (!course || r.subjectId === course));
+      const name   = drawerKey === NO_TEACHER ? "No teacher assigned" : (all[0]?.teacherName || "faculty");
+      downloadNotSubmitted(all, name);
+    });
   }
 
   const fCourse = document.getElementById("mon-drawer-course").value;
@@ -825,6 +847,48 @@ function renderFacultyDrawer() {
     </div>`;
   });
   list.innerHTML = html;
+}
+
+// ── Download: students who have NOT submitted ────────────────────
+// A CSV that opens in Excel. One line per student × course still pending.
+function csvCell(v) {
+  let t = String(v ?? "");
+  // Stop Excel treating a cell as a formula (CSV injection).
+  if (/^[=+\-@\t\r]/.test(t)) t = "'" + t;
+  return `"${t.replace(/"/g, '""')}"`;
+}
+
+function downloadNotSubmitted(list, label) {
+  const pending = list.filter(r => !r.submitted).sort((a, b) =>
+    String(a.subjectName).localeCompare(String(b.subjectName)) ||
+    String(a.section).localeCompare(String(b.section)) ||
+    String(a.studentName || a.studentId).localeCompare(String(b.studentName || b.studentId)));
+
+  if (pending.length === 0) {
+    alert("Everyone in this list has already submitted — nothing to download.");
+    return;
+  }
+
+  const lines = [["No.", "Student ID", "Student Name", "Section", "Course", "Faculty", "Status", "Last Login"]
+    .map(csvCell).join(",")];
+  pending.forEach((r, i) => {
+    lines.push([
+      i + 1, r.studentId, r.studentName || "", r.section, r.subjectName, r.teacherName,
+      r.lastLogin ? "Not yet submitted" : "Never logged in",
+      r.lastLogin ? new Date(r.lastLogin).toLocaleString("en-PH") : "",
+    ].map(csvCell).join(","));
+  });
+
+  // BOM so Excel reads ñ and other accented letters correctly.
+  const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const safe = String(label).replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "list";
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `not-submitted_${safe}_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 function renderStudentDrawer() {
