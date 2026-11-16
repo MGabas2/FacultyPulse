@@ -41,7 +41,7 @@ const MESSAGES = {
   not_verified: "Your login could not be verified. Please log out and log in again.",
   closed:       "The evaluation period is closed, so requests can't be sent right now.",
   not_enrolled: "That course is no longer on your list. Close this and refresh the page.",
-  missing:      "Please fill in the correct faculty member, subject and section.",
+  missing:      "Please fill in the correct faculty member, course and Program/Major/Year.",
   too_long:     "One of your answers is too long. Please shorten it.",
   duplicate:    "You already have a pending request for this course. The QA Office will review it.",
   limit:        "You have reached the maximum number of requests for this semester. Please see the QA Office.",
@@ -78,7 +78,7 @@ function init() {
   card.innerHTML = `
     <div class="rr-card-text">
       <p class="rr-card-title">Wrong teacher or course on your list?</p>
-      <p class="rr-card-sub">If a course above shows a teacher, subject or section that isn't yours, send an
+      <p class="rr-card-sub">If a course above shows a teacher, course or program/year that isn't yours, send an
         Evaluation Reassignment Request and the QA Office will correct it.</p>
     </div>
     <button type="button" class="btn-secondary" id="rr-open-btn">Request reassignment</button>`;
@@ -113,7 +113,7 @@ function init() {
             <div class="rr-readonly" id="rr-wrong-teacher">—</div>
           </div>
           <div class="rr-row">
-            <label class="field-label">Subject Evaluated</label>
+            <label class="field-label">Course Evaluated</label>
             <div class="rr-readonly" id="rr-wrong-subject">—</div>
           </div>
         </fieldset>
@@ -125,18 +125,24 @@ function init() {
             <input type="text" id="rr-teacher" class="field-input" maxlength="120" autocomplete="off" placeholder="Full name of your actual teacher" />
           </div>
           <div class="rr-row">
-            <label class="field-label" for="rr-subject">Correct Subject</label>
+            <label class="field-label" for="rr-subject">Correct Course</label>
             <input type="text" id="rr-subject" class="field-input" maxlength="160" autocomplete="off" placeholder="e.g. Readings in Philippine History" />
           </div>
           <div class="rr-row">
-            <label class="field-label" for="rr-code">Subject Code <span style="font-weight:400; color:#94a3b8;">(if applicable)</span></label>
+            <label class="field-label" for="rr-code">Course Code <span style="font-weight:400; color:#94a3b8;">(if applicable)</span></label>
             <input type="text" id="rr-code" class="field-input" maxlength="40" autocomplete="off" placeholder="e.g. GE 02" />
           </div>
           <div class="rr-row">
-            <label class="field-label" for="rr-section">Section</label>
-            <input type="text" id="rr-section" class="field-input" maxlength="80" autocomplete="off" placeholder="e.g. BSIT 3-A" />
+            <label class="field-label" for="rr-section">Program/Major/Year</label>
+            <input type="text" id="rr-section" class="field-input" maxlength="80" autocomplete="off" placeholder="e.g. BSIT / Automotive / 3rd Year" />
           </div>
         </fieldset>
+
+        <div class="rr-row">
+          <label class="field-label" for="rr-info">Any Additional Info <span style="font-weight:400; color:#94a3b8;">(optional)</span></label>
+          <textarea id="rr-info" class="field-input" maxlength="500" rows="3" style="resize:vertical;"
+            placeholder="Anything else the QA Office should know"></textarea>
+        </div>
       </div>
 
       <p id="rr-error" class="error" role="alert"></p>
@@ -171,7 +177,7 @@ async function openModal() {
   $("rr-form").style.display = "";
   $("rr-submit-btn").style.display = "";
   $("rr-submit-btn").disabled = true;
-  ["rr-teacher", "rr-subject", "rr-code", "rr-section"].forEach(id => { $(id).value = ""; });
+  ["rr-teacher", "rr-subject", "rr-code", "rr-section", "rr-info"].forEach(id => { $(id).value = ""; });
   $("rr-wrong").innerHTML = `<option value="">Loading…</option>`;
   onWrongChange();
   $("rr-modal").classList.remove("hidden");
@@ -237,6 +243,7 @@ async function submitRequest() {
   const subject = $("rr-subject").value.trim();
   const code    = $("rr-code").value.trim();
   const section = $("rr-section").value.trim();
+  const info    = $("rr-info").value.trim();
 
   if (!wrongId) { setError("Choose which course on your list is wrong."); return; }
   if (!teacher || !subject || !section) { setError(MESSAGES.missing); return; }
@@ -248,6 +255,7 @@ async function submitRequest() {
       p_user_id: userId, p_subject_id: wrongId, p_semester_id: semesterId,
       p_correct_teacher: teacher, p_correct_subject: subject,
       p_correct_subject_code: code, p_correct_section: section,
+      p_additional_info: info,
     });
     if (error) throw error;
     if (data?.status !== "ok") { setError(MESSAGES[data?.status] || "The request could not be sent. Please try again."); return; }

@@ -638,6 +638,8 @@ const MON_STYLES = `
 .mon-req-line span { flex: none; width: 150px; color: #64748b; font-size: 12px; }
 .mon-req-line b { font-weight: 600; overflow-wrap: anywhere; }
 .mon-req-flag { background: #fee2e2; color: #991b1b; border-radius: 999px; padding: 1px 8px; font-size: 10px; letter-spacing: 0; text-transform: none; }
+.mon-req-info { margin-top: 10px; background: #f8fafc; border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #334155; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mon-req-info span { display: block; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #64748b; margin-bottom: 4px; }
 .mon-req-actions { display: flex; gap: 8px; margin-top: 12px; }
 .mon-req-actions button { font-size: 12px; padding: 5px 12px; }
 .mon-drawer-empty { color: #94a3b8; font-size: 13px; padding: 16px 0; }
@@ -1155,7 +1157,7 @@ async function loadRequests(semesterId) {
   try {
     reassignRequests = await fetchAllPages(() =>
       supabase.from("evaluation_reassignment_requests")
-        .select("id, student_id, student_name, wrong_subject_label, wrong_teacher_name, wrong_section_name, already_submitted, correct_teacher, correct_subject, correct_subject_code, correct_section, status, created_at, resolved_at")
+        .select("id, student_id, student_name, wrong_subject_label, wrong_teacher_name, wrong_section_name, already_submitted, correct_teacher, correct_subject, correct_subject_code, correct_section, additional_info, status, created_at, resolved_at")
         .eq("semester_id", semesterId)
         .order("created_at", { ascending: true })
     );
@@ -1210,17 +1212,18 @@ function renderRequests() {
         <div class="mon-req-col wrong">
           <h5>Incorrect evaluation details${r.already_submitted ? ` <span class="mon-req-flag">already submitted</span>` : ""}</h5>
           ${line("Faculty member evaluated", r.wrong_teacher_name)}
-          ${line("Subject evaluated", r.wrong_subject_label)}
-          ${line("Section", r.wrong_section_name)}
+          ${line("Course evaluated", r.wrong_subject_label)}
+          ${line("Program/Major/Year", r.wrong_section_name)}
         </div>
         <div class="mon-req-col right">
           <h5>Correct information</h5>
           ${line("Correct faculty member", r.correct_teacher)}
-          ${line("Correct subject", r.correct_subject)}
-          ${line("Subject code", r.correct_subject_code)}
-          ${line("Section", r.correct_section)}
+          ${line("Correct course", r.correct_subject)}
+          ${line("Course code", r.correct_subject_code)}
+          ${line("Program/Major/Year", r.correct_section)}
         </div>
       </div>
+      ${r.additional_info ? `<div class="mon-req-info"><span>Additional info</span>${escapeHtml(r.additional_info)}</div>` : ""}
       <div class="mon-req-actions">
         ${r.status === "pending"
           ? `<button type="button" class="btn-secondary" data-id="${escapeHtml(r.id)}" data-status="resolved">✓ Mark resolved</button>
