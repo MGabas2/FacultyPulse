@@ -72,7 +72,7 @@ async function loadMonitoring() {
     // 2. All students with their section + last login
     students = await fetchAllPages(() =>
       supabase.from("users")
-        .select("id, student_id, section_id, last_login, sections(name, department)")
+        .select("id, student_id, name, section_id, last_login, sections(name, department)")
         .eq("role", "student")
     );
 
@@ -170,6 +170,7 @@ async function loadMonitoring() {
 
     rows.push({
       studentId:   en.student_id,
+      studentName: (student.name || "").trim(),
       section:     student.sections?.name || "—",
       sectionId:   student.section_id,
       department:  student.sections?.department || "—",
@@ -355,6 +356,7 @@ function applyStructuralFilters(list) {
 
   return list.filter(r => {
     const matchSearch  = !search        || r.studentId.toLowerCase().includes(search)
+      || (r.studentName || "").toLowerCase().includes(search)
       || (monView === "faculty" && (r.teacherName || "").toLowerCase().includes(search));
     const matchSection = !filterSection || r.sectionId === filterSection;
     const matchFaculty = !filterFaculty || r.teacherId === filterFaculty;
@@ -375,7 +377,7 @@ function groupByStudent(list) {
   list.forEach(r => {
     let g = map.get(r.studentId);
     if (!g) {
-      g = { key: r.studentId, studentId: r.studentId, section: r.section, lastLogin: r.lastLogin,
+      g = { key: r.studentId, studentId: r.studentId, studentName: r.studentName, section: r.section, lastLogin: r.lastLogin,
             total: 0, done: 0, lastSubmittedAt: null };
       map.set(r.studentId, g);
     }
@@ -443,7 +445,7 @@ const VIEW_HEAD = {
       <th>Last Submitted</th>
       <th style="width:74px; text-align:center;">Students</th>`,
   student: `
-      <th>Student ID</th>
+      <th>Student</th>
       <th>Section</th>
       <th>Courses Submitted</th>
       <th>Status</th>
@@ -451,6 +453,13 @@ const VIEW_HEAD = {
       <th>Last Submitted</th>
       <th style="width:74px; text-align:center;">Courses</th>`,
 };
+
+// Name on top, Student ID underneath (ID alone when no name is on file).
+function studentCell(name, id) {
+  return name
+    ? `<b>${escapeHtml(name)}</b><div class="mon-sub-id">${escapeHtml(id)}</div>`
+    : `<b>${escapeHtml(id)}</b>`;
+}
 
 function progressCell(done, total) {
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -495,6 +504,7 @@ function renderTable() {
   } else {
     groups.sort((a, b) =>
       String(a.section).localeCompare(String(b.section)) ||
+      String(a.studentName || "").localeCompare(String(b.studentName || "")) ||
       String(a.studentId).localeCompare(String(b.studentId)));
   }
 
@@ -539,7 +549,7 @@ function renderTable() {
     }
     return `
       <tr class="mon-group-row" data-key="${key}" tabindex="0" title="Show this student's courses">
-        <td><b>${key}</b></td>
+        <td>${studentCell(g.studentName, g.studentId)}</td>
         <td>${escapeHtml(g.section)}</td>
         <td>${progressCell(g.done, g.total)}</td>
         <td>${STATE_BADGE[studentState(g)]}</td>
@@ -612,6 +622,7 @@ const MON_STYLES = `
 #mon-drawer-controls select { flex: 1; min-width: 0; width: auto; max-width: none; font-size: 12.5px; }
 .mon-drawer-divider { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #64748b; padding: 14px 0 4px; }
 .mon-drawer-rank { display: inline-block; min-width: 24px; color: #94a3b8; font-weight: 500; font-variant-numeric: tabular-nums; }
+.mon-sub-id { font-size: 12px; color: #94a3b8; font-variant-numeric: tabular-nums; }
 .mon-drawer-empty { color: #94a3b8; font-size: 13px; padding: 16px 0; }
 `;
 
@@ -703,8 +714,8 @@ function syncStatusOptions() {
 
   const searchEl = document.getElementById("mon-search-input");
   if (searchEl) searchEl.placeholder = monView === "faculty"
-    ? "🔍 Search faculty or Student ID..."
-    : "🔍 Search Student ID...";
+    ? "🔍 Search faculty, student name or ID..."
+    : "🔍 Search student name or ID...";
 }
 ensureMonitoringMarkup();
 
@@ -760,6 +771,7 @@ function renderFacultyDrawer() {
   }).sort((a, b) =>
     bucket(a) - bucket(b) ||
     (bucket(a) === 0 ? String(a.submittedAt || "").localeCompare(String(b.submittedAt || "")) : 0) ||
+    String(a.studentName || a.studentId).localeCompare(String(b.studentName || b.studentId)) ||
     String(a.studentId).localeCompare(String(b.studentId)) ||
     String(a.subjectName).localeCompare(String(b.subjectName)));
 
@@ -787,8 +799,8 @@ function renderFacultyDrawer() {
     html += `
     <div class="mon-drawer-item">
       <div class="mon-drawer-course">
-        <div class="mon-drawer-name">${k === 0 ? `<span class="mon-drawer-rank">${++rank}.</span>` : ""}${escapeHtml(r.studentId)}</div>
-        <div class="mon-drawer-teacher">${escapeHtml(r.subjectName)} · ${escapeHtml(r.section)}</div>
+        <div class="mon-drawer-name">${k === 0 ? `<span class="mon-drawer-rank">${++rank}.</span>` : ""}${escapeHtml(r.studentName || r.studentId)}</div>
+        <div class="mon-drawer-teacher">${r.studentName ? escapeHtml(r.studentId) + " · " : ""}${escapeHtml(r.subjectName)} · ${escapeHtml(r.section)}</div>
       </div>
       <div class="mon-drawer-status">${right}</div>
     </div>`;
@@ -805,9 +817,9 @@ function renderStudentDrawer() {
   delete controls.dataset.key;
 
   const done = mine.filter(r => r.submitted).length;
-  document.getElementById("mon-drawer-title").textContent = drawerKey;
+  document.getElementById("mon-drawer-title").textContent = mine[0].studentName || drawerKey;
   document.getElementById("mon-drawer-sub").textContent =
-    `${mine[0].section} · ${done} of ${mine.length} submitted · last login ${timeAgo(mine[0].lastLogin)}`;
+    `${mine[0].studentName ? drawerKey + " · " : ""}${mine[0].section} · ${done} of ${mine.length} submitted · last login ${timeAgo(mine[0].lastLogin)}`;
 
   // Pending first — that's what QA is chasing — then by course name.
   mine.sort((a, b) => (a.submitted - b.submitted) ||
