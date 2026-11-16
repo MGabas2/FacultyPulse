@@ -706,24 +706,20 @@ async function loadSubjects(semesterId) {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  LOAD SUPERVISOR REMARKS + SEF RATING
+//  LOAD SUPERVISOR SEF RATING
 // ══════════════════════════════════════════════════════════════
 async function loadSupervisorRemarks(semesterId) {
-  // Reset both cards first — switching to a semester with no supervisor
-  // remarks must not leave the PREVIOUS semester's SEF score/remarks on
-  // screen. This only mattered once semester-switching existed; before
-  // that the page loaded once per session and these started hidden.
-  const sefCardReset     = document.getElementById("sef-card");
-  const remarksCardReset = document.getElementById("remarks-card");
-  if (sefCardReset)     sefCardReset.style.display     = "none";
-  if (remarksCardReset) remarksCardReset.style.display = "none";
+  // Reset the card first — switching to a semester with no supervisor
+  // evaluation must not leave the PREVIOUS semester's SEF score on screen.
+  const sefCardReset = document.getElementById("sef-card");
+  if (sefCardReset) sefCardReset.style.display = "none";
 
   // ALL rows, not just the latest — 2+ assigned supervisors each submit
   // their own row, and the rating shown here is their AVERAGE, not
   // whichever one happened to submit most recently.
   const { data: remarksRows } = await supabase
     .from("supervisor_remarks")
-    .select("sef_score, remarks, submitted_at")
+    .select("sef_score, submitted_at")
     .eq("teacher_id", userId)
     .eq("semester_id", semesterId)
     .order("submitted_at", { ascending: false });
@@ -744,18 +740,6 @@ async function loadSupervisorRemarks(semesterId) {
     const sefLb = document.getElementById("sef-label");
     if (sefEl) { sefEl.textContent = avgScore.toFixed(2); sefEl.style.color = getRatingColor(avgScore); }
     if (sefLb)   sefLb.textContent = getRatingLabel(avgScore) + (multipleSupervisors ? ` (avg. of ${scoredRows.length} supervisors)` : "");
-  }
-
-  // Remarks card — concatenated when more than one supervisor submitted.
-  const remarksText = remarksRows
-    .filter(r => r.remarks)
-    .map(r => multipleSupervisors ? `• ${r.remarks}` : r.remarks)
-    .join("\n");
-  if (remarksText) {
-    const remarksCard = document.getElementById("remarks-card");
-    const remarksBox  = document.getElementById("supervisor-remarks-box");
-    if (remarksCard) remarksCard.style.display = "block";
-    if (remarksBox)  remarksBox.textContent = remarksText;
   }
 }
 

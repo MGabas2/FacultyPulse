@@ -549,7 +549,7 @@ async function viewReport(teacherId, teacherName) {
       // assigned supervisors (supervisor_assignments) each submitting
       // their own row; averaged below instead of showing whichever one
       // happened to be submitted most recently.
-      .select("sef_score, comments, remarks, submitted_at, supervisor_id")
+      .select("sef_score, comments, submitted_at, supervisor_id")
       .eq("teacher_id", teacherId)
       .eq("semester_id", semester.id)
       .order("submitted_at", { ascending: false }),
@@ -577,7 +577,7 @@ async function viewReport(teacherId, teacherName) {
   // With 2+ assigned supervisors, each one submits their own
   // supervisor_remarks row — the faculty's SEF rating is the AVERAGE of
   // every submitted score, not whichever row happened to be most recent.
-  // Comments/remarks from multiple supervisors are concatenated (labeled
+  // Comments from multiple supervisors are concatenated (labeled
   // when there's more than one) rather than only showing the latest.
   const scoredRows = (supRemarksRows || []).filter(r => r.sef_score != null);
   const sefRating  = scoredRows.length > 0
@@ -587,10 +587,6 @@ async function viewReport(teacherId, teacherName) {
   const supComments   = (supRemarksRows || [])
     .filter(r => r.comments)
     .map(r => multipleSupervisors ? `• ${r.comments}` : r.comments)
-    .join("\n");
-  const supRemarksTxt = (supRemarksRows || [])
-    .filter(r => r.remarks)
-    .map(r => multipleSupervisors ? `• ${r.remarks}` : r.remarks)
     .join("\n");
 
   // rawScoresBySubject now comes straight from computeWeightedSET(), which
@@ -751,14 +747,6 @@ async function viewReport(teacherId, teacherName) {
                   ${supComments ? escHtml(supComments) : "<em style='color:#94a3b8;'>No comments submitted.</em>"}
                 </td>
               </tr>
-              <tr>
-                <td style="border:1px solid #cbd5e1; padding:8px 12px; background:#f8fafc;
-                  font-weight:600; color:#334155; vertical-align:top;">Supervisor Remarks</td>
-                <td style="border:1px solid #cbd5e1; padding:8px 12px; color:#334155;
-                  font-size:11px; line-height:1.6; white-space:pre-line;">
-                  ${supRemarksTxt ? escHtml(supRemarksTxt) : "<em style='color:#94a3b8;'>No remarks submitted.</em>"}
-                </td>
-              </tr>
             </table>
             <p style="font-size:10px; color:#94a3b8; margin:0;">
               Note: Per-question SEF scores are not stored individually — only the computed overall SEF rating is recorded.
@@ -788,7 +776,7 @@ async function viewReport(teacherId, teacherName) {
           </div>`;
         if (s === 'supervisor_done')
           return `<div class="no-print" style="background:#eff6ff; border:1px solid #93c5fd; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#1e40af;">
-            📋 <b>SUPERVISOR REVIEWED</b> — Supervisor has submitted remarks. Ready for your final release.
+            📋 <b>SUPERVISOR REVIEWED</b> — Supervisor has submitted the SEF. Ready for your final release.
           </div>`;
         return `<div class="no-print" style="background:#faf5ff; border:1px solid #c4b5fd; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:#6d28d9;">
           ⏳ <b>AWAITING SUPERVISOR SEF</b> — Waiting for the supervisor's evaluation. Faculty cannot see this report yet.
@@ -1427,7 +1415,7 @@ async function finalRelease() {
 
   const confirmed = await fpConfirm(
     `Final Release: publish this report to ${teacherName}?\n\n` +
-    `• Faculty will be able to view their scores and supervisor remarks\n` +
+    `• Faculty will be able to view their scores and SEF rating\n` +
     `• This action cannot be undone`,
     { confirmLabel: "Release to Faculty", confirmStyle: "fp-btn-success" }
   );
@@ -1470,19 +1458,19 @@ async function bulkFinalRelease() {
   if (!semester) { await fpAlert("No active semester.", "warning"); return; }
   const semesterId = semester.id;
 
-  // Eligible = supervisor has submitted remarks (stage "supervisor_done")
+  // Eligible = supervisor has submitted the SEF (stage "supervisor_done")
   // but not yet released — same gate as the single Release button.
   const targets = allRanked.filter(t => t.stage === "supervisor_done");
 
   if (targets.length === 0) {
-    await fpAlert("No faculty reports are ready for release — a report only qualifies after its supervisor has submitted remarks.", "info");
+    await fpAlert("No faculty reports are ready for release — a report only qualifies after its supervisor has submitted the SEF.", "info");
     return;
   }
 
   const confirmed = await fpConfirm(
     `Release ${targets.length} report(s) to faculty?\n\n` +
     `This publishes every report whose supervisor has already submitted ` +
-    `remarks. Faculty will immediately be able to view their results.\n\n` +
+    `the SEF. Faculty will immediately be able to view their results.\n\n` +
     `This action cannot be undone.`,
     { confirmLabel: `Release ${targets.length}`, confirmStyle: "fp-btn-success" }
   );

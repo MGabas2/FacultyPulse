@@ -556,7 +556,7 @@ async function openFacultyReport(teacherId, teacherName) {
     computeWeightedSET(teacherId, semesterId),
     // ALL rows — 2+ assigned supervisors each submit their own; averaged
     // below instead of only showing the most recently submitted one.
-    supabase.from("supervisor_remarks").select("sef_score, comments, remarks")
+    supabase.from("supervisor_remarks").select("sef_score, comments")
       .eq("teacher_id", teacherId).eq("semester_id", semesterId)
       .order("submitted_at", { ascending: false }),
     supabase.from("fedaf").select("areas_improvement, proposed_activities, action_plan, supervisor_signed")
@@ -581,7 +581,6 @@ async function openFacultyReport(teacherId, teacherName) {
   // one supervisor's text.
   const supRemarks = {
     comments: (supRemarksRows || []).filter(r => r.comments).map(r => multipleSupervisors ? `• ${r.comments}` : r.comments).join("\n"),
-    remarks:  (supRemarksRows || []).filter(r => r.remarks).map(r => multipleSupervisors ? `• ${r.remarks}` : r.remarks).join("\n"),
   };
 
   const subjectIds = (result.subjects || []).map(s => s.id);

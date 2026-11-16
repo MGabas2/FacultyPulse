@@ -432,7 +432,7 @@ async function openReview(teacherId, teacherName, isDone, academicRank, departme
     // filter at all, so whichever submission existed showed for everyone).
     const { data: existing } = await supabase
       .from("supervisor_remarks")
-      .select("comments, remarks, sef_score")
+      .select("comments, sef_score")
       .eq("teacher_id", teacherId)
       .eq("semester_id", activeSemester.id)
       .eq("supervisor_id", supervisorId)
@@ -447,14 +447,11 @@ async function openReview(teacherId, teacherName, isDone, academicRank, departme
         : "Not recorded";
     document.getElementById("submitted-comments").textContent =
       existing?.comments || "(no comments recorded)";
-    document.getElementById("submitted-remarks").textContent  =
-      existing?.remarks  || "(no remarks recorded)";
   } else {
     // Build SEF question table (desktop) + mobile cards
     buildSEFTable();
     buildSEFMobileCards();
     initCommentRows(""); // start with 3 blank rows
-    document.getElementById("input-remarks").value = "";
   }
 
   document.getElementById("review-modal").classList.remove("hidden");
@@ -564,11 +561,10 @@ function onSEFChange() {
 window.onSEFChange = onSEFChange;
 
 // ══════════════════════════════════════════════════════════════
-//  SUBMIT SEF + REMARKS
+//  SUBMIT SEF
 // ══════════════════════════════════════════════════════════════
 async function submitReview() {
   const comments = getCommentsFromRows();
-  const remarks  = document.getElementById("input-remarks").value.trim();
   const errorEl  = document.getElementById("review-error");
   const btn      = document.getElementById("submit-review-btn");
 
@@ -592,8 +588,6 @@ async function submitReview() {
     return;
   }
 
-  if (!remarks) { errorEl.textContent = "Remarks are required."; return; }
-
   const sefScore = computeSEFFromInputs();
 
   btn.textContent = "Submitting...";
@@ -608,7 +602,6 @@ async function submitReview() {
         semester_id:   activeSemester.id,
         supervisor_id: supervisorId,
         comments,
-        remarks,
         sef_score:     sefScore,
       });
 
@@ -637,7 +630,7 @@ async function submitReview() {
     errorEl.textContent = "Unexpected error: " + err.message;
     console.error(err);
   } finally {
-    btn.textContent = "✅ Submit SEF & Remarks";
+    btn.textContent = "✅ Submit SEF";
     btn.disabled    = false;
   }
 }

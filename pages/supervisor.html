@@ -104,13 +104,9 @@
           <label>SEF Rating Submitted</label>
           <div class="submitted-box" id="submitted-sef-score">—</div>
         </div>
-        <div class="form-group" style="margin-bottom:10px;">
+        <div class="form-group" style="margin-bottom:20px;">
           <label>Comments Submitted</label>
           <div class="submitted-box" id="submitted-comments">—</div>
-        </div>
-        <div class="form-group" style="margin-bottom:20px;">
-          <label>Remarks Submitted</label>
-          <div class="submitted-box" id="submitted-remarks">—</div>
         </div>
         <button class="btn-secondary" id="close-submitted-btn" style="width:100%;">Close</button>
       </div>
@@ -152,7 +148,7 @@
           <span class="score" id="sef-live-score">—</span>
         </div>
 
-        <!-- Comments & Remarks -->
+        <!-- Comments -->
         <div class="form-group" style="margin-bottom:14px;">
           <label>Other Comments and Suggestions
             <span style="font-weight:normal; color:var(--mist);">(Optional — appears in IFER Section D)</span>
@@ -169,15 +165,10 @@
           </div>
         </div>
 
-        <div class="form-group" style="margin-bottom:20px;">
-          <label>Remarks <span style="font-weight:normal; color:var(--mist);">(commendation, improvement needed, etc.)</span></label>
-          <textarea id="input-remarks" placeholder="Enter your overall remarks and recommended actions..."></textarea>
-        </div>
-
         <p id="review-error" class="error" style="margin:0 0 10px;"></p>
 
         <div style="display:flex; gap:10px;">
-          <button id="submit-review-btn" style="flex:1;">✅ Submit SEF &amp; Remarks</button>
+          <button id="submit-review-btn" style="flex:1;">✅ Submit SEF</button>
           <button class="btn-secondary" id="cancel-review-btn">Cancel</button>
         </div>
       </div>
