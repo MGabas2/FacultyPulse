@@ -190,7 +190,7 @@ async function loadMonitoring() {
   renderTable();
   renderSummary();
   renderComments();
-  renderStudentDrawer();   // keep an open drawer in step with a refresh
+  renderMonDrawer();       // keep an open drawer in step with a refresh
 }
 
 // ── Populate section + subject filters ──
@@ -354,7 +354,8 @@ function applyStructuralFilters(list) {
   const filterProgram = document.getElementById("filter-program")?.value || "";
 
   return list.filter(r => {
-    const matchSearch  = !search        || r.studentId.toLowerCase().includes(search);
+    const matchSearch  = !search        || r.studentId.toLowerCase().includes(search)
+      || (monView === "faculty" && (r.teacherName || "").toLowerCase().includes(search));
     const matchSection = !filterSection || r.sectionId === filterSection;
     const matchFaculty = !filterFaculty || r.teacherId === filterFaculty;
     const matchSubject = !filterSubject || r.subjectId === filterSubject;
@@ -363,35 +364,65 @@ function applyStructuralFilters(list) {
   });
 }
 
-// One entry per STUDENT (not per course). `list` is the already-filtered
-// set of student × course rows; each student's courses are folded into a
-// done/total count so the table stays one line per student. The full
-// course list lives in the side drawer (openStudentDrawer).
+// ── Grouping ─────────────────────────────────────────────────────
+// `list` is the already-filtered set of student × course rows. The table
+// shows ONE line per faculty (default) or per student; the per-course /
+// per-student detail lives in the side drawer.
+let monView = "faculty";   // "faculty" | "student"
+
 function groupByStudent(list) {
   const map = new Map();
   list.forEach(r => {
     let g = map.get(r.studentId);
     if (!g) {
-      g = { studentId: r.studentId, section: r.section, lastLogin: r.lastLogin,
+      g = { key: r.studentId, studentId: r.studentId, section: r.section, lastLogin: r.lastLogin,
             total: 0, done: 0, lastSubmittedAt: null };
       map.set(r.studentId, g);
     }
     g.total++;
     if (r.submitted) {
       g.done++;
-      if (r.submittedAt && (!g.lastSubmittedAt || r.submittedAt > g.lastSubmittedAt)) {
-        g.lastSubmittedAt = r.submittedAt;
-      }
+      if (r.submittedAt && (!g.lastSubmittedAt || r.submittedAt > g.lastSubmittedAt)) g.lastSubmittedAt = r.submittedAt;
     }
   });
   return [...map.values()];
 }
 
-// complete | partial | not-started | never-login
+const NO_TEACHER = "__none__";
+const facultyKeyOf = r => r.teacherId || NO_TEACHER;
+
+function groupByFaculty(list) {
+  const map = new Map();
+  list.forEach(r => {
+    const key = facultyKeyOf(r);
+    let g = map.get(key);
+    if (!g) {
+      g = { key, name: r.teacherId ? r.teacherName : "No teacher assigned",
+            courses: new Set(), students: new Set(),
+            total: 0, done: 0, lastSubmittedAt: null };
+      map.set(key, g);
+    }
+    g.courses.add(r.subjectId);
+    g.students.add(r.studentId);
+    g.total++;
+    if (r.submitted) {
+      g.done++;
+      if (r.submittedAt && (!g.lastSubmittedAt || r.submittedAt > g.lastSubmittedAt)) g.lastSubmittedAt = r.submittedAt;
+    }
+  });
+  return [...map.values()];
+}
+
+// Student: complete | partial | not-started | never-login
 function studentState(g) {
   if (g.total > 0 && g.done === g.total) return "complete";
   if (g.done > 0)                        return "partial";
   return g.lastLogin ? "not-started" : "never-login";
+}
+// Faculty: complete | partial | none
+function facultyState(g) {
+  if (g.total > 0 && g.done === g.total) return "complete";
+  return g.done > 0 ? "partial" : "none";
 }
 
 const STATE_BADGE = {
@@ -399,37 +430,87 @@ const STATE_BADGE = {
   "partial":     `<span class="badge partial">In Progress</span>`,
   "not-started": `<span class="badge not-submitted">Not Started</span>`,
   "never-login": `<span class="badge never-login">Never Logged In</span>`,
+  "none":        `<span class="badge never-login">No Submissions</span>`,
 };
+
+const VIEW_HEAD = {
+  faculty: `
+      <th>Faculty</th>
+      <th>Courses</th>
+      <th>Students</th>
+      <th>Evaluations Submitted</th>
+      <th>Status</th>
+      <th>Last Submitted</th>
+      <th style="width:74px; text-align:center;">Students</th>`,
+  student: `
+      <th>Student ID</th>
+      <th>Section</th>
+      <th>Courses Submitted</th>
+      <th>Status</th>
+      <th>Last Login</th>
+      <th>Last Submitted</th>
+      <th style="width:74px; text-align:center;">Courses</th>`,
+};
+
+function progressCell(done, total) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  return `
+          <div class="mon-progress">
+            <div class="mon-progress-track"><div class="mon-progress-fill${pct === 100 ? " full" : ""}" style="width:${pct}%;"></div></div>
+            <span class="mon-progress-num">${done} / ${total}</span>
+          </div>`;
+}
+
+// Exact date + time — "earliest first" needs real times, not "3 days ago".
+function exactTime(dateStr) {
+  if (!dateStr) return "—";
+  return new Date(dateStr).toLocaleString("en-PH", {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+}
 
 function renderTable() {
   const filterStatus = document.getElementById("filter-status").value;
+  const isFaculty    = monView === "faculty";
+  const filteredRows = applyStructuralFilters(rows);
 
-  // Structural filters first (which courses count), fold to one entry per
-  // student, then the status filter on the STUDENT — the same definition
-  // the summary cards use, so the cards and the table always agree.
-  const allGroups = groupByStudent(applyStructuralFilters(rows));
+  const allGroups = isFaculty ? groupByFaculty(filteredRows) : groupByStudent(filteredRows);
+  const stateOf   = isFaculty ? facultyState : studentState;
+
+  // The status filter applies to the whole faculty / student — the same
+  // "all courses done" definition the summary cards use.
   const groups = allGroups.filter(g => {
-    const st = studentState(g);
+    const st = stateOf(g);
     if (filterStatus === "submitted")     return st === "complete";
     if (filterStatus === "partial")       return st === "partial";
-    if (filterStatus === "not-submitted") return st !== "complete";   // includes never-logged-in
-    if (filterStatus === "never-login")   return st === "never-login";
+    if (filterStatus === "not-submitted") return st !== "complete";
+    if (filterStatus === "never-login")   return st === "never-login" || st === "none";
     return true;
   });
 
-  // Section, then Student ID — a stable order QA can scan.
-  groups.sort((a, b) =>
-    String(a.section).localeCompare(String(b.section)) ||
-    String(a.studentId).localeCompare(String(b.studentId)));
+  if (isFaculty) {
+    groups.sort((a, b) =>
+      (a.key === NO_TEACHER) - (b.key === NO_TEACHER) ||
+      String(a.name).localeCompare(String(b.name)));
+  } else {
+    groups.sort((a, b) =>
+      String(a.section).localeCompare(String(b.section)) ||
+      String(a.studentId).localeCompare(String(b.studentId)));
+  }
 
-  const totalStudents = new Set(rows.map(r => r.studentId)).size;
+  const noun = isFaculty ? "faculty" : "students";
   document.getElementById("row-count").textContent =
-    `Showing ${groups.length} of ${totalStudents} students`;
+    `Showing ${groups.length} of ${allGroups.length} ${noun}`;
 
-  const tbody = document.getElementById("monitor-tbody");
+  const tbody   = document.getElementById("monitor-tbody");
+  const headRow = tbody.closest("table")?.querySelector("thead tr");
+  if (headRow && headRow.dataset.view !== monView) {
+    headRow.innerHTML    = VIEW_HEAD[monView];
+    headRow.dataset.view = monView;
+  }
 
   if (groups.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7">No students match the filters.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7">No ${noun} match the filters.</td></tr>`;
     document.getElementById("monitor-page-info").textContent = "";
     document.getElementById("monitor-page-buttons").innerHTML = "";
     return;
@@ -443,19 +524,24 @@ function renderTable() {
   const end   = start + MONITOR_SIZE;
 
   tbody.innerHTML = groups.slice(start, end).map(g => {
-    const pct = g.total > 0 ? Math.round((g.done / g.total) * 100) : 0;
-    const sid = escapeHtml(g.studentId);
+    const key = escapeHtml(g.key);
+    if (isFaculty) {
+      return `
+      <tr class="mon-group-row" data-key="${key}" tabindex="0" title="Show this faculty's students">
+        <td><b>${escapeHtml(g.name)}</b></td>
+        <td>${g.courses.size}</td>
+        <td>${g.students.size}</td>
+        <td>${progressCell(g.done, g.total)}</td>
+        <td>${STATE_BADGE[facultyState(g)]}</td>
+        <td class="last-login-cell">${timeAgo(g.lastSubmittedAt)}</td>
+        <td style="text-align:center;"><button type="button" class="btn-secondary mon-courses-btn">View</button></td>
+      </tr>`;
+    }
     return `
-      <tr class="mon-student-row" data-student="${sid}" tabindex="0"
-          title="Show this student's courses">
-        <td><b>${sid}</b></td>
+      <tr class="mon-group-row" data-key="${key}" tabindex="0" title="Show this student's courses">
+        <td><b>${key}</b></td>
         <td>${escapeHtml(g.section)}</td>
-        <td>
-          <div class="mon-progress">
-            <div class="mon-progress-track"><div class="mon-progress-fill${pct === 100 ? " full" : ""}" style="width:${pct}%;"></div></div>
-            <span class="mon-progress-num">${g.done} / ${g.total}</span>
-          </div>
-        </td>
+        <td>${progressCell(g.done, g.total)}</td>
         <td>${STATE_BADGE[studentState(g)]}</td>
         <td class="last-login-cell">${timeAgo(g.lastLogin)}</td>
         <td class="last-login-cell">${timeAgo(g.lastSubmittedAt)}</td>
@@ -464,28 +550,27 @@ function renderTable() {
   }).join("");
 
   document.getElementById("monitor-page-info").textContent =
-    `Page ${monitorPage} of ${totalPages} — showing students ${start + 1}–${Math.min(end, groups.length)} of ${groups.length}`;
+    `Page ${monitorPage} of ${totalPages} — showing ${noun} ${start + 1}–${Math.min(end, groups.length)} of ${groups.length}`;
 
   renderMonitorPager(totalPages);
 }
 
 // ══════════════════════════════════════════════════════════════
-//  STUDENT COURSES DRAWER
-//  The per-course detail that used to stretch the table: every course
-//  this student is enrolled in, and whether each one is submitted.
-//  Always shows ALL of the student's courses, whatever filters are on.
+//  SIDE DRAWER
+//  Faculty view  → that faculty's students: earliest submitters first,
+//                  then not-yet-submitted, never-logged-in at the bottom.
+//  Student view  → that student's courses, pending first.
+//  The drawer always shows everything for the faculty / student,
+//  whatever table filters are on.
 // ══════════════════════════════════════════════════════════════
-let drawerStudentId = null;
+let drawerMode = null;   // "faculty" | "student" | null (closed)
+let drawerKey  = null;
 
-// This module runs on TWO pages: the standalone admin-monitoring.html and
-// the Monitoring panel inside admin.html. Build the drawer, the table
-// header and the extra status option here when the page doesn't have them,
-// so an older or cached copy of either page can never break the module.
 const MON_STYLES = `
 .badge.partial { background:#dbeafe; color:#1e40af; }
 
-.mon-student-row { cursor: pointer; }
-.mon-student-row:hover, .mon-student-row:focus-visible { background: #fdf7f1; outline: none; }
+.mon-group-row { cursor: pointer; }
+.mon-group-row:hover, .mon-group-row:focus-visible { background: #fdf7f1; outline: none; }
 .mon-courses-btn { font-size: 12px; padding: 4px 10px; }
 
 .mon-progress { display: flex; align-items: center; gap: 8px; min-width: 130px; }
@@ -519,11 +604,22 @@ const MON_STYLES = `
 .mon-drawer-when { font-size: 11px; color: #64748b; margin-top: 3px; }
 .mon-table-wrap { overflow-x: auto; }
 .mon-table-wrap table { min-width: 720px; }
+.mon-viewswitch { display: inline-flex; gap: 4px; padding: 4px; background: #f1f5f9; border-radius: 8px; margin-bottom: 12px; }
+#mon-viewswitch button.mon-view-btn, #mon-viewswitch button.mon-view-btn:hover { border: none; background: transparent; color: #64748b; font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 6px; cursor: pointer; box-shadow: none; transform: none; filter: none; letter-spacing: normal; text-transform: none; }
+#mon-viewswitch button.mon-view-btn.active, #mon-viewswitch button.mon-view-btn.active:hover { background: #fff; color: #671408; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+#mon-drawer-controls { display: flex; gap: 8px; padding: 10px 16px; border-bottom: 1px solid #e5e7eb; }
+#mon-drawer-controls:empty { display: none; }
+#mon-drawer-controls select { flex: 1; min-width: 0; width: auto; max-width: none; font-size: 12.5px; }
+.mon-drawer-divider { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #64748b; padding: 14px 0 4px; }
+.mon-drawer-rank { display: inline-block; min-width: 24px; color: #94a3b8; font-weight: 500; font-variant-numeric: tabular-nums; }
+.mon-drawer-empty { color: #94a3b8; font-size: 13px; padding: 16px 0; }
 `;
 
+// This module runs on TWO pages: the standalone admin-monitoring.html and
+// the Monitoring panel inside admin.html. Build the styles, view switch,
+// drawer and status options here when the page doesn't have them, so an
+// older or cached copy of either page can never break the module.
 function ensureMonitoringMarkup() {
-  // Styles travel with the module: admin.html loads admin.css, not
-  // admin-monitoring.css, so the drawer would otherwise be unstyled there.
   if (!document.getElementById("mon-styles")) {
     const st = document.createElement("style");
     st.id = "mon-styles";
@@ -539,6 +635,27 @@ function ensureMonitoringMarkup() {
     wrapDiv.appendChild(table);
   }
 
+  if (table && !document.getElementById("mon-viewswitch")) {
+    const sw = document.createElement("div");
+    sw.id = "mon-viewswitch";
+    sw.className = "mon-viewswitch";
+    sw.innerHTML = `
+      <button type="button" class="mon-view-btn active" data-view="faculty">By Faculty</button>
+      <button type="button" class="mon-view-btn" data-view="student">By Student</button>`;
+    const wrapEl = table.parentElement;
+    wrapEl.parentElement.insertBefore(sw, wrapEl);
+    sw.addEventListener("click", (e) => {
+      const btn = e.target.closest(".mon-view-btn");
+      if (!btn || btn.dataset.view === monView) return;
+      monView = btn.dataset.view;
+      sw.querySelectorAll(".mon-view-btn").forEach(b => b.classList.toggle("active", b === btn));
+      syncStatusOptions();
+      monitorPage = 1;
+      renderTable();
+      renderSummary();   // the search box matches faculty names only in faculty view
+    });
+  }
+
   if (!document.getElementById("mon-drawer")) {
     const wrap = document.createElement("div");
     wrap.innerHTML = `
@@ -546,51 +663,149 @@ function ensureMonitoringMarkup() {
       <aside id="mon-drawer" aria-hidden="true">
         <div class="mon-drawer-head">
           <div style="flex:1; min-width:0;">
-            <div id="mon-drawer-title">Student</div>
+            <div id="mon-drawer-title"></div>
             <div id="mon-drawer-sub"></div>
           </div>
           <button id="mon-drawer-close" type="button" class="btn-secondary" aria-label="Close">✕</button>
         </div>
+        <div id="mon-drawer-controls"></div>
         <div id="mon-drawer-list"></div>
       </aside>`;
     while (wrap.firstElementChild) document.body.appendChild(wrap.firstElementChild);
   }
-
-  const headRow = document.getElementById("monitor-tbody")?.closest("table")?.querySelector("thead tr");
-  if (headRow && headRow.children.length !== 7) {
-    headRow.innerHTML = `
-      <th>Student ID</th>
-      <th>Section</th>
-      <th>Courses Submitted</th>
-      <th>Status</th>
-      <th>Last Login</th>
-      <th>Last Submitted</th>
-      <th style="width:74px; text-align:center;">Courses</th>`;
+  if (!document.getElementById("mon-drawer-controls")) {
+    const c = document.createElement("div");
+    c.id = "mon-drawer-controls";
+    const listEl = document.getElementById("mon-drawer-list");
+    listEl.parentElement.insertBefore(c, listEl);
   }
 
-  const statusSel = document.getElementById("filter-status");
-  if (statusSel && !statusSel.querySelector('option[value="partial"]')) {
-    statusSel.innerHTML = `
-      <option value="">All Statuses</option>
-      <option value="submitted">Complete (all courses)</option>
-      <option value="not-submitted">Not Yet Complete</option>
-      <option value="partial">In Progress (some courses)</option>
-      <option value="never-login">Never Logged In</option>`;
-  }
+  syncStatusOptions();
+}
+
+// The status dropdown means slightly different things per view.
+function syncStatusOptions() {
+  const sel = document.getElementById("filter-status");
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = monView === "faculty"
+    ? `<option value="">All Statuses</option>
+       <option value="submitted">Complete (all students submitted)</option>
+       <option value="not-submitted">Not Yet Complete</option>
+       <option value="partial">In Progress (some submitted)</option>
+       <option value="never-login">No Submissions Yet</option>`
+    : `<option value="">All Statuses</option>
+       <option value="submitted">Complete (all courses)</option>
+       <option value="not-submitted">Not Yet Complete</option>
+       <option value="partial">In Progress (some courses)</option>
+       <option value="never-login">Never Logged In</option>`;
+  sel.value = current;
+
+  const searchEl = document.getElementById("mon-search-input");
+  if (searchEl) searchEl.placeholder = monView === "faculty"
+    ? "🔍 Search faculty or Student ID..."
+    : "🔍 Search Student ID...";
 }
 ensureMonitoringMarkup();
 
-function renderStudentDrawer() {
-  if (!drawerStudentId) return;
-  const mine = rows.filter(r => r.studentId === drawerStudentId);
+function renderFacultyDrawer() {
+  const mine = rows.filter(r => facultyKeyOf(r) === drawerKey);
+  if (mine.length === 0) { closeMonDrawer(); return; }
+
+  const controls = document.getElementById("mon-drawer-controls");
+  // Build the controls once per open; keep the user's picks on re-render.
+  if (controls.dataset.key !== drawerKey) {
+    // One course can span several sections; label it by name only then.
+    const bySubject = new Map();
+    mine.forEach(r => {
+      if (!bySubject.has(r.subjectId)) bySubject.set(r.subjectId, { name: r.subjectName, secs: new Set() });
+      bySubject.get(r.subjectId).secs.add(r.section);
+    });
+    let opts = `<option value="">All courses (${bySubject.size})</option>`;
+    [...bySubject.entries()]
+      .sort((a, b) => String(a[1].name).localeCompare(String(b[1].name)))
+      .forEach(([id, c]) => {
+        const label = c.secs.size === 1 ? `${c.name} — ${[...c.secs][0]}` : c.name;
+        opts += `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`;
+      });
+    controls.innerHTML = `
+      <select id="mon-drawer-course" aria-label="Course">${opts}</select>
+      <select id="mon-drawer-status" aria-label="Status">
+        <option value="">Everyone</option>
+        <option value="submitted">Submitted</option>
+        <option value="pending">Not yet submitted</option>
+        <option value="never">Never logged in</option>
+      </select>`;
+    controls.dataset.key = drawerKey;
+    controls.querySelectorAll("select").forEach(el => el.addEventListener("change", renderFacultyDrawer));
+  }
+
+  const fCourse = document.getElementById("mon-drawer-course").value;
+  const fStatus = document.getElementById("mon-drawer-status").value;
+  const scoped  = fCourse ? mine.filter(r => r.subjectId === fCourse) : mine;
+  const done    = scoped.filter(r => r.submitted).length;
+
+  document.getElementById("mon-drawer-title").textContent =
+    drawerKey === NO_TEACHER ? "No teacher assigned" : mine[0].teacherName;
+  document.getElementById("mon-drawer-sub").textContent =
+    `${done} of ${scoped.length} evaluations submitted · ${new Set(scoped.map(r => r.studentId)).size} students`;
+
+  // 0 = submitted, 1 = logged in but not submitted, 2 = never logged in
+  const bucket = r => r.submitted ? 0 : (r.lastLogin ? 1 : 2);
+  const shown = scoped.filter(r => {
+    if (fStatus === "submitted") return bucket(r) === 0;
+    if (fStatus === "pending")   return bucket(r) !== 0;   // includes never logged in
+    if (fStatus === "never")     return bucket(r) === 2;
+    return true;
+  }).sort((a, b) =>
+    bucket(a) - bucket(b) ||
+    (bucket(a) === 0 ? String(a.submittedAt || "").localeCompare(String(b.submittedAt || "")) : 0) ||
+    String(a.studentId).localeCompare(String(b.studentId)) ||
+    String(a.subjectName).localeCompare(String(b.subjectName)));
+
   const list = document.getElementById("mon-drawer-list");
-  if (mine.length === 0) {           // e.g. un-enrolled since the last refresh
-    closeStudentDrawer();
+  if (shown.length === 0) {
+    list.innerHTML = `<div class="mon-drawer-empty">No students match.</div>`;
     return;
   }
-  const done = mine.filter(r => r.submitted).length;
 
-  document.getElementById("mon-drawer-title").textContent = drawerStudentId;
+  const DIVIDER = [
+    n => `Submitted — earliest first (${n})`,
+    n => `Not yet submitted (${n})`,
+    n => `Never logged in (${n})`,
+  ];
+  const counts = [0, 1, 2].map(k => shown.filter(r => bucket(r) === k).length);
+  let html = "", lastBucket = -1, rank = 0;
+  shown.forEach(r => {
+    const k = bucket(r);
+    if (k !== lastBucket) { html += `<div class="mon-drawer-divider">${DIVIDER[k](counts[k])}</div>`; lastBucket = k; }
+    const right = k === 0
+      ? `<span class="badge submitted">Submitted</span><div class="mon-drawer-when">${exactTime(r.submittedAt)}</div>`
+      : k === 1
+        ? `<span class="badge not-submitted">Not Yet</span><div class="mon-drawer-when">last login ${timeAgo(r.lastLogin)}</div>`
+        : `<span class="badge never-login">Never Logged In</span>`;
+    html += `
+    <div class="mon-drawer-item">
+      <div class="mon-drawer-course">
+        <div class="mon-drawer-name">${k === 0 ? `<span class="mon-drawer-rank">${++rank}.</span>` : ""}${escapeHtml(r.studentId)}</div>
+        <div class="mon-drawer-teacher">${escapeHtml(r.subjectName)} · ${escapeHtml(r.section)}</div>
+      </div>
+      <div class="mon-drawer-status">${right}</div>
+    </div>`;
+  });
+  list.innerHTML = html;
+}
+
+function renderStudentDrawer() {
+  const mine = rows.filter(r => r.studentId === drawerKey);
+  if (mine.length === 0) { closeMonDrawer(); return; }
+
+  const controls = document.getElementById("mon-drawer-controls");
+  controls.innerHTML = "";
+  delete controls.dataset.key;
+
+  const done = mine.filter(r => r.submitted).length;
+  document.getElementById("mon-drawer-title").textContent = drawerKey;
   document.getElementById("mon-drawer-sub").textContent =
     `${mine[0].section} · ${done} of ${mine.length} submitted · last login ${timeAgo(mine[0].lastLogin)}`;
 
@@ -598,7 +813,7 @@ function renderStudentDrawer() {
   mine.sort((a, b) => (a.submitted - b.submitted) ||
     String(a.subjectName).localeCompare(String(b.subjectName)));
 
-  list.innerHTML = mine.map(r => `
+  document.getElementById("mon-drawer-list").innerHTML = mine.map(r => `
     <div class="mon-drawer-item">
       <div class="mon-drawer-course">
         <div class="mon-drawer-name">${escapeHtml(r.subjectName)}</div>
@@ -606,24 +821,36 @@ function renderStudentDrawer() {
       </div>
       <div class="mon-drawer-status">
         ${r.submitted
-          ? `<span class="badge submitted">Submitted</span><div class="mon-drawer-when">${timeAgo(r.submittedAt)}</div>`
+          ? `<span class="badge submitted">Submitted</span><div class="mon-drawer-when">${exactTime(r.submittedAt)}</div>`
           : `<span class="badge not-submitted">Not Yet</span>`}
       </div>
     </div>`).join("");
 }
 
-function openStudentDrawer(studentId) {
-  drawerStudentId = studentId;
-  renderStudentDrawer();
-  if (!drawerStudentId) return;
+function renderMonDrawer() {
+  if (!drawerMode) return;
+  if (drawerMode === "faculty") renderFacultyDrawer();
+  else renderStudentDrawer();
+}
+
+function openMonDrawer(mode, key) {
+  drawerMode = mode;
+  drawerKey  = key;
+  const controls = document.getElementById("mon-drawer-controls");
+  controls.innerHTML = "";
+  delete controls.dataset.key;
+  renderMonDrawer();
+  if (!drawerMode) return;
   const d = document.getElementById("mon-drawer");
   d.classList.add("open");
   d.setAttribute("aria-hidden", "false");
+  document.getElementById("mon-drawer-list").scrollTop = 0;
   document.getElementById("mon-drawer-backdrop").classList.add("open");
 }
 
-function closeStudentDrawer() {
-  drawerStudentId = null;
+function closeMonDrawer() {
+  drawerMode = null;
+  drawerKey  = null;
   const d = document.getElementById("mon-drawer");
   d.classList.remove("open");
   d.setAttribute("aria-hidden", "true");
@@ -631,17 +858,17 @@ function closeStudentDrawer() {
 }
 
 document.getElementById("monitor-tbody").addEventListener("click", (e) => {
-  const row = e.target.closest(".mon-student-row");
-  if (row) openStudentDrawer(row.dataset.student);
+  const row = e.target.closest(".mon-group-row");
+  if (row) openMonDrawer(monView, row.dataset.key);
 });
 document.getElementById("monitor-tbody").addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || e.target.closest("button")) return;
-  const row = e.target.closest(".mon-student-row");
-  if (row) openStudentDrawer(row.dataset.student);
+  const row = e.target.closest(".mon-group-row");
+  if (row) openMonDrawer(monView, row.dataset.key);
 });
-document.getElementById("mon-drawer-close").addEventListener("click", closeStudentDrawer);
-document.getElementById("mon-drawer-backdrop").addEventListener("click", closeStudentDrawer);
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && drawerStudentId) closeStudentDrawer(); });
+document.getElementById("mon-drawer-close").addEventListener("click", closeMonDrawer);
+document.getElementById("mon-drawer-backdrop").addEventListener("click", closeMonDrawer);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && drawerMode) closeMonDrawer(); });
 
 // ── Relative time formatter ──
 // < 1 min   → "just now"
