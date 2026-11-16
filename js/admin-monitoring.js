@@ -192,6 +192,7 @@ async function loadMonitoring() {
   renderSummary();
   renderComments();
   renderMonDrawer();       // keep an open drawer in step with a refresh
+  loadRequests(semester.id);   // separate table; its failure never blocks monitoring
 }
 
 // ── Populate section + subject filters ──
@@ -623,6 +624,22 @@ const MON_STYLES = `
 .mon-drawer-divider { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #64748b; padding: 14px 0 4px; }
 .mon-drawer-rank { display: inline-block; min-width: 24px; color: #94a3b8; font-weight: 500; font-variant-numeric: tabular-nums; }
 .mon-sub-id { font-size: 12px; color: #94a3b8; font-variant-numeric: tabular-nums; }
+.mon-req-help { font-size: 12.5px; color: #64748b; line-height: 1.55; margin: 0 0 14px; }
+.mon-req-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+.mon-req-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 10px; }
+.mon-req-student { font-weight: 700; font-size: 14.5px; color: #1e293b; }
+.mon-req-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 700px) { .mon-req-cols { grid-template-columns: 1fr; } }
+.mon-req-col { border-radius: 8px; padding: 10px 12px; }
+.mon-req-col.wrong { background: #fef2f2; }
+.mon-req-col.right { background: #f0fdf4; }
+.mon-req-col h5 { margin: 0 0 6px; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: #64748b; }
+.mon-req-line { font-size: 13px; color: #334155; padding: 2px 0; display: flex; gap: 8px; }
+.mon-req-line span { flex: none; width: 150px; color: #64748b; font-size: 12px; }
+.mon-req-line b { font-weight: 600; overflow-wrap: anywhere; }
+.mon-req-flag { background: #fee2e2; color: #991b1b; border-radius: 999px; padding: 1px 8px; font-size: 10px; letter-spacing: 0; text-transform: none; }
+.mon-req-actions { display: flex; gap: 8px; margin-top: 12px; }
+.mon-req-actions button { font-size: 12px; padding: 5px 12px; }
 .mon-drawer-empty { color: #94a3b8; font-size: 13px; padding: 16px 0; }
 `;
 
@@ -1085,14 +1102,162 @@ function renderComments() {
   container.innerHTML = html;
 }
 
-// ── Tab switching (Submission Status ↔ Student Comments) ──
+// ══════════════════════════════════════════════════════════════
+//  REASSIGNMENT REQUESTS VIEW
+//  Students who were listed under the wrong teacher / course / section
+//  file a request from their dashboard (js/reassign-request.js). These
+//  are NOT anonymous — each carries the student's ID and name so QA can
+//  fix the enrollment in Course Assignment → Students, then mark it here.
+// ══════════════════════════════════════════════════════════════
+let reassignRequests = [];
+let reassignLoadError = "";
+
+function ensureRequestsMarkup() {
+  const tabs = document.getElementById("tab-comments")?.parentElement;
+  if (tabs && !document.getElementById("tab-requests")) {
+    const b = document.createElement("button");
+    b.className = "view-tab";
+    b.id = "tab-requests";
+    b.textContent = "🔁 Reassignment Requests";
+    tabs.appendChild(b);
+    b.addEventListener("click", () => switchView("requests"));
+  }
+  const commentsView = document.getElementById("view-comments");
+  if (commentsView && !document.getElementById("view-requests")) {
+    const v = document.createElement("div");
+    v.id = "view-requests";
+    v.style.display = "none";
+    v.innerHTML = `
+      <div class="section">
+        <div class="toolbar">
+          <select id="requests-status" aria-label="Request status">
+            <option value="pending">Pending</option>
+            <option value="resolved">Resolved</option>
+            <option value="rejected">Rejected</option>
+            <option value="">All</option>
+          </select>
+          <span style="font-size:12px; color:#666;" id="requests-count"></span>
+        </div>
+        <p class="mon-req-help">To act on a request: fix the student's classes in <b>Course Assignment → Students</b>
+          (remove them from the wrong class, add them to the right one), then mark the request resolved here.
+          If the student already submitted for the wrong class, that anonymous evaluation stays in the teacher's results.</p>
+        <div id="requests-container"></div>
+      </div>`;
+    commentsView.insertAdjacentElement("afterend", v);
+    v.querySelector("#requests-status").addEventListener("change", renderRequests);
+    v.querySelector("#requests-container").addEventListener("click", onRequestAction);
+  }
+}
+ensureRequestsMarkup();
+
+async function loadRequests(semesterId) {
+  reassignLoadError = "";
+  try {
+    reassignRequests = await fetchAllPages(() =>
+      supabase.from("evaluation_reassignment_requests")
+        .select("id, student_id, student_name, wrong_subject_label, wrong_teacher_name, wrong_section_name, already_submitted, correct_teacher, correct_subject, correct_subject_code, correct_section, status, created_at, resolved_at")
+        .eq("semester_id", semesterId)
+        .order("created_at", { ascending: true })
+    );
+  } catch (err) {
+    reassignRequests = [];
+    reassignLoadError = err?.message || "unknown error";
+  }
+  renderRequests();
+}
+
+function renderRequests() {
+  const container = document.getElementById("requests-container");
+  if (!container) return;
+
+  const pending = reassignRequests.filter(r => r.status === "pending").length;
+  const tab = document.getElementById("tab-requests");
+  if (tab) tab.textContent = `🔁 Reassignment Requests${pending ? ` (${pending})` : ""}`;
+
+  if (reassignLoadError) {
+    container.innerHTML = `<p style="color:#b91c1c; padding:8px 0;">Couldn't load requests: ${escapeHtml(reassignLoadError)}</p>`;
+    return;
+  }
+
+  const f = document.getElementById("requests-status").value;
+  const list = f ? reassignRequests.filter(r => r.status === f) : reassignRequests;
+  document.getElementById("requests-count").textContent =
+    `${list.length} request${list.length === 1 ? "" : "s"}`;
+
+  if (list.length === 0) {
+    container.innerHTML = `<p style="color:#94a3b8; padding:8px 0;">No ${f ? f + " " : ""}requests.</p>`;
+    return;
+  }
+
+  const PILL = {
+    pending:  `<span class="badge not-submitted">Pending</span>`,
+    resolved: `<span class="badge submitted">Resolved</span>`,
+    rejected: `<span class="badge never-login">Rejected</span>`,
+  };
+  const line = (label, value) =>
+    `<div class="mon-req-line"><span>${label}</span><b>${escapeHtml(value || "—")}</b></div>`;
+
+  container.innerHTML = list.map(r => `
+    <div class="mon-req-card">
+      <div class="mon-req-head">
+        <div>
+          <div class="mon-req-student">${escapeHtml(r.student_name || r.student_id)}</div>
+          <div class="mon-sub-id">${escapeHtml(r.student_id)} · sent ${exactTime(r.created_at)}</div>
+        </div>
+        <div>${PILL[r.status] || ""}</div>
+      </div>
+      <div class="mon-req-cols">
+        <div class="mon-req-col wrong">
+          <h5>Incorrect evaluation details${r.already_submitted ? ` <span class="mon-req-flag">already submitted</span>` : ""}</h5>
+          ${line("Faculty member evaluated", r.wrong_teacher_name)}
+          ${line("Subject evaluated", r.wrong_subject_label)}
+          ${line("Section", r.wrong_section_name)}
+        </div>
+        <div class="mon-req-col right">
+          <h5>Correct information</h5>
+          ${line("Correct faculty member", r.correct_teacher)}
+          ${line("Correct subject", r.correct_subject)}
+          ${line("Subject code", r.correct_subject_code)}
+          ${line("Section", r.correct_section)}
+        </div>
+      </div>
+      <div class="mon-req-actions">
+        ${r.status === "pending"
+          ? `<button type="button" class="btn-secondary" data-id="${escapeHtml(r.id)}" data-status="resolved">✓ Mark resolved</button>
+             <button type="button" class="btn-secondary" data-id="${escapeHtml(r.id)}" data-status="rejected">✕ Reject</button>`
+          : `<button type="button" class="btn-secondary" data-id="${escapeHtml(r.id)}" data-status="pending">↺ Reopen</button>`}
+      </div>
+    </div>`).join("");
+}
+
+async function onRequestAction(e) {
+  const btn = e.target.closest("button[data-id]");
+  if (!btn) return;
+  const { id, status } = btn.dataset;
+  btn.disabled = true;
+  const { error } = await supabase.from("evaluation_reassignment_requests")
+    .update({ status, resolved_at: status === "pending" ? null : new Date().toISOString() })
+    .eq("id", id);
+  if (error) {
+    btn.disabled = false;
+    alert("Couldn't update the request: " + error.message);
+    return;
+  }
+  const r = reassignRequests.find(x => x.id === id);
+  if (r) r.status = status;
+  renderRequests();
+}
+
+// ── Tab switching (Submission Status ↔ Student Comments ↔ Requests) ──
 function switchView(view) {
-  const isComments = view === "comments";
-  document.getElementById("view-monitoring").style.display = isComments ? "none" : "";
-  document.getElementById("view-comments").style.display   = isComments ? ""     : "none";
-  document.getElementById("tab-monitoring").classList.toggle("active", !isComments);
-  document.getElementById("tab-comments").classList.toggle("active", isComments);
-  if (isComments) renderComments();
+  ["monitoring", "comments", "requests"].forEach(v => {
+    const pane = document.getElementById("view-" + v);
+    const tab  = document.getElementById("tab-" + v);
+    if (pane) pane.style.display = v === view ? "" : "none";
+    if (tab)  tab.classList.toggle("active", v === view);
+  });
+  if (view === "comments") renderComments();
+  if (view === "requests") renderRequests();
 }
 
 document.getElementById("tab-monitoring")
