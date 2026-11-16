@@ -477,6 +477,109 @@ function renderTable() {
 // ══════════════════════════════════════════════════════════════
 let drawerStudentId = null;
 
+// This module runs on TWO pages: the standalone admin-monitoring.html and
+// the Monitoring panel inside admin.html. Build the drawer, the table
+// header and the extra status option here when the page doesn't have them,
+// so an older or cached copy of either page can never break the module.
+const MON_STYLES = `
+.badge.partial { background:#dbeafe; color:#1e40af; }
+
+.mon-student-row { cursor: pointer; }
+.mon-student-row:hover, .mon-student-row:focus-visible { background: #fdf7f1; outline: none; }
+.mon-courses-btn { font-size: 12px; padding: 4px 10px; }
+
+.mon-progress { display: flex; align-items: center; gap: 8px; min-width: 130px; }
+.mon-progress-track { flex: 1; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; min-width: 60px; }
+.mon-progress-fill { height: 100%; background: #d97706; }
+.mon-progress-fill.full { background: #16a34a; }
+.mon-progress-num { font-size: 12px; color: #475569; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+#mon-drawer-backdrop {
+  position: fixed; inset: 0; background: rgba(15,23,42,.25);
+  opacity: 0; pointer-events: none; transition: opacity .2s ease; z-index: 890;
+}
+#mon-drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+#mon-drawer {
+  position: fixed; top: 0; right: 0; height: 100vh; width: min(400px, 100vw);
+  background: #fff; box-shadow: -4px 0 24px rgba(0,0,0,.18);
+  transform: translateX(105%); transition: transform .2s ease;
+  z-index: 900; display: flex; flex-direction: column;
+}
+#mon-drawer.open { transform: translateX(0); }
+.mon-drawer-head { padding: 14px 16px; border-bottom: 1px solid #e5e7eb; display: flex; align-items: flex-start; gap: 8px; }
+#mon-drawer-title { font-weight: 700; font-size: 15px; }
+#mon-drawer-sub { font-size: 12px; color: #6b7280; margin-top: 2px; }
+#mon-drawer-close { font-size: 13px; padding: 4px 10px; }
+#mon-drawer-list { flex: 1; overflow: auto; overscroll-behavior: contain; padding: 4px 16px 16px; }
+.mon-drawer-item { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }
+.mon-drawer-course { min-width: 0; }
+.mon-drawer-name { font-size: 13px; font-weight: 600; color: #1e293b; }
+.mon-drawer-teacher { font-size: 12px; color: #94a3b8; }
+.mon-drawer-status { flex: none; text-align: right; }
+.mon-drawer-when { font-size: 11px; color: #64748b; margin-top: 3px; }
+.mon-table-wrap { overflow-x: auto; }
+.mon-table-wrap table { min-width: 720px; }
+`;
+
+function ensureMonitoringMarkup() {
+  // Styles travel with the module: admin.html loads admin.css, not
+  // admin-monitoring.css, so the drawer would otherwise be unstyled there.
+  if (!document.getElementById("mon-styles")) {
+    const st = document.createElement("style");
+    st.id = "mon-styles";
+    st.textContent = MON_STYLES;
+    document.head.appendChild(st);
+  }
+
+  const table = document.getElementById("monitor-tbody")?.closest("table");
+  if (table && !table.parentElement.classList.contains("mon-table-wrap")) {
+    const wrapDiv = document.createElement("div");
+    wrapDiv.className = "mon-table-wrap";
+    table.parentElement.insertBefore(wrapDiv, table);
+    wrapDiv.appendChild(table);
+  }
+
+  if (!document.getElementById("mon-drawer")) {
+    const wrap = document.createElement("div");
+    wrap.innerHTML = `
+      <div id="mon-drawer-backdrop"></div>
+      <aside id="mon-drawer" aria-hidden="true">
+        <div class="mon-drawer-head">
+          <div style="flex:1; min-width:0;">
+            <div id="mon-drawer-title">Student</div>
+            <div id="mon-drawer-sub"></div>
+          </div>
+          <button id="mon-drawer-close" type="button" class="btn-secondary" aria-label="Close">✕</button>
+        </div>
+        <div id="mon-drawer-list"></div>
+      </aside>`;
+    while (wrap.firstElementChild) document.body.appendChild(wrap.firstElementChild);
+  }
+
+  const headRow = document.getElementById("monitor-tbody")?.closest("table")?.querySelector("thead tr");
+  if (headRow && headRow.children.length !== 7) {
+    headRow.innerHTML = `
+      <th>Student ID</th>
+      <th>Section</th>
+      <th>Courses Submitted</th>
+      <th>Status</th>
+      <th>Last Login</th>
+      <th>Last Submitted</th>
+      <th style="width:74px; text-align:center;">Courses</th>`;
+  }
+
+  const statusSel = document.getElementById("filter-status");
+  if (statusSel && !statusSel.querySelector('option[value="partial"]')) {
+    statusSel.innerHTML = `
+      <option value="">All Statuses</option>
+      <option value="submitted">Complete (all courses)</option>
+      <option value="not-submitted">Not Yet Complete</option>
+      <option value="partial">In Progress (some courses)</option>
+      <option value="never-login">Never Logged In</option>`;
+  }
+}
+ensureMonitoringMarkup();
+
 function renderStudentDrawer() {
   if (!drawerStudentId) return;
   const mine = rows.filter(r => r.studentId === drawerStudentId);
