@@ -52,7 +52,7 @@ let activeSemester = null;
 // ══════════════════════════════════════════════════════════════
 async function loadMonitoring() {
   const tbody = document.getElementById("monitor-tbody");
-  tbody.innerHTML = `<tr><td colspan="6">Loading...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="7">Loading...</td></tr>`;
 
   // 1. Active semester
   const { data: semester } = await supabase
@@ -62,7 +62,7 @@ async function loadMonitoring() {
     .single();
 
   if (!semester) {
-    tbody.innerHTML = `<tr><td colspan="6">No active semester.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7">No active semester.</td></tr>`;
     return;
   }
   activeSemester = semester;
@@ -105,7 +105,7 @@ async function loadMonitoring() {
         .eq("semester_id", semester.id)
     );
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="6">
+    tbody.innerHTML = `<tr><td colspan="7">
       Failed to load monitoring data: ${err.message}
       ${err.message?.includes("does not exist")
         ? " — check that all required tables/migrations exist."
@@ -115,7 +115,7 @@ async function loadMonitoring() {
   }
 
   if (!students || students.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6">No students found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7">No students found.</td></tr>`;
     return;
   }
   const studentByStudentId = new Map(students.map(s => [s.student_id, s]));
@@ -190,6 +190,7 @@ async function loadMonitoring() {
   renderTable();
   renderSummary();
   renderComments();
+  renderStudentDrawer();   // keep an open drawer in step with a refresh
 }
 
 // ── Populate section + subject filters ──
@@ -275,7 +276,7 @@ function refreshDependentFilters() {
 function rebuildSelect(sel, allLabel, pairs, current) {
   let html = `<option value="">${allLabel}</option>`;
   pairs.forEach((name, id) => {
-    html += `<option value="${id}"${id === current ? " selected" : ""}>${name}</option>`;
+    html += `<option value="${escapeHtml(id)}"${id === current ? " selected" : ""}>${escapeHtml(name)}</option>`;
   });
   sel.innerHTML = html;
   if (current && !pairs.has(current)) sel.value = "";
@@ -298,7 +299,7 @@ function rebuildFacultyDatalist(datalistEl, pairs) {
   pairs.forEach(name => names.add(name));
   let html = "";
   names.forEach(name => {
-    html += `<option value="${String(name).replace(/"/g, "&quot;")}"></option>`;
+    html += `<option value="${escapeHtml(name)}"></option>`;
   });
   datalistEl.innerHTML = html;
 }
@@ -339,7 +340,7 @@ function renderSummary() {
 
 // ── Render the table ──
 let monitorPage = 1;
-const MONITOR_SIZE = 20;
+const MONITOR_SIZE = 25;
 
 // Structural filters (search + faculty + section + subject) — shared by the
 // table and the summary cards. Status is intentionally NOT included here:
@@ -362,97 +363,182 @@ function applyStructuralFilters(list) {
   });
 }
 
+// One entry per STUDENT (not per course). `list` is the already-filtered
+// set of student × course rows; each student's courses are folded into a
+// done/total count so the table stays one line per student. The full
+// course list lives in the side drawer (openStudentDrawer).
+function groupByStudent(list) {
+  const map = new Map();
+  list.forEach(r => {
+    let g = map.get(r.studentId);
+    if (!g) {
+      g = { studentId: r.studentId, section: r.section, lastLogin: r.lastLogin,
+            total: 0, done: 0, lastSubmittedAt: null };
+      map.set(r.studentId, g);
+    }
+    g.total++;
+    if (r.submitted) {
+      g.done++;
+      if (r.submittedAt && (!g.lastSubmittedAt || r.submittedAt > g.lastSubmittedAt)) {
+        g.lastSubmittedAt = r.submittedAt;
+      }
+    }
+  });
+  return [...map.values()];
+}
+
+// complete | partial | not-started | never-login
+function studentState(g) {
+  if (g.total > 0 && g.done === g.total) return "complete";
+  if (g.done > 0)                        return "partial";
+  return g.lastLogin ? "not-started" : "never-login";
+}
+
+const STATE_BADGE = {
+  "complete":    `<span class="badge submitted">Complete</span>`,
+  "partial":     `<span class="badge partial">In Progress</span>`,
+  "not-started": `<span class="badge not-submitted">Not Started</span>`,
+  "never-login": `<span class="badge never-login">Never Logged In</span>`,
+};
+
 function renderTable() {
   const filterStatus = document.getElementById("filter-status").value;
 
-  // Structural filters first, then the status filter on top.
-  let filtered = applyStructuralFilters(rows).filter(r => {
-    if (filterStatus === "submitted")     return r.submitted;
-    if (filterStatus === "not-submitted") return !r.submitted;             // includes never-logged-in
-    if (filterStatus === "never-login")   return !r.submitted && !r.lastLogin;
+  // Structural filters first (which courses count), fold to one entry per
+  // student, then the status filter on the STUDENT — the same definition
+  // the summary cards use, so the cards and the table always agree.
+  const allGroups = groupByStudent(applyStructuralFilters(rows));
+  const groups = allGroups.filter(g => {
+    const st = studentState(g);
+    if (filterStatus === "submitted")     return st === "complete";
+    if (filterStatus === "partial")       return st === "partial";
+    if (filterStatus === "not-submitted") return st !== "complete";   // includes never-logged-in
+    if (filterStatus === "never-login")   return st === "never-login";
     return true;
   });
 
+  // Section, then Student ID — a stable order QA can scan.
+  groups.sort((a, b) =>
+    String(a.section).localeCompare(String(b.section)) ||
+    String(a.studentId).localeCompare(String(b.studentId)));
+
+  const totalStudents = new Set(rows.map(r => r.studentId)).size;
   document.getElementById("row-count").textContent =
-    `Showing ${filtered.length} of ${rows.length} records`;
+    `Showing ${groups.length} of ${totalStudents} students`;
 
   const tbody = document.getElementById("monitor-tbody");
 
-  if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6">No records match the filters.</td></tr>`;
+  if (groups.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7">No students match the filters.</td></tr>`;
     document.getElementById("monitor-page-info").textContent = "";
     document.getElementById("monitor-page-buttons").innerHTML = "";
     return;
   }
 
-  // ── Group rows by student ──
-  // A student can have several subject rows (one per enrolled subject);
-  // grouping them under one Student ID / Section cell (via rowspan) makes
-  // the repeated ID a lot easier to scan than one flat row per subject.
-  // Preserves the order rows were already in (already sorted upstream —
-  // grouping doesn't re-sort).
-  const groups = [];
-  const groupIndexByStudent = new Map();
-  filtered.forEach(r => {
-    if (!groupIndexByStudent.has(r.studentId)) {
-      groupIndexByStudent.set(r.studentId, groups.length);
-      groups.push({ studentId: r.studentId, section: r.section, entries: [] });
-    }
-    groups[groupIndexByStudent.get(r.studentId)].entries.push(r);
-  });
-
-  // ── Pagination — by STUDENT, not by raw row, so one student's
-  //    subjects never get split across two pages. ──
   const totalPages = Math.ceil(groups.length / MONITOR_SIZE);
   if (monitorPage > totalPages) monitorPage = totalPages;
   if (monitorPage < 1) monitorPage = 1;
 
   const start = (monitorPage - 1) * MONITOR_SIZE;
   const end   = start + MONITOR_SIZE;
-  const pageGroups = groups.slice(start, end);
 
-  tbody.innerHTML = "";
-  pageGroups.forEach((group, gi) => {
-    // Thicker top border marks the start of a new student, alternating
-    // rows share a subtle background so the group reads as one block.
-    const groupBg = gi % 2 === 0 ? "#ffffff" : "#fafbfc";
+  tbody.innerHTML = groups.slice(start, end).map(g => {
+    const pct = g.total > 0 ? Math.round((g.done / g.total) * 100) : 0;
+    const sid = escapeHtml(g.studentId);
+    return `
+      <tr class="mon-student-row" data-student="${sid}" tabindex="0"
+          title="Show this student's courses">
+        <td><b>${sid}</b></td>
+        <td>${escapeHtml(g.section)}</td>
+        <td>
+          <div class="mon-progress">
+            <div class="mon-progress-track"><div class="mon-progress-fill${pct === 100 ? " full" : ""}" style="width:${pct}%;"></div></div>
+            <span class="mon-progress-num">${g.done} / ${g.total}</span>
+          </div>
+        </td>
+        <td>${STATE_BADGE[studentState(g)]}</td>
+        <td class="last-login-cell">${timeAgo(g.lastLogin)}</td>
+        <td class="last-login-cell">${timeAgo(g.lastSubmittedAt)}</td>
+        <td style="text-align:center;"><button type="button" class="btn-secondary mon-courses-btn">View</button></td>
+      </tr>`;
+  }).join("");
 
-    group.entries.forEach((r, i) => {
-      let badge;
-      if (r.submitted) {
-        badge = `<span class="badge submitted">Submitted</span>`;
-      } else if (r.lastLogin) {
-        badge = `<span class="badge not-submitted">Not Yet</span>`;
-      } else {
-        badge = `<span class="badge never-login">Never Logged In</span>`;
-      }
-
-      const lastLogin   = timeAgo(r.lastLogin);
-      const submittedAt = timeAgo(r.submittedAt);
-      const isFirstRow  = i === 0;
-      const topBorder   = isFirstRow ? "border-top:2px solid #e2e8f0;" : "";
-
-      tbody.innerHTML += `
-        <tr style="background:${groupBg};">
-          ${isFirstRow ? `
-            <td style="${topBorder} vertical-align:top;" rowspan="${group.entries.length}"><b>${r.studentId}</b></td>
-            <td style="${topBorder} vertical-align:top;" rowspan="${group.entries.length}">${r.section}</td>
-          ` : ""}
-          <td style="${topBorder}">${r.subjectName}<br/><small style="color:#94a3b8;">${r.teacherName}</small></td>
-          <td class="last-login-cell" style="${topBorder}">${lastLogin}</td>
-          <td style="${topBorder}">${badge}</td>
-          <td class="last-login-cell" style="${topBorder}">${submittedAt}</td>
-        </tr>
-      `;
-    });
-  });
-
-  // Render pagination controls — counted in students, not raw rows
   document.getElementById("monitor-page-info").textContent =
     `Page ${monitorPage} of ${totalPages} — showing students ${start + 1}–${Math.min(end, groups.length)} of ${groups.length}`;
 
   renderMonitorPager(totalPages);
 }
+
+// ══════════════════════════════════════════════════════════════
+//  STUDENT COURSES DRAWER
+//  The per-course detail that used to stretch the table: every course
+//  this student is enrolled in, and whether each one is submitted.
+//  Always shows ALL of the student's courses, whatever filters are on.
+// ══════════════════════════════════════════════════════════════
+let drawerStudentId = null;
+
+function renderStudentDrawer() {
+  if (!drawerStudentId) return;
+  const mine = rows.filter(r => r.studentId === drawerStudentId);
+  const list = document.getElementById("mon-drawer-list");
+  if (mine.length === 0) {           // e.g. un-enrolled since the last refresh
+    closeStudentDrawer();
+    return;
+  }
+  const done = mine.filter(r => r.submitted).length;
+
+  document.getElementById("mon-drawer-title").textContent = drawerStudentId;
+  document.getElementById("mon-drawer-sub").textContent =
+    `${mine[0].section} · ${done} of ${mine.length} submitted · last login ${timeAgo(mine[0].lastLogin)}`;
+
+  // Pending first — that's what QA is chasing — then by course name.
+  mine.sort((a, b) => (a.submitted - b.submitted) ||
+    String(a.subjectName).localeCompare(String(b.subjectName)));
+
+  list.innerHTML = mine.map(r => `
+    <div class="mon-drawer-item">
+      <div class="mon-drawer-course">
+        <div class="mon-drawer-name">${escapeHtml(r.subjectName)}</div>
+        <div class="mon-drawer-teacher">${escapeHtml(r.teacherName)}</div>
+      </div>
+      <div class="mon-drawer-status">
+        ${r.submitted
+          ? `<span class="badge submitted">Submitted</span><div class="mon-drawer-when">${timeAgo(r.submittedAt)}</div>`
+          : `<span class="badge not-submitted">Not Yet</span>`}
+      </div>
+    </div>`).join("");
+}
+
+function openStudentDrawer(studentId) {
+  drawerStudentId = studentId;
+  renderStudentDrawer();
+  if (!drawerStudentId) return;
+  const d = document.getElementById("mon-drawer");
+  d.classList.add("open");
+  d.setAttribute("aria-hidden", "false");
+  document.getElementById("mon-drawer-backdrop").classList.add("open");
+}
+
+function closeStudentDrawer() {
+  drawerStudentId = null;
+  const d = document.getElementById("mon-drawer");
+  d.classList.remove("open");
+  d.setAttribute("aria-hidden", "true");
+  document.getElementById("mon-drawer-backdrop").classList.remove("open");
+}
+
+document.getElementById("monitor-tbody").addEventListener("click", (e) => {
+  const row = e.target.closest(".mon-student-row");
+  if (row) openStudentDrawer(row.dataset.student);
+});
+document.getElementById("monitor-tbody").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.target.closest("button")) return;
+  const row = e.target.closest(".mon-student-row");
+  if (row) openStudentDrawer(row.dataset.student);
+});
+document.getElementById("mon-drawer-close").addEventListener("click", closeStudentDrawer);
+document.getElementById("mon-drawer-backdrop").addEventListener("click", closeStudentDrawer);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && drawerStudentId) closeStudentDrawer(); });
 
 // ── Relative time formatter ──
 // < 1 min   → "just now"
