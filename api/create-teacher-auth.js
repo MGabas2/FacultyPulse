@@ -1,6 +1,6 @@
 // ============================================================
 //  FacultyPulse — Create Teacher/Staff Auth Account
-//  Vercel serverless function (CommonJS, matches api/summarize.js)
+//  Vercel serverless function (CommonJS)
 //
 //  Runs ONLY server-side. SUPABASE_SERVICE_ROLE_KEY must be set as a
 //  Vercel environment variable and must NEVER appear in any file that

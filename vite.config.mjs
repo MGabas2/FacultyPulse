@@ -24,6 +24,7 @@ export default defineConfig({
       input: {
         index:             page("index.html"),
         staff:             page("staff.html"),
+        privacy:           page("privacy.html"),
         student:           page("pages/student.html"),
         teacher:           page("pages/teacher.html"),
         supervisor:        page("pages/supervisor.html"),
