@@ -62,20 +62,21 @@ module.exports = async (req, res) => {
 
   const { data: callerRow, error: callerRowError } = await adminClient
     .from("users")
-    .select("role")
-    .eq("email", callerAuth.user.email)
+    .select("role, is_active")
+    .ilike("email", String(callerAuth.user.email || "").replace(/[\\%_]/g, "\\$&"))
+    .eq("role", "admin")
     .maybeSingle();
 
   if (callerRowError) {
     return res.status(500).json({ error: "Could not verify caller role: " + callerRowError.message });
   }
-  if (callerRow?.role !== "admin") {
+  if (callerRow?.role !== "admin" || callerRow.is_active === false) {
     return res.status(403).json({ error: "Only admins can create login accounts" });
   }
 
   // ── Step 3: actually create the Auth account ──
   const { data, error } = await adminClient.auth.admin.createUser({
-    email,
+    email: String(email).trim().toLowerCase(),
     password,
     email_confirm: true, // skip the confirmation-email step — admin is vouching for this account
     user_metadata: name ? { name } : undefined,

@@ -170,14 +170,21 @@ window.onNewStudentDepartmentChange = onNewStudentDepartmentChange;
 // Picking a section ticks that section's own courses (the student's usual
 // load); the admin can then add or untick anything from the department list
 // or the minor/general list.
+const newStudentType = () => document.querySelector('input[name="new-student-type"]:checked')?.value || "";
+
 function onNewSectionChange() {
   const sectionId = document.getElementById("new-section-id")?.value || "";
+  // Only a REGULAR student gets the whole section ticked. An irregular student
+  // starts with nothing ticked — the admin picks their courses one by one.
   newStudentPicked = new Set(
-    newStudentSubjects.filter(s => s.section_id === sectionId).map(s => s.id)
+    newStudentType() === "regular"
+      ? newStudentSubjects.filter(s => s.section_id === sectionId).map(s => s.id)
+      : []
   );
   renderNewStudentSubjects();
 }
 window.onNewSectionChange = onNewSectionChange;
+window.onNewStudentTypeChange = onNewSectionChange;
 
 async function loadNewStudentSubjects() {
   const container = document.getElementById("new-student-subjects-list");
@@ -671,6 +678,11 @@ async function saveUser() {
         errorEl.textContent = "Invalid format. Use: 2023-1154-AB"; return;
       }
       if (!sectionId) { errorEl.textContent = "Please select a section."; return; }
+      const studentType = newStudentType();
+      if (!studentType) { errorEl.textContent = "Choose Regular or Irregular so the right courses are enrolled."; return; }
+      if (studentType === "irregular" && newStudentPicked.size === 0) {
+        errorEl.textContent = "Irregular student: tick the courses they take (or choose Regular)."; return;
+      }
 
       // Optional email. Blank is fine (saved as NULL). If given: must look
       // like an email and must not already belong to ANY account — users.email
@@ -725,6 +737,10 @@ async function saveUser() {
               subject_id: subjectId,
               semester_id: sem.id,
             })));
+          if (!enrollError) {
+            // enrolled_count is a stored copy, so re-count each class we just joined.
+            for (const subjectId of checkedSubjectIds) { await syncEnrolledCount(subjectId); }
+          }
           if (enrollError) {
             await fpAlert(
               `Student "${name}" added, but course enrollment failed: ${enrollError.message}` +
@@ -740,7 +756,7 @@ async function saveUser() {
 
     } else {
       const name          = document.getElementById("new-name").value.trim();
-      const email         = document.getElementById("new-email").value.trim();
+      const email         = document.getElementById("new-email").value.trim().toLowerCase();
       const password      = document.getElementById("new-password").value.trim();
       const academicRank  = document.getElementById("new-academic-rank")?.value || null;
       const employmentType = document.getElementById("new-employment-type")?.value || null;
@@ -749,6 +765,15 @@ async function saveUser() {
       if (!name)     { errorEl.textContent = "Full name is required."; return; }
       if (!email)    { errorEl.textContent = "Email is required."; return; }
       if (!password) { errorEl.textContent = "Password is required."; return; }
+      // Checked BEFORE the account row is written, so a rejected password can't leave
+      // a staff/admin row behind that has no login.
+      if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        errorEl.textContent = "That email doesn't look valid (e.g. name@gmail.com)."; return;
+      }
+      if (password.length < 8) { errorEl.textContent = "Password must be at least 8 characters."; return; }
+      if (allUsers.some(u => u.email && u.email.toLowerCase() === email)) {
+        errorEl.textContent = "That email already belongs to another account."; return;
+      }
       if ((role === "teacher" || role === "supervisor") && !department) {
         errorEl.textContent = "Please select a department.";
         return;
@@ -876,6 +901,7 @@ function openAddModal() {
   if (document.getElementById("new-is-executive"))
     document.getElementById("new-is-executive").checked = false;
   if (document.getElementById("new-student-email")) document.getElementById("new-student-email").value = "";
+  document.querySelectorAll('input[name="new-student-type"]').forEach(r => { r.checked = false; });
   const subjSearch = document.getElementById("new-student-subject-search");
   if (subjSearch) subjSearch.value = "";
   if (document.getElementById("new-student-department")) document.getElementById("new-student-department").value = "";
