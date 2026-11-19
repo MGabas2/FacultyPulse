@@ -850,7 +850,9 @@ function renderFacultyDrawer() {
 }
 
 // ── Download: students who have NOT submitted ────────────────────
-// A CSV that opens in Excel. One line per student × course still pending.
+// A CSV that opens in Excel. One line per STUDENT (not per course): a student
+// can only finish by evaluating every course, so listing each course again
+// just made the same name repeat.
 function csvCell(v) {
   let t = String(v ?? "");
   // Stop Excel treating a cell as a formula (CSV injection).
@@ -859,8 +861,13 @@ function csvCell(v) {
 }
 
 function downloadNotSubmitted(list, label) {
-  const pending = list.filter(r => !r.submitted).sort((a, b) =>
-    String(a.subjectName).localeCompare(String(b.subjectName)) ||
+  // Collapse the student x course rows to one row per student.
+  const byStudent = new Map();
+  list.filter(r => !r.submitted).forEach(r => {
+    if (!byStudent.has(r.studentId)) byStudent.set(r.studentId, r);
+  });
+  const pending = [...byStudent.values()].sort((a, b) =>
+    String(a.department).localeCompare(String(b.department)) ||
     String(a.section).localeCompare(String(b.section)) ||
     String(a.studentName || a.studentId).localeCompare(String(b.studentName || b.studentId)));
 
@@ -869,11 +876,11 @@ function downloadNotSubmitted(list, label) {
     return;
   }
 
-  const lines = [["No.", "Student ID", "Student Name", "Section", "Course", "Faculty", "Status", "Last Login"]
+  const lines = [["No.", "Student ID", "Student Name", "Program", "Section", "Status", "Last Login"]
     .map(csvCell).join(",")];
   pending.forEach((r, i) => {
     lines.push([
-      i + 1, r.studentId, r.studentName || "", r.section, r.subjectName, r.teacherName,
+      i + 1, r.studentId, r.studentName || "", r.department, r.section,
       r.lastLogin ? "Not yet submitted" : "Never logged in",
       r.lastLogin ? new Date(r.lastLogin).toLocaleString("en-PH") : "",
     ].map(csvCell).join(","));
