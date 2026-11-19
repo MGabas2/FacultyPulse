@@ -100,7 +100,10 @@ module.exports = async (req, res) => {
       ]);
       if (ipCount >= REQUEST_IP_PER_HOUR) return res.status(429).json({ error: "too_many", retryAfterSec: 600 });
 
-      await logEvent(admin, studentId, ipHash, "request");
+      // Log first (so parallel requests are counted), but take it back if the email could not be sent,
+      // so a failed send does not lock the student out of trying again for 5 minutes.
+      const { data: evRow } = await admin.from("student_reset_events")
+        .insert({ student_id: studentId, ip_hash: ipHash, kind: "request" }).select("id").single();
 
       const { data: user, error: lookupErr } = await admin.from("users")
         .select("email").eq("student_id", studentId).eq("role", "student").neq("is_active", false).maybeSingle();
@@ -110,7 +113,10 @@ module.exports = async (req, res) => {
       if (!email) return res.status(200).json({ ok: false, reason: "no_email" });
 
       const { error: otpErr } = await anon.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
-      if (otpErr) return res.status(502).json({ error: "send_failed" });
+      if (otpErr) {
+        if (evRow && evRow.id) await admin.from("student_reset_events").delete().eq("id", evRow.id);
+        return res.status(502).json({ error: "send_failed" });
+      }
 
       return res.status(200).json({ ok: true, hint: maskEmail(email), cooldownSec: REQUEST_COOLDOWN_SEC });
     }
@@ -146,7 +152,7 @@ module.exports = async (req, res) => {
       const { data: ok, error: rpcErr } = await admin.rpc("fp_server_reset_student_password", {
         p_student_id: studentId, p_new_password: newPassword,
       });
-      if (rpcErr || !ok) return res.status(400).json({ error: "reset_failed", message: rpcErr ? rpcErr.message : undefined });
+      if (rpcErr || !ok) return res.status(400).json({ error: "reset_failed" });
 
       await logEvent(admin, studentId, ipHash, "confirm_ok");
       return res.status(200).json({ ok: true });

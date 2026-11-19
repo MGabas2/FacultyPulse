@@ -432,6 +432,29 @@ document.getElementById("forgot-reset-btn")?.addEventListener("click", async () 
   }
 });
 
+document.getElementById("forgot-resend-btn")?.addEventListener("click", async () => {
+  const studentId = pendingStudentRow?.student_id;
+  const btn   = document.getElementById("forgot-resend-btn");
+  const errEl = document.getElementById("forgot-reset-error");
+  if (!studentId) { if (errEl) errEl.textContent = "Session expired — click Forgot password again."; return; }
+  if (otpCooldownRemainingMs(resetCooldownKey(studentId)) > 0) {
+    startOtpCooldownCountdown(resetCooldownKey(studentId), btn);
+    return;
+  }
+  btn.textContent = "Sending..."; btn.disabled = true;
+  const { status, data } = await studentResetApi({ action: "request", student_id: studentId });
+  if (status === 200 && data.ok) {
+    syncResetCooldown(studentId, data.cooldownSec || 300);
+    if (errEl) errEl.textContent = "A new code was sent.";
+  } else if (status === 429) {
+    syncResetCooldown(studentId, data.retryAfterSec || 300);
+    if (errEl) errEl.textContent = "Please wait before requesting another code.";
+  } else if (errEl) {
+    errEl.textContent = "Couldn't send the code. Please try again in a moment.";
+  }
+  startOtpCooldownCountdown(resetCooldownKey(studentId), btn);
+});
+
 // ── Events ──
 loginBtn.addEventListener("click", login);
 document.addEventListener("keydown", e => {
