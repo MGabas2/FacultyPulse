@@ -916,7 +916,7 @@ async function viewReport(teacherId, teacherName) {
       <!-- D. Summary of Qualitative Comments and Suggestions -->
       <p style="font-weight:bold; font-size:12px; margin-bottom:4px;">D. Summary of Qualitative Comments and Suggestions</p>
       <p style="font-size:10px; color:#000; font-style:italic; margin-bottom:8px;">
-        Comments shown exactly as submitted, without student identity, per CMO §6.10.
+        Comments shown exactly as submitted, without student identity, per CMO No. 19, s. 2025
       </p>
 
       <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:16px;">
