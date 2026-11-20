@@ -957,31 +957,26 @@ async function viewReport(teacherId, teacherName) {
             const lines = supComments
               ? supComments.split(/\n|(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean)
               : [];
-            const rows = [...lines];
-            while (rows.length < 5) rows.push("");
-            return rows.map((line, i) => `
+            // Same behaviour as the student comments table above: only real
+            // comments get a row; with none, one "no comments" line instead of
+            // five empty rows.
+            if (lines.length === 0) {
+              return `
               <tr>
-                <td style="padding:14px 8px; border:1px solid #000; text-align:center; color:#000;">${i+1}</td>
-                <td style="padding:14px 8px; border:1px solid #000; color:#000;">${line || "&nbsp;"}</td>
+                <td colspan="2" style="padding:14px 8px; border:1px solid #000; text-align:center; font-style:italic; color:#000;">
+                  No supervisor comments submitted for this faculty this semester.
+                </td>
+              </tr>`;
+            }
+            return lines.map((line, i) => `
+              <tr>
+                <td style="padding:14px 8px; border:1px solid #000; text-align:center; color:#000;">${i + 1}</td>
+                <td style="padding:14px 8px; border:1px solid #000; color:#000;">${escHtml(line)}</td>
               </tr>
             `).join("");
           })()}
-          <tr data-hint="1">
-            <td style="padding:6px 8px; border:1px solid #000; text-align:center; color:#555;">…</td>
-            <td style="padding:6px 8px; border:1px solid #000; color:#555; font-style:italic;">(add additional rows if necessary)</td>
-          </tr>
         </tbody>
       </table>
-      <div class="no-print" style="display:flex; gap:8px; margin-bottom:16px;">
-        <button onclick="addCommentRow('supervisor-comments-tbody')"
-          style="font-size:12px; padding:5px 12px; background:white; color:#475569; border:1px solid #475569; border-radius:5px; cursor:pointer;">
-          + Add Row
-        </button>
-        <button onclick="removeCommentRow('supervisor-comments-tbody')"
-          style="font-size:12px; padding:5px 12px; background:white; color:#dc2626; border:1px solid #dc2626; border-radius:5px; cursor:pointer;">
-          − Remove Row
-        </button>
-      </div>
 
       <!-- Prepared by / Reviewed by -->
       <div style="margin-top:28px; font-size:12px; max-width:500px;
