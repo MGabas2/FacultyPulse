@@ -24,9 +24,35 @@
       <span id="nav-user"></span>
       <button class="nav-btn" id="switch-to-supervisor-btn" style="display:none;">Switch to Supervisor View</button>
       <button class="nav-btn" id="change-password-btn">Change Password</button>
+      <button class="nav-btn" id="change-email-btn">Change Email</button>
       <a href="../staff.html" id="logout-btn">Logout</a>
     </div>
   </nav>
+
+  <!-- Change Email Modal -->
+  <div id="change-email-modal" class="modal hidden">
+    <div class="modal-box" style="max-width:420px; width:95vw;">
+      <h3>Change Login Email</h3>
+      <p style="font-size:12.5px; color:#64748b; margin:0 0 12px;">Current email: <b id="ce-current">—</b></p>
+      <div style="margin-bottom:12px;">
+        <label class="field-label">New Email</label>
+        <input type="email" id="ce-new" class="field-input" placeholder="e.g. name@gmail.com" autocomplete="off" />
+      </div>
+      <div style="margin-bottom:12px;">
+        <label class="field-label">Confirm New Email</label>
+        <input type="email" id="ce-confirm" class="field-input" placeholder="Re-enter new email" autocomplete="off" />
+      </div>
+      <div style="margin-bottom:14px;">
+        <label class="field-label">Current Password</label>
+        <input type="password" id="ce-pw" class="field-input" placeholder="Your current password" autocomplete="current-password" />
+      </div>
+      <p id="ce-error" class="error" style="margin:0 0 10px;"></p>
+      <div style="display:flex; gap:10px;">
+        <button id="ce-save-btn" style="flex:1;">Change Email</button>
+        <button class="btn-secondary" id="ce-cancel-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Change Password Modal -->
   <div id="change-password-modal" class="modal hidden">
