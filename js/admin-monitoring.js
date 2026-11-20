@@ -852,7 +852,8 @@ function renderFacultyDrawer() {
 // ── Download: students who have NOT submitted ────────────────────
 // A CSV that opens in Excel. One line per STUDENT (not per course): a student
 // can only finish by evaluating every course, so listing each course again
-// just made the same name repeat.
+// just made the same name repeat. Grouped by Program, then A to Z by name —
+// year level / section does not affect the order.
 function csvCell(v) {
   let t = String(v ?? "");
   // Stop Excel treating a cell as a formula (CSV injection).
@@ -866,10 +867,11 @@ function downloadNotSubmitted(list, label) {
   list.filter(r => !r.submitted).forEach(r => {
     if (!byStudent.has(r.studentId)) byStudent.set(r.studentId, r);
   });
+  const nameOf = (r) => String(r.studentName || r.studentId);
   const pending = [...byStudent.values()].sort((a, b) =>
-    String(a.department).localeCompare(String(b.department)) ||
-    String(a.section).localeCompare(String(b.section)) ||
-    String(a.studentName || a.studentId).localeCompare(String(b.studentName || b.studentId)));
+    String(a.department).localeCompare(String(b.department), undefined, { sensitivity: "base" }) ||
+    nameOf(a).localeCompare(nameOf(b), undefined, { sensitivity: "base" }) ||
+    String(a.studentId).localeCompare(String(b.studentId)));
 
   if (pending.length === 0) {
     alert("Everyone in this list has already submitted — nothing to download.");
